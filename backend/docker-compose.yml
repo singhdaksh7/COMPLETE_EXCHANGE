@@ -1,0 +1,92 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cex_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cex
+      POSTGRES_PASSWORD: cex_password
+      POSTGRES_DB: cex
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cex -d cex"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: cex_redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # One-shot migration runner. Applies pending migrations exactly once, then
+  # exits. The API waits for this to complete successfully before booting, so
+  # the schema is guaranteed present and no API replica ever runs migrations.
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cex_migrate
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://cex:cex_password@postgres:5432/cex?schema=public
+    command: ["npx", "prisma", "migrate", "deploy"]
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cex_api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      API_PREFIX: /api/v1
+      CORS_ORIGINS: http://localhost:3000
+      BODY_LIMIT: 100kb
+      LOG_LEVEL: info
+      LOG_PRETTY: "false"
+      # Inside the compose network, reach services by their service name.
+      DATABASE_URL: postgresql://cex:cex_password@postgres:5432/cex?schema=public
+      REDIS_URL: redis://redis:6379
+      # Secrets are REQUIRED (no insecure defaults). Provide them via a local
+      # .env file next to this compose file or the shell environment. Compose
+      # errors out if they are unset, which is the intended fail-closed behaviour.
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?JWT_ACCESS_SECRET must be set}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET must be set}
+      JWT_ACCESS_TTL: 15m
+      JWT_REFRESH_TTL: 30d
+      RATE_LIMIT_WINDOW_MS: 60000
+      RATE_LIMIT_MAX: 120
+      AUTH_RATE_LIMIT_MAX: 10
+      LOGIN_LOCKOUT_MAX_ATTEMPTS: 5
+      LOGIN_LOCKOUT_WINDOW_MS: 900000
+    ports:
+      - "4000:4000"
+
+volumes:
+  postgres_data:
+  redis_data:

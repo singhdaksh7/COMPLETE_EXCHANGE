@@ -1,0 +1,69 @@
+{
+  "name": "cex-backend",
+  "version": "0.1.0",
+  "description": "Production-ready backend foundation for an INR<->USDT crypto exchange MVP",
+  "main": "dist/server.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "dev:admin": "tsx watch src/admin-server.ts",
+    "dev:worker": "tsx watch src/worker.ts",
+    "dev:scanner": "tsx watch src/scanner.ts",
+    "build": "prisma generate && tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "start:admin": "node dist/admin-server.js",
+    "start:worker": "node dist/worker.js",
+    "start:scanner": "node dist/scanner.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint \"src/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "prisma:studio": "prisma studio",
+    "db:seed": "tsx prisma/seed.ts",
+    "admin:reset-local": "tsx scripts/reset-local-admin.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@node-rs/argon2": "^2.0.2",
+    "@prisma/client": "^5.22.0",
+    "compression": "^1.7.5",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.4.1",
+    "helmet": "^8.0.0",
+    "ioredis": "^5.4.2",
+    "jsonwebtoken": "^9.0.2",
+    "pino": "^9.5.0",
+    "pino-http": "^10.3.0",
+    "rate-limit-redis": "^4.2.0",
+    "socket.io": "^4.8.3",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/compression": "^1.7.5",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.7",
+    "@types/node": "^20.17.10",
+    "@types/supertest": "^6.0.2",
+    "@typescript-eslint/eslint-plugin": "^8.18.1",
+    "@typescript-eslint/parser": "^8.18.1",
+    "eslint": "^8.57.1",
+    "pino-pretty": "^13.0.0",
+    "prettier": "^3.4.2",
+    "prisma": "^5.22.0",
+    "supertest": "^7.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

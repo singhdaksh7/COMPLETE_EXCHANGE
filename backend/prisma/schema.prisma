@@ -1,0 +1,1250 @@
+// ============================================================================
+// CEX — FINAL FROZEN PRISMA SCHEMA  ·  v1.0  (REV 2, architecture frozen)
+// ----------------------------------------------------------------------------
+// CANONICAL source of truth for the database. Frozen 2026-06-12. No redesign.
+// Full design rationale: /DATABASE_ARCHITECTURE.md (see §R for REV 2 hardening).
+// Baseline migration: prisma/migrations/20260612120000_full_architecture_freeze.
+//
+// REV 2 closes production-review items C2–C7 and H1–H4:
+//   - Chain is now a REFERENCE TABLE (chains), not an enum  ............ H1
+//   - hot_wallets / chain_signers / wallet_nonces  .................... wallet infra
+//   - crypto_withdrawals.from_address + unique(chain,from_address,nonce) C2
+//   - conversions / price_quotes / totp_recovery_codes (restored)  .... C7
+//   - sweeps / reconciliation_runs / balance_snapshots  .............. recon
+//   - candles / market_tickers / gas_reserves / network_fees  ........ trading + gas
+//   - orders.stop_price + market-order quote_budget  ................. C3/C4
+//   - ledger_entries(account_id, asset) -> accounts(id, asset) FK  ... C5 (composite)
+//   - crypto_deposits.block_hash + (chain, block_number) reorg index . C6
+//   - trades.maker_user_id / taker_user_id + deterministic fill_id  .. H3/H4
+//   - admin/user FKs for approver/reviewer/granter/updater  .......... H2
+//
+// Conventions:
+//   - UUID PKs via gen_random_uuid(); append-only/high-volume use BigInt.
+//   - snake_case via @map; money as Decimal @db.Decimal(p,s) (NUMERIC).
+//   - Soft delete: deletedAt on reference rows. Append-only: REVOKE+trigger
+//     applied in migration SQL (not expressible in Prisma).
+//   - `asset` -> assets.symbol, `chain` -> chains.id (both reference tables) so
+//     listing tokens/chains (ERC20/TRC20/BEP20/new L1s/KuCoin) is data, not DDL.
+//   - Partial indexes & CHECK constraints that Prisma cannot express are listed
+//     in DATABASE_ARCHITECTURE.md §"Partial-index & constraint migration" and
+//     authored as raw SQL after `prisma migrate`.
+// ============================================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [citext, pgcrypto] // citext for emails/symbols; pgcrypto for gen_random_uuid
+}
+
+// ============================================================================
+// ENUMS  (only truly-fixed domains stay enums; growable sets are tables)
+// ============================================================================
+enum UserStatus {
+  ACTIVE
+  FROZEN
+  LOCKED
+  CLOSED
+}
+
+enum KycStatus {
+  NOT_STARTED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum KycDocType {
+  PAN
+  AADHAAR
+  PASSPORT
+  SELFIE
+  ADDRESS_PROOF
+}
+
+enum ChainFamily {
+  EVM // ERC20 / BEP20 — nonce + EVM address semantics
+  TRON // TRC20
+}
+
+enum WalletTier {
+  HOT
+  WARM
+  COLD
+}
+
+enum AccountKind {
+  USER_AVAILABLE
+  USER_LOCKED
+  FEE_REVENUE
+  TDS_PAYABLE
+  HOT_WALLET
+  COLD_WALLET
+  GATEWAY_CLEARING
+  SWEEP_CLEARING
+  LIQUIDITY
+  SYSTEM
+}
+
+enum EntryDirection {
+  DEBIT
+  CREDIT
+}
+
+enum DepositStatus {
+  DETECTED
+  CONFIRMING
+  CONFIRMED
+  CREDITED
+  ORPHANED
+}
+
+enum WithdrawalStatus {
+  REQUESTED
+  RISK_CHECK
+  PENDING_APPROVAL
+  APPROVED
+  QUEUED
+  SIGNING
+  BROADCAST
+  CONFIRMING
+  COMPLETED
+  REJECTED
+  FAILED
+  CANCELLED
+}
+
+enum SweepStatus {
+  PENDING
+  SIGNING
+  BROADCAST
+  CONFIRMING
+  COMPLETED
+  FAILED
+}
+
+enum InrTxnStatus {
+  INITIATED
+  PENDING
+  SUCCESS
+  FAILED
+  REVERSED
+}
+
+enum InrTxnType {
+  DEPOSIT
+  WITHDRAWAL
+}
+
+enum ConversionSide {
+  INR_TO_USDT
+  USDT_TO_INR
+}
+
+enum OrderSide {
+  BUY
+  SELL
+}
+
+enum OrderType {
+  LIMIT
+  MARKET
+  STOP_LIMIT
+}
+
+enum TimeInForce {
+  GTC
+  IOC
+  FOK
+  POST_ONLY
+}
+
+enum OrderStatus {
+  PENDING
+  OPEN
+  PARTIALLY_FILLED
+  FILLED
+  CANCELLED
+  REJECTED
+  EXPIRED
+}
+
+enum OrderSource {
+  USER
+  KUCOIN_HEDGE
+  SYSTEM
+}
+
+enum MarketStatus {
+  ACTIVE
+  HALTED
+  POST_ONLY
+}
+
+enum CandleInterval {
+  M1
+  M5
+  M15
+  H1
+  H4
+  D1
+  W1
+}
+
+enum FeeKind {
+  WITHDRAWAL
+  SWEEP
+}
+
+enum ReconType {
+  CHAIN // ledger vs on-chain hot/cold balances
+  GATEWAY // ledger vs payment-gateway settlement
+  LEDGER_INVARIANT // projection vs SUM(entries)
+}
+
+enum ReconStatus {
+  RUNNING
+  BALANCED
+  DISCREPANCY
+  FAILED
+}
+
+enum RoleScope {
+  USER
+  ADMIN
+}
+
+enum ActorType {
+  USER
+  ADMIN
+  SYSTEM
+}
+
+enum AssetKind {
+  FIAT
+  CRYPTO
+}
+
+// ============================================================================
+// REFERENCE — chains, assets, asset_chains, markets
+// ============================================================================
+model Chain {
+  id            String      @id @db.Citext // 'TRON','ETHEREUM','BSC','POLYGON'...
+  name          String
+  family        ChainFamily
+  nativeAsset   String      @map("native_asset") @db.Citext // gas asset symbol -> assets
+  evmChainId    Int?        @map("evm_chain_id") // EVM numeric chain id (null for TRON)
+  confirmations Int         @default(12) // default min confirmations
+  reorgBuffer   Int         @default(64) @map("reorg_buffer") // rescan depth
+  isActive      Boolean     @default(true) @map("is_active")
+  createdAt     DateTime    @default(now()) @map("created_at")
+
+  native            Asset               @relation("ChainNativeAsset", fields: [nativeAsset], references: [symbol])
+  assetChains       AssetChain[]
+  depositAddresses  DepositAddress[]
+  withdrawalAddrs   WithdrawalAddress[]
+  cryptoDeposits    CryptoDeposit[]
+  cryptoWithdrawals CryptoWithdrawal[]
+  cursor            ChainCursor?
+  hotWallets        HotWallet[]
+  signers           ChainSigner[]
+  sweeps            Sweep[]
+  gasReserves       GasReserve[]
+  networkFees       NetworkFee[]
+
+  @@index([isActive])
+  @@map("chains")
+}
+
+model Asset {
+  symbol    String    @id @db.Citext // 'INR','USDT','BTC'...
+  name      String
+  kind      AssetKind
+  decimals  Int // INR=2, USDT=6
+  isActive  Boolean   @default(true) @map("is_active")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  chains          AssetChain[]
+  accounts        Account[]
+  baseMarkets     Market[]      @relation("BaseAsset")
+  quoteMarkets    Market[]      @relation("QuoteAsset")
+  nativeForChains Chain[]       @relation("ChainNativeAsset")
+  gasReserves     GasReserve[]
+  networkFees     NetworkFee[]
+  ledgerEntries   LedgerEntry[]
+
+  @@map("assets")
+}
+
+model AssetChain {
+  asset            String  @db.Citext
+  chain            String  @db.Citext
+  contractAddr     String? @map("contract_addr") // token contract per chain (TRC20/ERC20/BEP20)
+  decimals         Int // on-chain decimals
+  minConfirmations Int     @map("min_confirmations")
+  isActive         Boolean @default(true) @map("is_active")
+
+  assetRef Asset @relation(fields: [asset], references: [symbol])
+  chainRef Chain @relation(fields: [chain], references: [id])
+
+  @@id([asset, chain])
+  @@map("asset_chains")
+}
+
+model Market {
+  id          String       @id @default(uuid()) @db.Uuid
+  symbol      String       @unique // 'BTC-USDT'
+  baseAsset   String       @map("base_asset") @db.Citext
+  quoteAsset  String       @map("quote_asset") @db.Citext
+  status      MarketStatus @default(ACTIVE)
+  tickSize    Decimal      @map("tick_size") @db.Decimal(38, 18)
+  stepSize    Decimal      @map("step_size") @db.Decimal(38, 18)
+  minNotional Decimal      @map("min_notional") @db.Decimal(38, 18)
+  makerFeeBps Int          @map("maker_fee_bps")
+  takerFeeBps Int          @map("taker_fee_bps")
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  base    Asset         @relation("BaseAsset", fields: [baseAsset], references: [symbol])
+  quote   Asset         @relation("QuoteAsset", fields: [quoteAsset], references: [symbol])
+  orders  Order[]
+  trades  Trade[]
+  candles Candle[]
+  ticker  MarketTicker?
+
+  @@unique([baseAsset, quoteAsset]) // M2 — no duplicate pairs
+  @@index([status])
+  @@map("markets")
+}
+
+// ============================================================================
+// USERS / AUTH / SESSIONS
+// ============================================================================
+model User {
+  id              String     @id @default(uuid()) @db.Uuid
+  email           String     @unique @db.Citext
+  phone           String?    @unique
+  passwordHash    String     @map("password_hash")
+  status          UserStatus @default(ACTIVE)
+  emailVerifiedAt DateTime?  @map("email_verified_at")
+  phoneVerifiedAt DateTime?  @map("phone_verified_at")
+  kycStatus       KycStatus  @default(NOT_STARTED) @map("kyc_status")
+  kycTier         Int        @default(0) @map("kyc_tier")
+  totpSecretEnc   Bytes?     @map("totp_secret_enc")
+  totpEnabled     Boolean    @default(false) @map("totp_enabled")
+  referralCode    String?    @unique @map("referral_code")
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+  deletedAt       DateTime?  @map("deleted_at")
+
+  sessions          AuthSession[]
+  loginAttempts     LoginAttempt[]
+  roles             UserRole[]
+  kycProfile        KycProfile?
+  kycDocuments      KycDocument[]
+  accounts          Account[]
+  depositAddrs      DepositAddress[]
+  withdrawalAddrs   WithdrawalAddress[]
+  cryptoDeposits    CryptoDeposit[]
+  cryptoWithdrawals CryptoWithdrawal[]
+  inrTransactions   InrTransaction[]
+  bankAccounts      BankAccount[]
+  orders            Order[]
+  conversions       Conversion[]
+  priceQuotes       PriceQuote[]
+  totpRecoveryCodes TotpRecoveryCode[]
+  makerTrades       Trade[]             @relation("TradeMaker")
+  takerTrades       Trade[]             @relation("TradeTaker")
+
+  @@index([status])
+  @@index([kycStatus])
+  @@map("users")
+}
+
+model AuthSession {
+  id          String    @id @default(uuid()) @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  refreshHash String    @map("refresh_hash")
+  familyId    String    @map("family_id") @db.Uuid
+  deviceInfo  Json?     @map("device_info")
+  ip          String?   @db.Inet
+  expiresAt   DateTime  @map("expires_at")
+  revokedAt   DateTime? @map("revoked_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId]) // partial WHERE revoked_at IS NULL applied in migration SQL
+  @@index([familyId])
+  @@index([refreshHash]) // refresh-token lookup
+  @@map("auth_sessions")
+}
+
+model TotpRecoveryCode {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  codeHash  String    @map("code_hash")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId]) // partial WHERE used_at IS NULL in migration SQL (unused codes)
+  @@map("totp_recovery_codes")
+}
+
+model LoginAttempt {
+  id        BigInt   @id @default(autoincrement())
+  userId    String?  @map("user_id") @db.Uuid
+  email     String?  @db.Citext
+  ip        String?  @db.Inet
+  success   Boolean
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([email, createdAt])
+  @@index([ip, createdAt]) // IP-based rate limiting
+  @@map("login_attempts") // RANGE-partition monthly on created_at (raw SQL)
+}
+
+// ============================================================================
+// RBAC — roles, permissions (users + admins)
+// ============================================================================
+model Role {
+  id          String    @id @default(uuid()) @db.Uuid
+  name        String    @unique
+  scope       RoleScope
+  description String?
+  isSystem    Boolean   @default(false) @map("is_system")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  permissions RolePermission[]
+  userRoles   UserRole[]
+  adminRoles  AdminRole[]
+
+  @@index([scope])
+  @@map("roles")
+}
+
+model Permission {
+  id          String  @id @default(uuid()) @db.Uuid
+  code        String  @unique // 'withdrawal.approve'
+  description String?
+
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String @map("role_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  userId    String   @map("user_id") @db.Uuid
+  roleId    String   @map("role_id") @db.Uuid
+  grantedBy String?  @map("granted_by") @db.Uuid
+  grantedAt DateTime @default(now()) @map("granted_at")
+
+  user           User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  grantedByAdmin Admin? @relation("RoleGranter", fields: [grantedBy], references: [id])
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+model AdminRole {
+  adminId String @map("admin_id") @db.Uuid
+  roleId  String @map("role_id") @db.Uuid
+
+  admin Admin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  role  Role  @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([adminId, roleId])
+  @@index([roleId])
+  @@map("admin_roles")
+}
+
+// ============================================================================
+// KYC
+// ============================================================================
+model KycProfile {
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String    @unique @map("user_id") @db.Uuid
+  fullName       String?   @map("full_name")
+  dob            DateTime? @db.Date
+  panEnc         Bytes?    @map("pan_enc")
+  aadhaarRefEnc  Bytes?    @map("aadhaar_ref_enc")
+  address        Json?
+  status         KycStatus @default(PENDING)
+  provider       String?
+  providerRef    String?   @map("provider_ref")
+  rejectedReason String?   @map("rejected_reason")
+  reviewedBy     String?   @map("reviewed_by") @db.Uuid
+  reviewedAt     DateTime? @map("reviewed_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  user     User   @relation(fields: [userId], references: [id])
+  reviewer Admin? @relation("KycReviewer", fields: [reviewedBy], references: [id])
+
+  @@index([status])
+  @@map("kyc_profiles")
+}
+
+model KycDocument {
+  id         String     @id @default(uuid()) @db.Uuid
+  userId     String     @map("user_id") @db.Uuid
+  docType    KycDocType @map("doc_type")
+  storageKey String     @map("storage_key")
+  sha256     String
+  status     KycStatus  @default(PENDING)
+  createdAt  DateTime   @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@map("kyc_documents")
+}
+
+// ============================================================================
+// LEDGER (double-entry, append-only) — WALLETS + TRANSACTIONS
+// ============================================================================
+model Account {
+  id        String      @id @default(uuid()) @db.Uuid
+  kind      AccountKind
+  userId    String?     @map("user_id") @db.Uuid // null for system accounts
+  asset     String      @db.Citext
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  user     User?           @relation(fields: [userId], references: [id])
+  assetRef Asset           @relation(fields: [asset], references: [symbol])
+  balance  AccountBalance?
+  entries  LedgerEntry[]
+
+  @@unique([userId, asset, kind])
+  @@unique([id, asset]) // composite-FK target for ledger_entries (C5)
+  @@index([kind, asset])
+  @@map("accounts")
+}
+
+model AccountBalance {
+  accountId String   @id @map("account_id") @db.Uuid
+  balance   Decimal  @default(0) @db.Decimal(38, 18)
+  version   BigInt   @default(0) // optimistic concurrency
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  account Account @relation(fields: [accountId], references: [id])
+
+  @@map("account_balances")
+}
+
+model LedgerTransaction {
+  id            String   @id @default(uuid()) @db.Uuid
+  kind          String // DEPOSIT_CREDIT, TRADE_SETTLE, CONVERSION, SWEEP, ...
+  referenceType String?  @map("reference_type")
+  referenceId   String?  @map("reference_id") @db.Uuid
+  metadata      Json?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  entries          LedgerEntry[]
+  creditedDeposits CryptoDeposit[]    @relation("DepositCredit")
+  holdWithdrawals  CryptoWithdrawal[] @relation("WithdrawalHold")
+  finalWithdrawals CryptoWithdrawal[] @relation("WithdrawalFinal")
+  inrSettlements   InrTransaction[]
+  conversions      Conversion[]
+  orderLocks       Order[]
+  tradeSettlements Trade[]
+  sweeps           Sweep[]
+
+  @@index([referenceType, referenceId])
+  @@index([kind, createdAt])
+  @@map("ledger_transactions")
+}
+
+// APPEND-ONLY. sum(signed amount)=0 per (txn, asset) — enforced by deferred trigger.
+// PK is composite (id, created_at) to allow RANGE partitioning on created_at.
+// C5: account relation is COMPOSITE (account_id, asset) -> accounts(id, asset),
+//     so an entry's asset can never disagree with its account's asset.
+model LedgerEntry {
+  id        BigInt         @default(autoincrement())
+  txnId     String         @map("txn_id") @db.Uuid
+  accountId String         @map("account_id") @db.Uuid
+  direction EntryDirection
+  amount    Decimal        @db.Decimal(38, 18) // magnitude > 0; sign from direction
+  asset     String         @db.Citext
+  createdAt DateTime       @default(now()) @map("created_at")
+
+  txn      LedgerTransaction @relation(fields: [txnId], references: [id])
+  account  Account           @relation(fields: [accountId, asset], references: [id, asset])
+  assetRef Asset             @relation(fields: [asset], references: [symbol])
+
+  @@id([id, createdAt])
+  @@index([accountId, createdAt])
+  @@index([txnId])
+  @@map("ledger_entries")
+}
+
+// ============================================================================
+// WALLET ADDRESSES (user-facing)
+// ============================================================================
+model DepositAddress {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  chain           String   @db.Citext
+  address         String
+  derivationIndex BigInt   @map("derivation_index")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  user     User            @relation(fields: [userId], references: [id])
+  chainRef Chain           @relation(fields: [chain], references: [id])
+  deposits CryptoDeposit[]
+  sweeps   Sweep[]
+
+  @@unique([chain, address])
+  @@unique([chain, derivationIndex]) // no HD index reuse per chain
+  @@index([userId, chain]) // partial UNIQUE WHERE is_active in migration SQL (H6 rotation)
+  @@index([address])
+  @@map("deposit_addresses")
+}
+
+model WithdrawalAddress {
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String    @map("user_id") @db.Uuid
+  chain         String    @db.Citext
+  address       String
+  label         String?
+  whitelistedAt DateTime? @map("whitelisted_at") // null until cooling-off passes
+  createdAt     DateTime  @default(now()) @map("created_at")
+  deletedAt     DateTime? @map("deleted_at")
+
+  user     User  @relation(fields: [userId], references: [id])
+  chainRef Chain @relation(fields: [chain], references: [id])
+
+  @@unique([userId, chain, address]) // partial WHERE deleted_at IS NULL in migration SQL
+  @@map("withdrawal_addresses")
+}
+
+// ============================================================================
+// WALLET INFRASTRUCTURE — signers, hot wallets, nonce sequencer
+// ============================================================================
+model ChainSigner {
+  id        String   @id @default(uuid()) @db.Uuid
+  chain     String   @db.Citext
+  name      String
+  kmsKeyRef String   @map("kms_key_ref") // KMS/HSM key reference — NEVER the key material
+  publicKey String?  @map("public_key")
+  status    String   @default("ACTIVE")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  chainRef   Chain       @relation(fields: [chain], references: [id])
+  hotWallets HotWallet[]
+
+  @@unique([chain, kmsKeyRef])
+  @@index([chain, status])
+  @@map("chain_signers")
+}
+
+model HotWallet {
+  id        String     @id @default(uuid()) @db.Uuid
+  chain     String     @db.Citext
+  signerId  String     @map("signer_id") @db.Uuid
+  address   String
+  tier      WalletTier @default(HOT)
+  label     String?
+  isActive  Boolean    @default(true) @map("is_active")
+  createdAt DateTime   @default(now()) @map("created_at")
+
+  chainRef    Chain              @relation(fields: [chain], references: [id])
+  signer      ChainSigner        @relation(fields: [signerId], references: [id])
+  nonce       WalletNonce?
+  withdrawals CryptoWithdrawal[]
+  sweeps      Sweep[]
+  gasReserves GasReserve[]
+
+  @@unique([chain, address])
+  @@index([chain, tier, isActive])
+  @@map("hot_wallets")
+}
+
+// Authoritative nonce allocator — one row per hot wallet, row-locked on allocation.
+// Scopes the (chain, from_address, nonce) uniqueness on crypto_withdrawals (C2).
+model WalletNonce {
+  hotWalletId String   @id @map("hot_wallet_id") @db.Uuid
+  nextNonce   BigInt   @default(0) @map("next_nonce")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  hotWallet HotWallet @relation(fields: [hotWalletId], references: [id], onDelete: Cascade)
+
+  @@map("wallet_nonces")
+}
+
+// ============================================================================
+// CRYPTO DEPOSITS  (+ reorg handling: block_hash)  C6
+// ============================================================================
+model CryptoDeposit {
+  id               String        @id @default(uuid()) @db.Uuid
+  userId           String?       @map("user_id") @db.Uuid
+  addressId        String?       @map("address_id") @db.Uuid
+  chain            String        @db.Citext
+  asset            String        @db.Citext
+  txHash           String        @map("tx_hash")
+  logIndex         Int           @default(0) @map("log_index")
+  fromAddress      String?       @map("from_address")
+  amountBase       Decimal       @map("amount_base") @db.Decimal(78, 0) // chain truth
+  amount           Decimal       @db.Decimal(38, 18) // human
+  confirmations    Int           @default(0)
+  reqConfirmations Int           @map("req_confirmations") // snapshot of threshold at detection
+  status           DepositStatus @default(DETECTED)
+  blockNumber      BigInt?       @map("block_number")
+  blockHash        String?       @map("block_hash") // C6 — reorg detection at same height
+  creditedTxnId    String?       @map("credited_txn_id") @db.Uuid
+  detectedAt       DateTime      @default(now()) @map("detected_at")
+  creditedAt       DateTime?     @map("credited_at")
+
+  user        User?              @relation(fields: [userId], references: [id])
+  address     DepositAddress?    @relation(fields: [addressId], references: [id])
+  chainRef    Chain              @relation(fields: [chain], references: [id])
+  creditedTxn LedgerTransaction? @relation("DepositCredit", fields: [creditedTxnId], references: [id])
+
+  @@unique([chain, txHash, logIndex]) // idempotent credit
+  @@index([status]) // partial WHERE status IN ('DETECTED','CONFIRMING') in migration SQL
+  @@index([userId])
+  @@index([chain, blockNumber]) // C6 — reorg rescan window
+  @@map("crypto_deposits")
+}
+
+model ChainCursor {
+  chain            String   @id @db.Citext
+  lastScannedBlock BigInt   @map("last_scanned_block")
+  lastScannedHash  String?  @map("last_scanned_hash") // C6 — canonical tip hash
+  safeBlock        BigInt   @default(0) @map("safe_block") // confirmed-final height
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  chainRef Chain @relation(fields: [chain], references: [id])
+
+  @@map("chain_cursors")
+}
+
+// ============================================================================
+// SWEEPS — deposit-address -> hot-wallet consolidation (SWEEP_CLEARING)
+// ============================================================================
+model Sweep {
+  id            String      @id @default(uuid()) @db.Uuid
+  chain         String      @db.Citext
+  asset         String      @db.Citext
+  fromAddressId String?     @map("from_address_id") @db.Uuid
+  fromAddress   String      @map("from_address")
+  toHotWalletId String      @map("to_hot_wallet_id") @db.Uuid
+  amount        Decimal     @db.Decimal(38, 18)
+  amountBase    Decimal     @map("amount_base") @db.Decimal(78, 0)
+  status        SweepStatus @default(PENDING)
+  txHash        String?     @map("tx_hash")
+  nonce         BigInt?
+  blockNumber   BigInt?     @map("block_number")
+  blockHash     String?     @map("block_hash")
+  ledgerTxnId   String?     @map("ledger_txn_id") @db.Uuid
+  failureReason String?     @map("failure_reason")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  completedAt   DateTime?   @map("completed_at")
+
+  chainRef    Chain              @relation(fields: [chain], references: [id])
+  fromDeposit DepositAddress?    @relation(fields: [fromAddressId], references: [id])
+  toHotWallet HotWallet          @relation(fields: [toHotWalletId], references: [id])
+  ledgerTxn   LedgerTransaction? @relation(fields: [ledgerTxnId], references: [id])
+  networkFees NetworkFee[]
+
+  @@unique([chain, txHash]) // partial WHERE tx_hash IS NOT NULL in migration SQL
+  @@index([status])
+  @@index([toHotWalletId])
+  @@map("sweeps")
+}
+
+// ============================================================================
+// CRYPTO WITHDRAWALS  (+ from_address, nonce scoping, approver FKs)  C2/H2
+// ============================================================================
+model CryptoWithdrawal {
+  id            String           @id @default(uuid()) @db.Uuid
+  userId        String           @map("user_id") @db.Uuid
+  chain         String           @db.Citext
+  asset         String           @db.Citext
+  toAddress     String           @map("to_address")
+  fromAddress   String?          @map("from_address") // sending hot-wallet address (C2)
+  hotWalletId   String?          @map("hot_wallet_id") @db.Uuid
+  amount        Decimal          @db.Decimal(38, 18) // gross requested
+  fee           Decimal          @default(0) @db.Decimal(38, 18)
+  tdsAmount     Decimal          @default(0) @map("tds_amount") @db.Decimal(38, 18)
+  netAmount     Decimal          @map("net_amount") @db.Decimal(38, 18)
+  status        WithdrawalStatus @default(REQUESTED)
+  holdTxnId     String?          @map("hold_txn_id") @db.Uuid
+  finalTxnId    String?          @map("final_txn_id") @db.Uuid
+  txHash        String?          @map("tx_hash")
+  nonce         BigInt?
+  approvedBy    String?          @map("approved_by") @db.Uuid
+  approvedBy2   String?          @map("approved_by_2") @db.Uuid
+  approverSig   String?          @map("approver_sig")
+  riskFlags     Json?            @map("risk_flags")
+  failureReason String?          @map("failure_reason")
+  requestedAt   DateTime         @default(now()) @map("requested_at")
+  broadcastAt   DateTime?        @map("broadcast_at")
+  completedAt   DateTime?        @map("completed_at")
+  updatedAt     DateTime         @updatedAt @map("updated_at")
+
+  user        User               @relation(fields: [userId], references: [id])
+  chainRef    Chain              @relation(fields: [chain], references: [id])
+  hotWallet   HotWallet?         @relation(fields: [hotWalletId], references: [id])
+  holdTxn     LedgerTransaction? @relation("WithdrawalHold", fields: [holdTxnId], references: [id])
+  finalTxn    LedgerTransaction? @relation("WithdrawalFinal", fields: [finalTxnId], references: [id])
+  approver    Admin?             @relation("WithdrawApprover1", fields: [approvedBy], references: [id])
+  approver2   Admin?             @relation("WithdrawApprover2", fields: [approvedBy2], references: [id])
+  networkFees NetworkFee[]
+
+  @@unique([chain, fromAddress, nonce]) // C2/H2 — partial WHERE nonce IS NOT NULL (migration SQL)
+  @@index([status]) // partial WHERE status NOT IN terminal states (migration SQL)
+  @@index([userId])
+  @@index([txHash])
+  @@map("crypto_withdrawals")
+}
+
+// ============================================================================
+// GAS / NETWORK FEES  (native-asset accounting)
+// ============================================================================
+model GasReserve {
+  id               String   @id @default(uuid()) @db.Uuid
+  chain            String   @db.Citext
+  hotWalletId      String?  @map("hot_wallet_id") @db.Uuid
+  asset            String   @db.Citext // native gas asset (TRX/ETH/BNB)
+  balanceBase      Decimal  @map("balance_base") @db.Decimal(78, 0)
+  lowWatermarkBase Decimal? @map("low_watermark_base") @db.Decimal(78, 0)
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  chainRef  Chain      @relation(fields: [chain], references: [id])
+  hotWallet HotWallet? @relation(fields: [hotWalletId], references: [id])
+  assetRef  Asset      @relation(fields: [asset], references: [symbol])
+
+  @@unique([chain, hotWalletId, asset])
+  @@map("gas_reserves")
+}
+
+// Actual gas spent per outbound tx — reconciles estimated vs paid.
+model NetworkFee {
+  id           String   @id @default(uuid()) @db.Uuid
+  chain        String   @db.Citext
+  asset        String   @db.Citext // native asset paid as gas
+  feeKind      FeeKind  @map("fee_kind")
+  withdrawalId String?  @map("withdrawal_id") @db.Uuid
+  sweepId      String?  @map("sweep_id") @db.Uuid
+  txHash       String?  @map("tx_hash")
+  gasUsed      BigInt?  @map("gas_used")
+  gasPriceBase Decimal? @map("gas_price_base") @db.Decimal(78, 0)
+  feeBase      Decimal  @map("fee_base") @db.Decimal(78, 0)
+  feeAsset     Decimal  @map("fee_asset") @db.Decimal(38, 18)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  chainRef   Chain             @relation(fields: [chain], references: [id])
+  assetRef   Asset             @relation(fields: [asset], references: [symbol])
+  withdrawal CryptoWithdrawal? @relation(fields: [withdrawalId], references: [id])
+  sweep      Sweep?            @relation(fields: [sweepId], references: [id])
+
+  @@index([chain, createdAt])
+  @@index([withdrawalId])
+  @@index([sweepId])
+  @@map("network_fees")
+}
+
+// ============================================================================
+// INR (FIAT) LEDGER + CONVERSION
+// ============================================================================
+model InrTransaction {
+  id                String       @id @default(uuid()) @db.Uuid
+  userId            String       @map("user_id") @db.Uuid
+  type              InrTxnType
+  amount            Decimal      @db.Decimal(20, 2)
+  fee               Decimal      @default(0) @db.Decimal(20, 2)
+  status            InrTxnStatus @default(INITIATED)
+  provider          String?
+  providerOrderId   String?      @map("provider_order_id")
+  providerPaymentId String?      @map("provider_payment_id")
+  bankRef           String?      @map("bank_ref")
+  ledgerTxnId       String?      @map("ledger_txn_id") @db.Uuid
+  metadata          Json?
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+
+  user      User               @relation(fields: [userId], references: [id])
+  ledgerTxn LedgerTransaction? @relation(fields: [ledgerTxnId], references: [id])
+
+  @@unique([provider, providerPaymentId]) // idempotent settlement
+  @@index([userId, type])
+  @@index([status])
+  @@index([provider, providerOrderId]) // webhook -> txn reconcile
+  @@map("inr_transactions")
+}
+
+model PaymentWebhookEvent {
+  id              String    @id @default(uuid()) @db.Uuid
+  provider        String
+  providerEventId String    @map("provider_event_id")
+  eventType       String    @map("event_type")
+  signatureOk     Boolean   @map("signature_ok")
+  payload         Json
+  processedAt     DateTime? @map("processed_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@unique([provider, providerEventId])
+  @@index([processedAt]) // partial WHERE processed_at IS NULL (unprocessed queue) in migration SQL
+  @@map("payment_webhook_events")
+}
+
+model BankAccount {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  accountNumberEnc Bytes     @map("account_number_enc")
+  ifsc             String
+  holderName       String    @map("holder_name")
+  verifiedAt       DateTime? @map("verified_at") // penny-drop
+  createdAt        DateTime  @default(now()) @map("created_at")
+  deletedAt        DateTime? @map("deleted_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("bank_accounts")
+}
+
+// Short-lived signed price quote (INR<->USDT)
+model PriceQuote {
+  id        String         @id @default(uuid()) @db.Uuid
+  userId    String         @map("user_id") @db.Uuid
+  side      ConversionSide
+  rate      Decimal        @db.Decimal(20, 8) // INR per USDT incl. spread
+  spreadBps Int            @map("spread_bps")
+  expiresAt DateTime       @map("expires_at")
+  createdAt DateTime       @default(now()) @map("created_at")
+
+  user        User         @relation(fields: [userId], references: [id])
+  conversions Conversion[]
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("price_quotes")
+}
+
+model Conversion {
+  id          String         @id @default(uuid()) @db.Uuid
+  userId      String         @map("user_id") @db.Uuid
+  quoteId     String?        @map("quote_id") @db.Uuid
+  side        ConversionSide
+  inrAmount   Decimal        @map("inr_amount") @db.Decimal(20, 2)
+  usdtAmount  Decimal        @map("usdt_amount") @db.Decimal(38, 6)
+  rate        Decimal        @db.Decimal(20, 8)
+  feeInr      Decimal        @default(0) @map("fee_inr") @db.Decimal(20, 2)
+  tdsAmount   Decimal        @default(0) @map("tds_amount") @db.Decimal(20, 2) // §194S 1%
+  ledgerTxnId String?        @map("ledger_txn_id") @db.Uuid
+  createdAt   DateTime       @default(now()) @map("created_at")
+
+  user      User               @relation(fields: [userId], references: [id])
+  quote     PriceQuote?        @relation(fields: [quoteId], references: [id])
+  ledgerTxn LedgerTransaction? @relation(fields: [ledgerTxnId], references: [id])
+
+  @@index([userId, createdAt])
+  @@map("conversions")
+}
+
+// ============================================================================
+// ORDERS & TRADES (spot)  — stop_price, quote_budget, denormalized users  C3/C4/H3/H4
+// ============================================================================
+model Order {
+  id             String      @id @default(uuid()) @db.Uuid
+  userId         String      @map("user_id") @db.Uuid
+  marketId       String      @map("market_id") @db.Uuid
+  clientOrderId  String?     @map("client_order_id")
+  side           OrderSide
+  type           OrderType
+  tif            TimeInForce @default(GTC)
+  price          Decimal?    @db.Decimal(38, 18) // null for MARKET
+  stopPrice      Decimal?    @map("stop_price") @db.Decimal(38, 18) // C4 — STOP_LIMIT trigger
+  quantity       Decimal?    @db.Decimal(38, 18) // null for MARKET-BUY (budget-driven)
+  quoteBudget    Decimal?    @map("quote_budget") @db.Decimal(38, 18) // C3 — MARKET-BUY lock budget
+  filledQuantity Decimal     @default(0) @map("filled_quantity") @db.Decimal(38, 18)
+  quoteSpent     Decimal     @default(0) @map("quote_spent") @db.Decimal(38, 18)
+  lockedAmount   Decimal?    @map("locked_amount") @db.Decimal(38, 18) // exact reserved amount
+  lockedAsset    String?     @map("locked_asset") @db.Citext // asset reserved (surplus release)
+  status         OrderStatus @default(PENDING)
+  lockTxnId      String?     @map("lock_txn_id") @db.Uuid
+  source         OrderSource @default(USER)
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+  closedAt       DateTime?   @map("closed_at")
+
+  user        User               @relation(fields: [userId], references: [id])
+  market      Market             @relation(fields: [marketId], references: [id])
+  lockTxn     LedgerTransaction? @relation(fields: [lockTxnId], references: [id])
+  makerTrades Trade[]            @relation("MakerOrder")
+  takerTrades Trade[]            @relation("TakerOrder")
+
+  @@unique([userId, clientOrderId]) // partial WHERE client_order_id IS NOT NULL
+  @@index([marketId, status]) // partial WHERE status IN (OPEN,PARTIALLY_FILLED) — book rebuild
+  @@index([marketId, type, status]) // partial WHERE type='STOP_LIMIT' — stop monitor
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@map("orders")
+}
+
+// APPEND-ONLY immutable execution record. PK (id, executedAt) for partitioning.
+// H3: fill_id is the engine's DETERMINISTIC fill identifier (idempotent settle).
+// H4: maker_user_id / taker_user_id denormalized for user trade history.
+model Trade {
+  id           String    @default(uuid()) @db.Uuid
+  fillId       String    @map("fill_id") // deterministic engine fill id
+  marketId     String    @map("market_id") @db.Uuid
+  makerOrderId String    @map("maker_order_id") @db.Uuid
+  takerOrderId String    @map("taker_order_id") @db.Uuid
+  makerUserId  String    @map("maker_user_id") @db.Uuid
+  takerUserId  String    @map("taker_user_id") @db.Uuid
+  price        Decimal   @db.Decimal(38, 18)
+  quantity     Decimal   @db.Decimal(38, 18)
+  quoteAmount  Decimal   @map("quote_amount") @db.Decimal(38, 18)
+  makerFee     Decimal   @default(0) @map("maker_fee") @db.Decimal(38, 18)
+  takerFee     Decimal   @default(0) @map("taker_fee") @db.Decimal(38, 18)
+  makerSide    OrderSide @map("maker_side")
+  settleTxnId  String?   @map("settle_txn_id") @db.Uuid
+  seq          BigInt    @default(autoincrement()) // global tape ordering
+  executedAt   DateTime  @default(now()) @map("executed_at")
+
+  market     Market             @relation(fields: [marketId], references: [id])
+  makerOrder Order              @relation("MakerOrder", fields: [makerOrderId], references: [id])
+  takerOrder Order              @relation("TakerOrder", fields: [takerOrderId], references: [id])
+  makerUser  User               @relation("TradeMaker", fields: [makerUserId], references: [id])
+  takerUser  User               @relation("TradeTaker", fields: [takerUserId], references: [id])
+  settleTxn  LedgerTransaction? @relation(fields: [settleTxnId], references: [id])
+
+  @@id([id, executedAt])
+  @@unique([fillId]) // H3 — deterministic idempotent settlement
+  @@index([marketId, executedAt])
+  @@index([makerUserId, executedAt]) // H4 — user trade history
+  @@index([takerUserId, executedAt]) // H4 — user trade history
+  @@index([makerOrderId])
+  @@index([takerOrderId])
+  @@map("trades")
+}
+
+// ============================================================================
+// MARKET DATA — candles (OHLCV) + 24h ticker
+// ============================================================================
+model Candle {
+  marketId    String         @map("market_id") @db.Uuid
+  interval    CandleInterval
+  openTime    DateTime       @map("open_time")
+  open        Decimal        @db.Decimal(38, 18)
+  high        Decimal        @db.Decimal(38, 18)
+  low         Decimal        @db.Decimal(38, 18)
+  close       Decimal        @db.Decimal(38, 18)
+  baseVolume  Decimal        @default(0) @map("base_volume") @db.Decimal(38, 18)
+  quoteVolume Decimal        @default(0) @map("quote_volume") @db.Decimal(38, 18)
+  tradeCount  Int            @default(0) @map("trade_count")
+
+  market Market @relation(fields: [marketId], references: [id])
+
+  @@id([marketId, interval, openTime])
+  @@index([marketId, interval, openTime(sort: Desc)])
+  @@map("candles") // candidate for partition by open_time when large
+}
+
+model MarketTicker {
+  marketId       String   @id @map("market_id") @db.Uuid
+  lastPrice      Decimal? @map("last_price") @db.Decimal(38, 18)
+  bestBid        Decimal? @map("best_bid") @db.Decimal(38, 18)
+  bestAsk        Decimal? @map("best_ask") @db.Decimal(38, 18)
+  high24h        Decimal? @map("high_24h") @db.Decimal(38, 18)
+  low24h         Decimal? @map("low_24h") @db.Decimal(38, 18)
+  open24h        Decimal? @map("open_24h") @db.Decimal(38, 18)
+  baseVolume24h  Decimal  @default(0) @map("base_volume_24h") @db.Decimal(38, 18)
+  quoteVolume24h Decimal  @default(0) @map("quote_volume_24h") @db.Decimal(38, 18)
+  priceChangePct Decimal? @map("price_change_pct") @db.Decimal(10, 4)
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  market Market @relation(fields: [marketId], references: [id])
+
+  @@map("market_tickers")
+}
+
+// ============================================================================
+// RECONCILIATION — runs + balance snapshots
+// ============================================================================
+model ReconciliationRun {
+  id         String      @id @default(uuid()) @db.Uuid
+  type       ReconType
+  scope      String? // chain id / provider / asset under reconciliation
+  status     ReconStatus @default(RUNNING)
+  expected   Decimal?    @db.Decimal(38, 18)
+  actual     Decimal?    @db.Decimal(38, 18)
+  diff       Decimal?    @db.Decimal(38, 18)
+  details    Json?
+  startedAt  DateTime    @default(now()) @map("started_at")
+  finishedAt DateTime?   @map("finished_at")
+
+  snapshots BalanceSnapshot[]
+
+  @@index([type, startedAt])
+  @@index([status])
+  @@map("reconciliation_runs")
+}
+
+// Point-in-time balance per account (audit/recon). Append-only, partitionable.
+model BalanceSnapshot {
+  id         BigInt   @default(autoincrement())
+  accountId  String   @map("account_id") @db.Uuid
+  reconRunId String?  @map("recon_run_id") @db.Uuid
+  balance    Decimal  @db.Decimal(38, 18)
+  entryHwm   BigInt?  @map("entry_hwm") // ledger_entries id high-water-mark at snapshot
+  takenAt    DateTime @default(now()) @map("taken_at")
+
+  reconRun ReconciliationRun? @relation(fields: [reconRunId], references: [id])
+
+  @@id([id, takenAt])
+  @@index([accountId, takenAt])
+  @@map("balance_snapshots") // RANGE-partition monthly on taken_at (raw SQL)
+}
+
+// ============================================================================
+// ADMIN / ADMIN LOGS
+// ============================================================================
+model Admin {
+  id            String   @id @default(uuid()) @db.Uuid
+  email         String   @unique @db.Citext
+  passwordHash  String   @map("password_hash")
+  totpSecretEnc Bytes    @map("totp_secret_enc")
+  totpEnabled   Boolean  @default(true) @map("totp_enabled")
+  status        String   @default("ACTIVE")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  roles                AdminRole[]
+  sessions             AdminSession[]
+  logs                 AdminLog[]
+  reviewedKycProfiles  KycProfile[]       @relation("KycReviewer")
+  approvedWithdrawals  CryptoWithdrawal[] @relation("WithdrawApprover1")
+  approvedWithdrawals2 CryptoWithdrawal[] @relation("WithdrawApprover2")
+  grantedRoles         UserRole[]         @relation("RoleGranter")
+  updatedFlags         SystemFlag[]       @relation("FlagUpdater")
+
+  @@map("admins")
+}
+
+model AdminSession {
+  id          String    @id @default(uuid()) @db.Uuid
+  adminId     String    @map("admin_id") @db.Uuid
+  refreshHash String    @map("refresh_hash")
+  ip          String?   @db.Inet
+  expiresAt   DateTime  @map("expires_at")
+  revokedAt   DateTime? @map("revoked_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  admin Admin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@map("admin_sessions")
+}
+
+// APPEND-ONLY. RANGE-partition monthly on occurred_at. PK (id, occurredAt).
+model AdminLog {
+  id          BigInt   @default(autoincrement())
+  adminId     String   @map("admin_id") @db.Uuid
+  action      String
+  targetType  String?  @map("target_type")
+  targetId    String?  @map("target_id")
+  reason      String?
+  beforeState Json?    @map("before_state")
+  afterState  Json?    @map("after_state")
+  ip          String?  @db.Inet
+  requestId   String?  @map("request_id")
+  occurredAt  DateTime @default(now()) @map("occurred_at")
+
+  admin Admin @relation(fields: [adminId], references: [id])
+
+  @@id([id, occurredAt])
+  @@index([adminId, occurredAt])
+  @@index([targetType, targetId])
+  @@index([action, occurredAt])
+  @@map("admin_logs")
+}
+
+// ============================================================================
+// AUDIT (append-only, hash-chained, partitioned)
+// ============================================================================
+model AuditLog {
+  id          BigInt    @default(autoincrement())
+  occurredAt  DateTime  @default(now()) @map("occurred_at")
+  actorType   ActorType @map("actor_type")
+  actorId     String?   @map("actor_id") @db.Uuid
+  action      String
+  entityType  String?   @map("entity_type")
+  entityId    String?   @map("entity_id")
+  beforeState Json?     @map("before_state")
+  afterState  Json?     @map("after_state")
+  ip          String?   @db.Inet
+  userAgent   String?   @map("user_agent")
+  requestId   String?   @map("request_id")
+  prevHash    String?   @map("prev_hash") // hash chaining (tamper evidence)
+  rowHash     String?   @map("row_hash")
+  metadata    Json?
+
+  @@id([id, occurredAt])
+  @@index([actorType, actorId])
+  @@index([entityType, entityId])
+  @@index([action, occurredAt])
+  @@map("audit_logs")
+}
+
+// ============================================================================
+// SYSTEM CONFIG / LIMITS / IDEMPOTENCY
+// ============================================================================
+model TierLimit {
+  kycTier             Int      @id @map("kyc_tier")
+  inrDailyDeposit     Decimal? @map("inr_daily_deposit") @db.Decimal(20, 2)
+  inrDailyWithdrawal  Decimal? @map("inr_daily_withdrawal") @db.Decimal(20, 2)
+  usdtDailyWithdrawal Decimal? @map("usdt_daily_withdrawal") @db.Decimal(38, 6)
+
+  @@map("tier_limits")
+}
+
+model SystemFlag {
+  key       String   @id
+  value     Json
+  updatedBy String?  @map("updated_by") @db.Uuid
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  updater Admin? @relation("FlagUpdater", fields: [updatedBy], references: [id])
+
+  @@map("system_flags")
+}
+
+model IdempotencyKey {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  endpoint       String
+  key            String
+  responseStatus Int?     @map("response_status")
+  responseBody   Json?    @map("response_body")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, endpoint, key])
+  @@index([createdAt]) // TTL sweeper
+  @@map("idempotency_keys")
+}

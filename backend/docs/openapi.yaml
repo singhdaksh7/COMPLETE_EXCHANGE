@@ -1,0 +1,1878 @@
+openapi: 3.1.0
+info:
+  title: CEX Public & Admin API
+  version: 1.0.0
+  summary: REST/JSON API for the centralized crypto exchange (frozen DB v1.0).
+  description: |
+    Contract-first API for the exchange. Generated clients (Flutter, admin SPA)
+    are the consumers; **this spec is the boundary**.
+
+    ## Conventions
+    - **Transport:** REST/JSON over HTTPS only. UTC ISO-8601 timestamps.
+    - **Envelope (success):** `{ "success": true, "data": <T>, "meta"?: {...} }`
+    - **Envelope (error):** `{ "success": false, "error": { "code", "message", "details"? } }`
+      Clients **switch on `error.code`** (stable enum), never on prose or HTTP status alone.
+    - **Money:** all monetary values are **decimal strings** (e.g. `"100.50"`), never
+      JSON numbers — mirrors the `NUMERIC` ledger and avoids float drift. Pattern
+      `^-?\d+(\.\d+)?$`. Scale is asset-defined (INR=2, USDT=6, …).
+    - **IDs:** UUID v4 strings unless noted (`trades.seq` and log ids are int64 strings).
+    - **Pagination:** cursor-based — `?cursor=&limit=` → `data.items[]` + `data.nextCursor`
+      (null at end). No offset paging (unstable for append-only history).
+    - **Versioning:** URL-major (`/api/v1`, `/admin/v1`). See `VERSIONING` in API_DESIGN.md.
+
+    ## Authentication
+    - **UserBearer** — short-lived access JWT (10–15 min) in `Authorization: Bearer`.
+      Rotate via `POST /auth/refresh` (rotating refresh token, reuse-detected).
+    - **AdminBearer** — admin JWT on the **separate admin host**; TOTP mandatory.
+    - **Step-up:** sensitive ops (withdrawals, 2FA changes, address allowlist) require
+      a recent step-up proof via the `X-Step-Up-Token` header (obtained from
+      `POST /auth/step-up`). Operations needing it carry `x-step-up: true`.
+
+    ## Idempotency
+    Money-moving `POST`s require an **`Idempotency-Key`** header (8–255 chars, unique
+    per logical op). Replays return the original response with `Idempotent-Replayed: true`.
+    An in-flight duplicate returns `409 IDEMPOTENCY_IN_PROGRESS`. Operations requiring
+    it carry `x-idempotent: required`.
+
+    ## Rate limiting
+    Redis token-bucket per principal+route. Tighter on auth/withdrawal. Every op
+    declares `x-rate-limit: { policy, limit, window }`. `429 RATE_LIMITED` includes
+    `Retry-After`. Global headers: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`.
+  contact: { name: API Platform, email: api@exchange.local }
+  license: { name: Proprietary, url: 'https://exchange.local/legal/api-terms' }
+
+servers:
+  - url: https://api.exchange.local/api/v1
+    description: Public API (user-facing)
+  - url: https://admin-api.exchange.local/admin/v1
+    description: Admin API (separate host / trust zone)
+
+tags:
+  - name: Authentication
+    description: Registration, login, 2FA/TOTP, token rotation, step-up.
+  - name: Users
+    description: Profile, tier limits, active sessions.
+  - name: KYC
+    description: KYC profile submission and document upload.
+  - name: Wallets
+    description: Ledger-backed balances, statements, deposit addresses.
+  - name: Deposits
+    description: Crypto deposit tracking (detected → credited).
+  - name: Withdrawals
+    description: Crypto withdrawals and the destination allowlist.
+  - name: INR Ledger
+    description: INR rails, bank accounts, and INR↔USDT conversion.
+  - name: Market Data
+    description: Public markets, order book, ticker, candles.
+  - name: Orders
+    description: Spot order placement and management.
+  - name: Trades
+    description: User executions and the public tape.
+  - name: Admin
+    description: Admin host operations (RBAC-gated, audited).
+
+security:
+  - UserBearer: []
+
+# ============================================================================
+# PATHS — PUBLIC API (/api/v1)
+# ============================================================================
+paths:
+  # ---------------------------------------------------------------- Auth -----
+  /auth/register:
+    post:
+      tags: [Authentication]
+      operationId: register
+      summary: Register a new user
+      security: []
+      x-rate-limit: { policy: auth, limit: 5, window: 1m }
+      x-idempotent: optional
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/RegisterRequest' } }
+      responses:
+        '201':
+          description: Created. Email verification required before first login.
+          content: { application/json: { schema: { $ref: '#/components/schemas/UserEnvelope' } } }
+        '409':
+          description: Email or phone already in use.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+          x-error-codes: [EMAIL_TAKEN, PHONE_TAKEN]
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /auth/login:
+    post:
+      tags: [Authentication]
+      operationId: login
+      summary: Password login (step 1). Returns tokens, or a TOTP challenge if 2FA is on.
+      security: []
+      x-rate-limit: { policy: auth, limit: 10, window: 1m }
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/LoginRequest' } }
+      responses:
+        '200':
+          description: Authenticated, or a TOTP challenge.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/TokenPairEnvelope'
+                  - $ref: '#/components/schemas/TotpChallengeEnvelope'
+        '401':
+          description: Invalid credentials / account state.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+          x-error-codes: [INVALID_CREDENTIALS, ACCOUNT_LOCKED, ACCOUNT_FROZEN, EMAIL_NOT_VERIFIED]
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /auth/login/totp:
+    post:
+      tags: [Authentication]
+      operationId: loginTotp
+      summary: Password login (step 2) — submit TOTP for the challenge.
+      security: []
+      x-rate-limit: { policy: auth, limit: 10, window: 5m }
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/TotpLoginRequest' } }
+      responses:
+        '200':
+          description: Authenticated.
+          content: { application/json: { schema: { $ref: '#/components/schemas/TokenPairEnvelope' } } }
+        '401':
+          description: Invalid or expired challenge / code.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+          x-error-codes: [INVALID_TOTP, CHALLENGE_EXPIRED]
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /auth/refresh:
+    post:
+      tags: [Authentication]
+      operationId: refresh
+      summary: Rotate tokens using a refresh token.
+      security: []
+      x-rate-limit: { policy: auth, limit: 30, window: 1m }
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/RefreshRequest' } }
+      responses:
+        '200':
+          description: New token pair (old refresh invalidated).
+          content: { application/json: { schema: { $ref: '#/components/schemas/TokenPairEnvelope' } } }
+        '401':
+          description: Invalid/expired/reused refresh token (reuse revokes the family).
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+          x-error-codes: [INVALID_REFRESH_TOKEN, REFRESH_REUSE_DETECTED]
+
+  /auth/logout:
+    post:
+      tags: [Authentication]
+      operationId: logout
+      summary: Revoke the current session.
+      x-rate-limit: { policy: standard, limit: 60, window: 1m }
+      responses:
+        '204': { description: Session revoked. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/step-up:
+    post:
+      tags: [Authentication]
+      operationId: stepUp
+      summary: Obtain a short-lived step-up token (password and/or TOTP re-entry).
+      x-rate-limit: { policy: auth, limit: 10, window: 5m }
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/StepUpRequest' } }
+      responses:
+        '200':
+          description: Step-up token (5-min TTL) for `X-Step-Up-Token`.
+          content: { application/json: { schema: { $ref: '#/components/schemas/StepUpEnvelope' } } }
+        '401':
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+          description: Re-authentication failed.
+          x-error-codes: [INVALID_CREDENTIALS, INVALID_TOTP]
+
+  /auth/totp/enroll:
+    post:
+      tags: [Authentication]
+      operationId: totpEnroll
+      summary: Begin TOTP enrolment — returns provisioning secret/URI.
+      x-step-up: true
+      x-rate-limit: { policy: sensitive, limit: 5, window: 5m }
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/TotpEnrollEnvelope' } } }
+          description: otpauth URI + secret (not yet active).
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+        '409':
+          description: TOTP already enabled.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+          x-error-codes: [TOTP_ALREADY_ENABLED]
+
+  /auth/totp/activate:
+    post:
+      tags: [Authentication]
+      operationId: totpActivate
+      summary: Activate TOTP by confirming a code — returns one-time recovery codes.
+      x-rate-limit: { policy: sensitive, limit: 5, window: 5m }
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/TotpActivateRequest' } }
+      responses:
+        '200':
+          content: { application/json: { schema: { $ref: '#/components/schemas/RecoveryCodesEnvelope' } } }
+          description: TOTP enabled; store recovery codes securely (shown once).
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  # --------------------------------------------------------------- Users -----
+  /users/me:
+    get:
+      tags: [Users]
+      operationId: getMe
+      summary: Current user profile + KYC tier/status.
+      x-rate-limit: { policy: standard, limit: 120, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/UserEnvelope' } } }, description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    patch:
+      tags: [Users]
+      operationId: updateMe
+      summary: Update mutable profile fields (phone).
+      x-rate-limit: { policy: standard, limit: 20, window: 1m }
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/UpdateUserRequest' } }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/UserEnvelope' } } }, description: Updated }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: Phone already in use.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+          x-error-codes: [PHONE_TAKEN]
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /users/me/limits:
+    get:
+      tags: [Users]
+      operationId: getMyLimits
+      summary: Effective tier limits (daily deposit/withdrawal caps).
+      x-rate-limit: { policy: standard, limit: 60, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/TierLimitEnvelope' } } }, description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /users/me/sessions:
+    get:
+      tags: [Users]
+      operationId: listSessions
+      summary: List active sessions.
+      x-rate-limit: { policy: standard, limit: 60, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/SessionListEnvelope' } } }, description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /users/me/sessions/{sessionId}:
+    delete:
+      tags: [Users]
+      operationId: revokeSession
+      summary: Revoke a specific session.
+      parameters: [{ $ref: '#/components/parameters/SessionId' }]
+      x-rate-limit: { policy: standard, limit: 30, window: 1m }
+      responses:
+        '204': { description: Revoked. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ----------------------------------------------------------------- KYC -----
+  /kyc:
+    get:
+      tags: [KYC]
+      operationId: getKyc
+      summary: Current KYC profile + status.
+      x-rate-limit: { policy: standard, limit: 60, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/KycProfileEnvelope' } } }, description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [KYC]
+      operationId: submitKyc
+      summary: Submit/upgrade KYC profile (PII). Moves status to PENDING.
+      x-rate-limit: { policy: sensitive, limit: 5, window: 10m }
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/KycSubmitRequest' } }
+      responses:
+        '202': { content: { application/json: { schema: { $ref: '#/components/schemas/KycProfileEnvelope' } } }, description: Submitted for review. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: KYC already approved or in review.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+          x-error-codes: [KYC_ALREADY_APPROVED, KYC_IN_REVIEW]
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /kyc/documents:
+    get:
+      tags: [KYC]
+      operationId: listKycDocuments
+      summary: List submitted KYC documents.
+      x-rate-limit: { policy: standard, limit: 30, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/KycDocumentListEnvelope' } } }, description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [KYC]
+      operationId: createKycDocument
+      summary: Register a document and get a presigned upload URL.
+      x-rate-limit: { policy: sensitive, limit: 10, window: 10m }
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/KycDocumentRequest' } }
+      responses:
+        '201': { content: { application/json: { schema: { $ref: '#/components/schemas/KycDocumentUploadEnvelope' } } }, description: Presigned URL returned. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  # ------------------------------------------------------------- Wallets -----
+  /wallets:
+    get:
+      tags: [Wallets]
+      operationId: listWallets
+      summary: All balances (available + locked) per asset.
+      x-rate-limit: { policy: standard, limit: 120, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/WalletListEnvelope' } } }, description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /wallets/{asset}:
+    get:
+      tags: [Wallets]
+      operationId: getWallet
+      summary: Balance for a single asset.
+      parameters: [{ $ref: '#/components/parameters/AssetSymbol' }]
+      x-rate-limit: { policy: standard, limit: 120, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/WalletEnvelope' } } }, description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /wallets/{asset}/ledger:
+    get:
+      tags: [Wallets]
+      operationId: getWalletLedger
+      summary: Ledger statement for an asset (every entry that produced the balance).
+      parameters:
+        - { $ref: '#/components/parameters/AssetSymbol' }
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+      x-rate-limit: { policy: standard, limit: 60, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/LedgerEntryPageEnvelope' } } }, description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /wallets/addresses:
+    get:
+      tags: [Wallets]
+      operationId: listDepositAddresses
+      summary: List the user's deposit addresses.
+      parameters: [{ $ref: '#/components/parameters/ChainQuery' }]
+      x-rate-limit: { policy: standard, limit: 60, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/DepositAddressListEnvelope' } } }, description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Wallets]
+      operationId: createDepositAddress
+      summary: Get (or lazily derive) the user's deposit address for a chain.
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      x-idempotent: required
+      x-rate-limit: { policy: standard, limit: 10, window: 1m }
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/CreateDepositAddressRequest' } }
+      responses:
+        '200':
+          description: Existing active address (idempotent replay or already derived).
+          content: { application/json: { schema: { $ref: '#/components/schemas/DepositAddressEnvelope' } } }
+        '201':
+          description: Newly derived address.
+          content: { application/json: { schema: { $ref: '#/components/schemas/DepositAddressEnvelope' } } }
+        '400':
+          description: Missing/invalid Idempotency-Key.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+          x-error-codes: [BAD_REQUEST]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/IdempotencyInProgress' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  # ------------------------------------------------------------ Deposits -----
+  /deposits:
+    get:
+      tags: [Deposits]
+      operationId: listDeposits
+      summary: List crypto deposits (detected → credited).
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/ChainQuery' }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/DepositStatus' }
+      x-rate-limit: { policy: standard, limit: 60, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/DepositPageEnvelope' } } }, description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /deposits/{depositId}:
+    get:
+      tags: [Deposits]
+      operationId: getDeposit
+      summary: Single deposit detail.
+      parameters: [{ $ref: '#/components/parameters/DepositId' }]
+      x-rate-limit: { policy: standard, limit: 120, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/DepositEnvelope' } } }, description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # --------------------------------------------------------- Withdrawals -----
+  /withdrawals:
+    get:
+      tags: [Withdrawals]
+      operationId: listWithdrawals
+      summary: List crypto withdrawals.
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/WithdrawalStatus' }
+      x-rate-limit: { policy: standard, limit: 60, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/WithdrawalPageEnvelope' } } }, description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Withdrawals]
+      operationId: createWithdrawal
+      summary: Request a crypto withdrawal (to an allowlisted address). Funds are held.
+      description: |
+        Requires KYC-approved, step-up proof, and a whitelisted (cooling-off-passed)
+        destination. Places a `USER_AVAILABLE → USER_LOCKED` hold and enters the
+        withdrawal state machine at `REQUESTED`/`PENDING_APPROVAL`.
+      x-step-up: true
+      x-idempotent: required
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/CreateWithdrawalRequest' } }
+      responses:
+        '202':
+          description: Accepted; withdrawal pending risk/approval.
+          content: { application/json: { schema: { $ref: '#/components/schemas/WithdrawalEnvelope' } } }
+        '400':
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+          description: Missing Idempotency-Key.
+          x-error-codes: [BAD_REQUEST]
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Step-up missing, KYC not approved, or address not whitelisted.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+          x-error-codes: [STEP_UP_REQUIRED, KYC_REQUIRED, ADDRESS_NOT_WHITELISTED, ADDRESS_IN_COOLDOWN, WITHDRAWALS_DISABLED]
+        '409': { $ref: '#/components/responses/IdempotencyInProgress' }
+        '422':
+          description: Validation, limit, or balance failure.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+          x-error-codes: [VALIDATION_ERROR, INSUFFICIENT_BALANCE, LIMIT_EXCEEDED, AMOUNT_BELOW_MINIMUM]
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /withdrawals/{withdrawalId}:
+    get:
+      tags: [Withdrawals]
+      operationId: getWithdrawal
+      parameters: [{ $ref: '#/components/parameters/WithdrawalId' }]
+      summary: Single withdrawal detail.
+      x-rate-limit: { policy: standard, limit: 120, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/WithdrawalEnvelope' } } }, description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /withdrawals/{withdrawalId}/cancel:
+    post:
+      tags: [Withdrawals]
+      operationId: cancelWithdrawal
+      summary: Cancel a withdrawal before it is broadcast (releases the hold).
+      parameters: [{ $ref: '#/components/parameters/WithdrawalId' }]
+      x-rate-limit: { policy: sensitive, limit: 10, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/WithdrawalEnvelope' } } }, description: Cancelled. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Too late to cancel (already broadcast/completed).
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+          x-error-codes: [WITHDRAWAL_NOT_CANCELLABLE]
+
+  /withdrawal-addresses:
+    get:
+      tags: [Withdrawals]
+      operationId: listWithdrawalAddresses
+      summary: List allowlisted withdrawal addresses.
+      x-rate-limit: { policy: standard, limit: 60, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/WithdrawalAddressListEnvelope' } } }, description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Withdrawals]
+      operationId: addWithdrawalAddress
+      summary: Add an allowlisted address (enters a cooling-off period before usable).
+      x-step-up: true
+      x-idempotent: required
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/AddWithdrawalAddressRequest' } }
+      responses:
+        '201': { content: { application/json: { schema: { $ref: '#/components/schemas/WithdrawalAddressEnvelope' } } }, description: Added (in cooldown). }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+        '409':
+          description: Address already allowlisted.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+          x-error-codes: [ADDRESS_ALREADY_LISTED]
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /withdrawal-addresses/{addressId}:
+    delete:
+      tags: [Withdrawals]
+      operationId: removeWithdrawalAddress
+      summary: Remove an allowlisted address (soft delete).
+      parameters: [{ $ref: '#/components/parameters/AddressId' }]
+      x-step-up: true
+      x-rate-limit: { policy: sensitive, limit: 10, window: 1m }
+      responses:
+        '204': { description: Removed. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/StepUpRequired' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # --------------------------------------------------------- INR Ledger -----
+  /inr/deposits:
+    post:
+      tags: [INR Ledger]
+      operationId: createInrDeposit
+      summary: Initiate an INR deposit; returns a payment-gateway order to complete.
+      x-idempotent: required
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/CreateInrDepositRequest' } }
+      responses:
+        '201': { content: { application/json: { schema: { $ref: '#/components/schemas/InrDepositIntentEnvelope' } } }, description: Gateway order created. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+          description: KYC required or INR rails disabled.
+          x-error-codes: [KYC_REQUIRED, INR_DISABLED]
+        '409': { $ref: '#/components/responses/IdempotencyInProgress' }
+        '422':
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+          description: Limit/validation failure.
+          x-error-codes: [VALIDATION_ERROR, LIMIT_EXCEEDED, AMOUNT_BELOW_MINIMUM]
+
+  /inr/withdrawals:
+    post:
+      tags: [INR Ledger]
+      operationId: createInrWithdrawal
+      summary: Initiate an INR payout to a verified bank account.
+      x-step-up: true
+      x-idempotent: required
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/CreateInrWithdrawalRequest' } }
+      responses:
+        '202': { content: { application/json: { schema: { $ref: '#/components/schemas/InrTransactionEnvelope' } } }, description: Payout queued. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+          description: Step-up / KYC / bank verification.
+          x-error-codes: [STEP_UP_REQUIRED, KYC_REQUIRED, BANK_NOT_VERIFIED]
+        '409': { $ref: '#/components/responses/IdempotencyInProgress' }
+        '422':
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+          description: Balance/limit failure.
+          x-error-codes: [INSUFFICIENT_BALANCE, LIMIT_EXCEEDED]
+
+  /inr/transactions:
+    get:
+      tags: [INR Ledger]
+      operationId: listInrTransactions
+      summary: List INR deposits/withdrawals.
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+        - name: type
+          in: query
+          schema: { $ref: '#/components/schemas/InrTxnType' }
+      x-rate-limit: { policy: standard, limit: 60, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/InrTransactionPageEnvelope' } } }, description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /inr/bank-accounts:
+    get:
+      tags: [INR Ledger]
+      operationId: listBankAccounts
+      summary: List the user's bank accounts.
+      x-rate-limit: { policy: standard, limit: 60, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/BankAccountListEnvelope' } } }, description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [INR Ledger]
+      operationId: addBankAccount
+      summary: Add a bank account (triggers penny-drop verification).
+      x-step-up: true
+      x-rate-limit: { policy: sensitive, limit: 5, window: 10m }
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/AddBankAccountRequest' } }
+      responses:
+        '201': { content: { application/json: { schema: { $ref: '#/components/schemas/BankAccountEnvelope' } } }, description: Added (pending verification). }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /inr/quotes:
+    post:
+      tags: [INR Ledger]
+      operationId: createQuote
+      summary: Get a short-lived signed price quote for INR↔USDT.
+      x-rate-limit: { policy: trading, limit: 60, window: 1m }
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/CreateQuoteRequest' } }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/QuoteEnvelope' } } }, description: Quote (expires shortly). }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /inr/conversions:
+    post:
+      tags: [INR Ledger]
+      operationId: createConversion
+      summary: Execute a conversion against a valid quote.
+      x-idempotent: required
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/CreateConversionRequest' } }
+      responses:
+        '201': { content: { application/json: { schema: { $ref: '#/components/schemas/ConversionEnvelope' } } }, description: Converted. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/IdempotencyInProgress' }
+        '422':
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+          description: Quote/balance failure.
+          x-error-codes: [QUOTE_EXPIRED, QUOTE_NOT_FOUND, INSUFFICIENT_BALANCE]
+
+  # ------------------------------------------------------- Market Data -------
+  /markets:
+    get:
+      tags: [Market Data]
+      operationId: listMarkets
+      summary: List tradable markets and their rules.
+      security: []
+      x-rate-limit: { policy: public, limit: 120, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/MarketListEnvelope' } } }, description: OK }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /markets/{symbol}/orderbook:
+    get:
+      tags: [Market Data]
+      operationId: getOrderBook
+      summary: Aggregated order-book depth (from the matching engine).
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/MarketSymbol' }
+        - name: depth
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      x-rate-limit: { policy: public, limit: 240, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/OrderBookEnvelope' } } }, description: OK }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /markets/{symbol}/ticker:
+    get:
+      tags: [Market Data]
+      operationId: getTicker
+      summary: 24h ticker for a market.
+      security: []
+      parameters: [{ $ref: '#/components/parameters/MarketSymbol' }]
+      x-rate-limit: { policy: public, limit: 240, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/TickerEnvelope' } } }, description: OK }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /markets/{symbol}/candles:
+    get:
+      tags: [Market Data]
+      operationId: getCandles
+      summary: OHLCV candles.
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/MarketSymbol' }
+        - name: interval
+          in: query
+          required: true
+          schema: { $ref: '#/components/schemas/CandleInterval' }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 200 }
+      x-rate-limit: { policy: public, limit: 120, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/CandleListEnvelope' } } }, description: OK }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /markets/{symbol}/trades:
+    get:
+      tags: [Trades]
+      operationId: getPublicTrades
+      summary: Public recent trades (the tape).
+      security: []
+      parameters:
+        - { $ref: '#/components/parameters/MarketSymbol' }
+        - { $ref: '#/components/parameters/Limit' }
+      x-rate-limit: { policy: public, limit: 120, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/PublicTradeListEnvelope' } } }, description: OK }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # -------------------------------------------------------------- Orders -----
+  /orders:
+    get:
+      tags: [Orders]
+      operationId: listOrders
+      summary: List the user's orders.
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+        - name: market
+          in: query
+          schema: { type: string, example: BTC-USDT }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/OrderStatus' }
+      x-rate-limit: { policy: trading, limit: 120, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/OrderPageEnvelope' } } }, description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Orders]
+      operationId: placeOrder
+      summary: Place a spot order (locks funds, enters the matching engine).
+      description: |
+        LIMIT requires `price`+`quantity`. MARKET BUY requires `quoteBudget`;
+        MARKET SELL requires `quantity`. STOP_LIMIT requires `stopPrice`+`price`+`quantity`.
+        `clientOrderId` is an additional idempotency key per user.
+      x-idempotent: required
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/PlaceOrderRequest' } }
+      responses:
+        '201': { content: { application/json: { schema: { $ref: '#/components/schemas/OrderEnvelope' } } }, description: Accepted/placed. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: Duplicate clientOrderId or idempotency in progress.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+          x-error-codes: [DUPLICATE_CLIENT_ORDER_ID, IDEMPOTENCY_IN_PROGRESS]
+        '422':
+          description: Validation, market rules, or balance failure.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+          x-error-codes: [VALIDATION_ERROR, INSUFFICIENT_BALANCE, MARKET_HALTED, TICK_SIZE_VIOLATION, STEP_SIZE_VIOLATION, MIN_NOTIONAL, POST_ONLY_WOULD_CROSS]
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /orders/{orderId}:
+    get:
+      tags: [Orders]
+      operationId: getOrder
+      parameters: [{ $ref: '#/components/parameters/OrderId' }]
+      summary: Order detail.
+      x-rate-limit: { policy: trading, limit: 240, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/OrderEnvelope' } } }, description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Orders]
+      operationId: cancelOrder
+      parameters: [{ $ref: '#/components/parameters/OrderId' }]
+      summary: Cancel an open order (releases remaining lock).
+      x-rate-limit: { policy: trading, limit: 120, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/OrderEnvelope' } } }, description: Cancelled. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Order is no longer cancellable.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+          x-error-codes: [ORDER_NOT_CANCELLABLE]
+
+  # -------------------------------------------------------------- Trades -----
+  /trades:
+    get:
+      tags: [Trades]
+      operationId: listMyTrades
+      summary: The user's trade executions (maker or taker).
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+        - name: market
+          in: query
+          schema: { type: string, example: BTC-USDT }
+      x-rate-limit: { policy: trading, limit: 120, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/TradePageEnvelope' } } }, description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /trades/{tradeId}:
+    get:
+      tags: [Trades]
+      operationId: getTrade
+      parameters: [{ $ref: '#/components/parameters/TradeId' }]
+      summary: Single trade detail (must involve the caller).
+      x-rate-limit: { policy: trading, limit: 240, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/TradeEnvelope' } } }, description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ============================================================== ADMIN ======
+  /admin/auth/login:
+    post:
+      servers: [{ url: https://admin-api.exchange.local/admin/v1 }]
+      tags: [Admin]
+      operationId: adminLogin
+      summary: Admin login (password + mandatory TOTP).
+      security: []
+      x-rate-limit: { policy: auth, limit: 5, window: 5m }
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/AdminLoginRequest' } }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/TokenPairEnvelope' } } }, description: Authenticated. }
+        '401':
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+          description: Invalid credentials/TOTP.
+          x-error-codes: [INVALID_CREDENTIALS, INVALID_TOTP]
+
+  /admin/users:
+    get:
+      servers: [{ url: https://admin-api.exchange.local/admin/v1 }]
+      tags: [Admin]
+      operationId: adminListUsers
+      summary: Search/list users.
+      security: [{ AdminBearer: [] }]
+      x-required-permission: user.view
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+        - name: q
+          in: query
+          schema: { type: string }
+      x-rate-limit: { policy: admin, limit: 120, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/AdminUserPageEnvelope' } } }, description: OK }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/users/{userId}/freeze:
+    post:
+      servers: [{ url: https://admin-api.exchange.local/admin/v1 }]
+      tags: [Admin]
+      operationId: adminFreezeUser
+      summary: Freeze or unfreeze a user (audited).
+      security: [{ AdminBearer: [] }]
+      x-required-permission: user.freeze
+      parameters: [{ $ref: '#/components/parameters/UserId' }]
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/FreezeUserRequest' } }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/AdminUserEnvelope' } } }, description: Updated. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/kyc:
+    get:
+      servers: [{ url: https://admin-api.exchange.local/admin/v1 }]
+      tags: [Admin]
+      operationId: adminKycQueue
+      summary: KYC review queue.
+      security: [{ AdminBearer: [] }]
+      x-required-permission: kyc.view
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+      x-rate-limit: { policy: admin, limit: 120, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/AdminKycPageEnvelope' } } }, description: OK }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/kyc/{userId}/decision:
+    post:
+      servers: [{ url: https://admin-api.exchange.local/admin/v1 }]
+      tags: [Admin]
+      operationId: adminKycDecision
+      summary: Approve or reject a user's KYC (audited).
+      security: [{ AdminBearer: [] }]
+      x-required-permission: kyc.review
+      parameters: [{ $ref: '#/components/parameters/UserId' }]
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/KycDecisionRequest' } }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/KycProfileEnvelope' } } }, description: Decided. }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /admin/withdrawals:
+    get:
+      servers: [{ url: https://admin-api.exchange.local/admin/v1 }]
+      tags: [Admin]
+      operationId: adminWithdrawalQueue
+      summary: Withdrawal approval queue.
+      security: [{ AdminBearer: [] }]
+      x-required-permission: withdrawal.view
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/WithdrawalStatus' }
+      x-rate-limit: { policy: admin, limit: 120, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/WithdrawalPageEnvelope' } } }, description: OK }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/withdrawals/{withdrawalId}/decision:
+    post:
+      servers: [{ url: https://admin-api.exchange.local/admin/v1 }]
+      tags: [Admin]
+      operationId: adminWithdrawalDecision
+      summary: Approve/reject a withdrawal (dual control; second distinct approver finalizes).
+      description: |
+        Enforces dual control — `approved_by` must differ from `approved_by_2`.
+        First approval moves `PENDING_APPROVAL → APPROVED` awaiting a second approver;
+        the second triggers signing. Every decision writes admin + audit logs.
+      security: [{ AdminBearer: [] }]
+      x-required-permission: withdrawal.approve
+      x-idempotent: required
+      parameters:
+        - { $ref: '#/components/parameters/WithdrawalId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/WithdrawalDecisionRequest' } }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/WithdrawalEnvelope' } } }, description: Decision recorded. }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Same approver twice, or no longer in an approvable state.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+          x-error-codes: [DUAL_CONTROL_SAME_APPROVER, WITHDRAWAL_NOT_APPROVABLE, IDEMPOTENCY_IN_PROGRESS]
+
+  /admin/reconciliations:
+    get:
+      servers: [{ url: https://admin-api.exchange.local/admin/v1 }]
+      tags: [Admin]
+      operationId: adminListRecon
+      summary: List reconciliation runs.
+      security: [{ AdminBearer: [] }]
+      x-required-permission: recon.run
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+      x-rate-limit: { policy: admin, limit: 60, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/ReconRunPageEnvelope' } } }, description: OK }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      servers: [{ url: https://admin-api.exchange.local/admin/v1 }]
+      tags: [Admin]
+      operationId: adminTriggerRecon
+      summary: Trigger a reconciliation run (ledger/chain/gateway).
+      security: [{ AdminBearer: [] }]
+      x-required-permission: recon.run
+      x-idempotent: required
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/TriggerReconRequest' } }
+      responses:
+        '202': { content: { application/json: { schema: { $ref: '#/components/schemas/ReconRunEnvelope' } } }, description: Started. }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/audit-logs:
+    get:
+      servers: [{ url: https://admin-api.exchange.local/admin/v1 }]
+      tags: [Admin]
+      operationId: adminAuditLogs
+      summary: Query the audit trail.
+      security: [{ AdminBearer: [] }]
+      x-required-permission: audit.view
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+        - name: entityType
+          in: query
+          schema: { type: string }
+        - name: entityId
+          in: query
+          schema: { type: string }
+      x-rate-limit: { policy: admin, limit: 60, window: 1m }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/AuditLogPageEnvelope' } } }, description: OK }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/markets:
+    post:
+      servers: [{ url: https://admin-api.exchange.local/admin/v1 }]
+      tags: [Admin]
+      operationId: adminCreateMarket
+      summary: List a new market.
+      security: [{ AdminBearer: [] }]
+      x-required-permission: market.manage
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/CreateMarketRequest' } }
+      responses:
+        '201': { content: { application/json: { schema: { $ref: '#/components/schemas/MarketEnvelope' } } }, description: Created. }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: Market already exists.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+          x-error-codes: [MARKET_EXISTS]
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /admin/markets/{symbol}/status:
+    patch:
+      servers: [{ url: https://admin-api.exchange.local/admin/v1 }]
+      tags: [Admin]
+      operationId: adminSetMarketStatus
+      summary: Halt / resume / set post-only on a market.
+      security: [{ AdminBearer: [] }]
+      x-required-permission: market.manage
+      parameters: [{ $ref: '#/components/parameters/MarketSymbol' }]
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/MarketStatusRequest' } }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/MarketEnvelope' } } }, description: Updated. }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/system-flags/{key}:
+    put:
+      servers: [{ url: https://admin-api.exchange.local/admin/v1 }]
+      tags: [Admin]
+      operationId: adminSetSystemFlag
+      summary: Set a kill-switch / feature flag (audited).
+      security: [{ AdminBearer: [] }]
+      x-required-permission: system.flags
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: string, example: withdrawals.enabled }
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/SystemFlagRequest' } }
+      responses:
+        '200': { content: { application/json: { schema: { $ref: '#/components/schemas/SystemFlagEnvelope' } } }, description: Updated. }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+# ============================================================================
+# COMPONENTS
+# ============================================================================
+components:
+  securitySchemes:
+    UserBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: User access JWT (10–15 min TTL).
+    AdminBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Admin access JWT on the admin host; TOTP mandatory at login.
+
+  # ---- reusable parameters ----
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Unique key per logical operation (8–255 chars). Replays return the original response.
+      schema: { type: string, minLength: 8, maxLength: 255 }
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque pagination cursor from a previous `data.nextCursor`.
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      description: Page size.
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    AssetSymbol:
+      name: asset
+      in: path
+      required: true
+      schema: { type: string, example: USDT }
+    ChainQuery:
+      name: chain
+      in: query
+      schema: { type: string, example: TRON }
+    MarketSymbol:
+      name: symbol
+      in: path
+      required: true
+      schema: { type: string, pattern: '^[A-Z0-9]+-[A-Z0-9]+$', example: BTC-USDT }
+    SessionId: { name: sessionId, in: path, required: true, schema: { type: string, format: uuid } }
+    DepositId: { name: depositId, in: path, required: true, schema: { type: string, format: uuid } }
+    WithdrawalId: { name: withdrawalId, in: path, required: true, schema: { type: string, format: uuid } }
+    AddressId: { name: addressId, in: path, required: true, schema: { type: string, format: uuid } }
+    OrderId: { name: orderId, in: path, required: true, schema: { type: string, format: uuid } }
+    TradeId: { name: tradeId, in: path, required: true, schema: { type: string, format: uuid } }
+    UserId: { name: userId, in: path, required: true, schema: { type: string, format: uuid } }
+
+  # ---- reusable responses ----
+  responses:
+    Unauthorized:
+      description: Missing/invalid/expired token.
+      headers:
+        WWW-Authenticate: { schema: { type: string } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' }, example: { success: false, error: { code: UNAUTHORIZED, message: Authentication required } } } }
+    Forbidden:
+      description: Authenticated but not permitted (RBAC / scope).
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' }, example: { success: false, error: { code: FORBIDDEN, message: Forbidden } } } }
+    StepUpRequired:
+      description: A valid `X-Step-Up-Token` is required.
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' }, example: { success: false, error: { code: STEP_UP_REQUIRED, message: Step-up authentication required } } } }
+    NotFound:
+      description: Resource not found (or not visible to caller).
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' }, example: { success: false, error: { code: NOT_FOUND, message: Resource not found } } } }
+    ValidationError:
+      description: Request failed schema validation (422). `details` lists field errors.
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' }, example: { success: false, error: { code: VALIDATION_ERROR, message: Validation failed, details: [{ path: amount, message: must be > 0 }] } } } }
+    RateLimited:
+      description: Too many requests.
+      headers:
+        Retry-After: { schema: { type: integer }, description: Seconds until retry. }
+        X-RateLimit-Remaining: { schema: { type: integer } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' }, example: { success: false, error: { code: RATE_LIMITED, message: Too many requests } } } }
+    IdempotencyInProgress:
+      description: A request with the same Idempotency-Key is still being processed.
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' }, example: { success: false, error: { code: IDEMPOTENCY_IN_PROGRESS, message: A request with this Idempotency-Key is still being processed } } } }
+
+  schemas:
+    # ======================= primitives & envelope =======================
+    Decimal:
+      type: string
+      pattern: '^-?\d+(\.\d+)?$'
+      description: Arbitrary-precision decimal as a string (never a float).
+      example: '100.500000'
+    Uuid: { type: string, format: uuid }
+    Timestamp: { type: string, format: date-time }
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { $ref: '#/components/schemas/ErrorCode' }
+        message: { type: string }
+        details: { description: Optional structured context (e.g. field errors). }
+    ErrorResponse:
+      type: object
+      required: [success, error]
+      properties:
+        success: { const: false }
+        error: { $ref: '#/components/schemas/Error' }
+    PageMeta:
+      type: object
+      properties:
+        nextCursor: { type: [string, 'null'] }
+        count: { type: integer }
+    ErrorCode:
+      type: string
+      description: Stable machine-readable error code (clients switch on this).
+      enum:
+        - BAD_REQUEST
+        - VALIDATION_ERROR
+        - UNAUTHORIZED
+        - FORBIDDEN
+        - NOT_FOUND
+        - CONFLICT
+        - RATE_LIMITED
+        - SERVICE_UNAVAILABLE
+        - INTERNAL_ERROR
+        - IDEMPOTENCY_IN_PROGRESS
+        - STEP_UP_REQUIRED
+        - INVALID_CREDENTIALS
+        - INVALID_TOTP
+        - CHALLENGE_EXPIRED
+        - INVALID_REFRESH_TOKEN
+        - REFRESH_REUSE_DETECTED
+        - ACCOUNT_LOCKED
+        - ACCOUNT_FROZEN
+        - EMAIL_NOT_VERIFIED
+        - EMAIL_TAKEN
+        - PHONE_TAKEN
+        - TOTP_ALREADY_ENABLED
+        - KYC_REQUIRED
+        - KYC_IN_REVIEW
+        - KYC_ALREADY_APPROVED
+        - INSUFFICIENT_BALANCE
+        - LIMIT_EXCEEDED
+        - AMOUNT_BELOW_MINIMUM
+        - WITHDRAWALS_DISABLED
+        - INR_DISABLED
+        - ADDRESS_NOT_WHITELISTED
+        - ADDRESS_IN_COOLDOWN
+        - ADDRESS_ALREADY_LISTED
+        - WITHDRAWAL_NOT_CANCELLABLE
+        - WITHDRAWAL_NOT_APPROVABLE
+        - DUAL_CONTROL_SAME_APPROVER
+        - BANK_NOT_VERIFIED
+        - QUOTE_EXPIRED
+        - QUOTE_NOT_FOUND
+        - DUPLICATE_CLIENT_ORDER_ID
+        - ORDER_NOT_CANCELLABLE
+        - MARKET_HALTED
+        - MARKET_EXISTS
+        - TICK_SIZE_VIOLATION
+        - STEP_SIZE_VIOLATION
+        - MIN_NOTIONAL
+        - POST_ONLY_WOULD_CROSS
+
+    # ======================= enums (mirror DB) =======================
+    DepositStatus: { type: string, enum: [DETECTED, CONFIRMING, CONFIRMED, CREDITED, ORPHANED] }
+    WithdrawalStatus: { type: string, enum: [REQUESTED, RISK_CHECK, PENDING_APPROVAL, APPROVED, QUEUED, SIGNING, BROADCAST, CONFIRMING, COMPLETED, REJECTED, FAILED, CANCELLED] }
+    InrTxnType: { type: string, enum: [DEPOSIT, WITHDRAWAL] }
+    InrTxnStatus: { type: string, enum: [INITIATED, PENDING, SUCCESS, FAILED, REVERSED] }
+    KycStatus: { type: string, enum: [NOT_STARTED, PENDING, APPROVED, REJECTED] }
+    KycDocType: { type: string, enum: [PAN, AADHAAR, PASSPORT, SELFIE, ADDRESS_PROOF] }
+    OrderSide: { type: string, enum: [BUY, SELL] }
+    OrderType: { type: string, enum: [LIMIT, MARKET, STOP_LIMIT] }
+    TimeInForce: { type: string, enum: [GTC, IOC, FOK, POST_ONLY] }
+    OrderStatus: { type: string, enum: [PENDING, OPEN, PARTIALLY_FILLED, FILLED, CANCELLED, REJECTED, EXPIRED] }
+    MarketStatus: { type: string, enum: [ACTIVE, HALTED, POST_ONLY] }
+    CandleInterval: { type: string, enum: [M1, M5, M15, H1, H4, D1, W1] }
+    ConversionSide: { type: string, enum: [INR_TO_USDT, USDT_TO_INR] }
+
+    # ======================= DTOs: Auth/User =======================
+    RegisterRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        phone: { type: string, pattern: '^\+?[1-9]\d{7,14}$' }
+        password:
+          type: string
+          minLength: 10
+          maxLength: 128
+          description: Must contain lower, upper, and a digit.
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 1 }
+    TotpLoginRequest:
+      type: object
+      additionalProperties: false
+      required: [challengeId, code]
+      properties:
+        challengeId: { type: string, format: uuid }
+        code: { type: string, pattern: '^[0-9]{6}$' }
+    RefreshRequest:
+      type: object
+      additionalProperties: false
+      required: [refreshToken]
+      properties:
+        refreshToken: { type: string, minLength: 20 }
+    StepUpRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        password: { type: string }
+        totp: { type: string, pattern: '^[0-9]{6}$' }
+      description: Provide password and/or TOTP per the user's 2FA state.
+    TotpActivateRequest:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code: { type: string, pattern: '^[0-9]{6}$' }
+    UpdateUserRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        phone: { type: string, pattern: '^\+?[1-9]\d{7,14}$' }
+    TokenPair:
+      type: object
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        tokenType: { const: Bearer }
+        expiresIn: { type: integer, description: Access token TTL (seconds). }
+    TotpChallenge:
+      type: object
+      properties:
+        challengeId: { type: string, format: uuid }
+        totpRequired: { const: true }
+    StepUpToken:
+      type: object
+      properties:
+        stepUpToken: { type: string }
+        expiresIn: { type: integer }
+    TotpEnroll:
+      type: object
+      properties:
+        secret: { type: string }
+        otpauthUri: { type: string }
+    RecoveryCodes:
+      type: object
+      properties:
+        recoveryCodes: { type: array, items: { type: string }, description: Shown once. }
+    User:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        email: { type: string, format: email }
+        phone: { type: [string, 'null'] }
+        status: { type: string, enum: [ACTIVE, FROZEN, LOCKED, CLOSED] }
+        kycStatus: { $ref: '#/components/schemas/KycStatus' }
+        kycTier: { type: integer }
+        totpEnabled: { type: boolean }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+    TierLimit:
+      type: object
+      properties:
+        kycTier: { type: integer }
+        inrDailyDeposit: { $ref: '#/components/schemas/Decimal' }
+        inrDailyWithdrawal: { $ref: '#/components/schemas/Decimal' }
+        usdtDailyWithdrawal: { $ref: '#/components/schemas/Decimal' }
+    Session:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        ip: { type: [string, 'null'] }
+        device: { type: [object, 'null'] }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        current: { type: boolean }
+
+    # ======================= DTOs: KYC =======================
+    KycSubmitRequest:
+      type: object
+      additionalProperties: false
+      required: [fullName, dob, pan]
+      properties:
+        fullName: { type: string, minLength: 2, maxLength: 140 }
+        dob: { type: string, format: date }
+        pan: { type: string, pattern: '^[A-Z]{5}[0-9]{4}[A-Z]$', description: Indian PAN. }
+        aadhaarRef: { type: string, description: 'Tokenized Aadhaar reference, never raw.' }
+        address:
+          type: object
+          properties:
+            line1: { type: string }
+            line2: { type: string }
+            city: { type: string }
+            state: { type: string }
+            pincode: { type: string, pattern: '^[1-9][0-9]{5}$' }
+    KycDocumentRequest:
+      type: object
+      additionalProperties: false
+      required: [docType, sha256, contentType]
+      properties:
+        docType: { $ref: '#/components/schemas/KycDocType' }
+        sha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+        contentType: { type: string, enum: [image/jpeg, image/png, application/pdf] }
+    KycProfile:
+      type: object
+      properties:
+        status: { $ref: '#/components/schemas/KycStatus' }
+        tier: { type: integer }
+        fullName: { type: [string, 'null'] }
+        rejectedReason: { type: [string, 'null'] }
+        reviewedAt: { type: [string, 'null'], format: date-time }
+    KycDocument:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        docType: { $ref: '#/components/schemas/KycDocType' }
+        status: { $ref: '#/components/schemas/KycStatus' }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+    KycDocumentUpload:
+      type: object
+      properties:
+        documentId: { $ref: '#/components/schemas/Uuid' }
+        uploadUrl: { type: string, format: uri }
+        expiresIn: { type: integer }
+
+    # ======================= DTOs: Wallets / Addresses =======================
+    Wallet:
+      type: object
+      properties:
+        asset: { type: string }
+        available: { $ref: '#/components/schemas/Decimal' }
+        locked: { $ref: '#/components/schemas/Decimal' }
+        total: { $ref: '#/components/schemas/Decimal' }
+    LedgerEntry:
+      type: object
+      properties:
+        id: { type: string, description: int64 as string }
+        txnId: { $ref: '#/components/schemas/Uuid' }
+        direction: { type: string, enum: [DEBIT, CREDIT] }
+        amount: { $ref: '#/components/schemas/Decimal' }
+        asset: { type: string }
+        kind: { type: string, description: Originating ledger_transaction.kind }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+    DepositAddress:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        chain: { type: string }
+        address: { type: string }
+        isActive: { type: boolean }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+    CreateDepositAddressRequest:
+      type: object
+      additionalProperties: false
+      required: [chain]
+      properties:
+        chain: { type: string, example: TRON }
+
+    # ======================= DTOs: Deposits =======================
+    Deposit:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        chain: { type: string }
+        asset: { type: string }
+        amount: { $ref: '#/components/schemas/Decimal' }
+        txHash: { type: string }
+        confirmations: { type: integer }
+        requiredConfirmations: { type: integer }
+        status: { $ref: '#/components/schemas/DepositStatus' }
+        detectedAt: { $ref: '#/components/schemas/Timestamp' }
+        creditedAt: { type: [string, 'null'], format: date-time }
+
+    # ======================= DTOs: Withdrawals =======================
+    CreateWithdrawalRequest:
+      type: object
+      additionalProperties: false
+      required: [asset, chain, addressId, amount]
+      properties:
+        asset: { type: string, example: USDT }
+        chain: { type: string, example: TRON }
+        addressId: { $ref: '#/components/schemas/Uuid' }
+        amount: { allOf: [{ $ref: '#/components/schemas/Decimal' }], description: Gross amount; must be > 0 and within limits/balance. }
+    Withdrawal:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        asset: { type: string }
+        chain: { type: string }
+        toAddress: { type: string }
+        amount: { $ref: '#/components/schemas/Decimal' }
+        fee: { $ref: '#/components/schemas/Decimal' }
+        tdsAmount: { $ref: '#/components/schemas/Decimal' }
+        netAmount: { $ref: '#/components/schemas/Decimal' }
+        status: { $ref: '#/components/schemas/WithdrawalStatus' }
+        txHash: { type: [string, 'null'] }
+        requestedAt: { $ref: '#/components/schemas/Timestamp' }
+        completedAt: { type: [string, 'null'], format: date-time }
+    AddWithdrawalAddressRequest:
+      type: object
+      additionalProperties: false
+      required: [chain, address]
+      properties:
+        chain: { type: string }
+        address: { type: string, minLength: 16, maxLength: 128 }
+        label: { type: string, maxLength: 64 }
+    WithdrawalAddress:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        chain: { type: string }
+        address: { type: string }
+        label: { type: [string, 'null'] }
+        whitelistedAt: { type: [string, 'null'], format: date-time }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+
+    # ======================= DTOs: INR =======================
+    CreateInrDepositRequest:
+      type: object
+      additionalProperties: false
+      required: [amount]
+      properties:
+        amount: { allOf: [{ $ref: '#/components/schemas/Decimal' }], description: 'INR, scale 2, greater than 0.' }
+    InrDepositIntent:
+      type: object
+      properties:
+        inrTransactionId: { $ref: '#/components/schemas/Uuid' }
+        provider: { type: string }
+        providerOrderId: { type: string }
+        amount: { $ref: '#/components/schemas/Decimal' }
+        status: { $ref: '#/components/schemas/InrTxnStatus' }
+    CreateInrWithdrawalRequest:
+      type: object
+      additionalProperties: false
+      required: [amount, bankAccountId]
+      properties:
+        amount: { $ref: '#/components/schemas/Decimal' }
+        bankAccountId: { $ref: '#/components/schemas/Uuid' }
+    InrTransaction:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        type: { $ref: '#/components/schemas/InrTxnType' }
+        amount: { $ref: '#/components/schemas/Decimal' }
+        fee: { $ref: '#/components/schemas/Decimal' }
+        status: { $ref: '#/components/schemas/InrTxnStatus' }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+    AddBankAccountRequest:
+      type: object
+      additionalProperties: false
+      required: [accountNumber, ifsc, holderName]
+      properties:
+        accountNumber: { type: string, pattern: '^[0-9]{9,18}$' }
+        ifsc: { type: string, pattern: '^[A-Z]{4}0[A-Z0-9]{6}$' }
+        holderName: { type: string, minLength: 2, maxLength: 140 }
+    BankAccount:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        ifsc: { type: string }
+        holderName: { type: string }
+        maskedAccount: { type: string, example: 'XXXXXX1234' }
+        verifiedAt: { type: [string, 'null'], format: date-time }
+    CreateQuoteRequest:
+      type: object
+      additionalProperties: false
+      required: [side, amount]
+      properties:
+        side: { $ref: '#/components/schemas/ConversionSide' }
+        amount: { allOf: [{ $ref: '#/components/schemas/Decimal' }], description: Source-asset amount (INR for INR_TO_USDT). }
+    Quote:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        side: { $ref: '#/components/schemas/ConversionSide' }
+        rate: { $ref: '#/components/schemas/Decimal' }
+        spreadBps: { type: integer }
+        expiresAt: { $ref: '#/components/schemas/Timestamp' }
+    CreateConversionRequest:
+      type: object
+      additionalProperties: false
+      required: [quoteId]
+      properties:
+        quoteId: { $ref: '#/components/schemas/Uuid' }
+    Conversion:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        side: { $ref: '#/components/schemas/ConversionSide' }
+        inrAmount: { $ref: '#/components/schemas/Decimal' }
+        usdtAmount: { $ref: '#/components/schemas/Decimal' }
+        rate: { $ref: '#/components/schemas/Decimal' }
+        feeInr: { $ref: '#/components/schemas/Decimal' }
+        tdsAmount: { $ref: '#/components/schemas/Decimal' }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+
+    # ======================= DTOs: Market data =======================
+    Market:
+      type: object
+      properties:
+        symbol: { type: string }
+        baseAsset: { type: string }
+        quoteAsset: { type: string }
+        status: { $ref: '#/components/schemas/MarketStatus' }
+        tickSize: { $ref: '#/components/schemas/Decimal' }
+        stepSize: { $ref: '#/components/schemas/Decimal' }
+        minNotional: { $ref: '#/components/schemas/Decimal' }
+        makerFeeBps: { type: integer }
+        takerFeeBps: { type: integer }
+    OrderBook:
+      type: object
+      properties:
+        symbol: { type: string }
+        sequence: { type: integer }
+        bids: { type: array, items: { $ref: '#/components/schemas/PriceLevel' } }
+        asks: { type: array, items: { $ref: '#/components/schemas/PriceLevel' } }
+    PriceLevel:
+      type: array
+      description: '[price, quantity]'
+      items: { $ref: '#/components/schemas/Decimal' }
+      minItems: 2
+      maxItems: 2
+    Ticker:
+      type: object
+      properties:
+        symbol: { type: string }
+        lastPrice: { $ref: '#/components/schemas/Decimal' }
+        bestBid: { $ref: '#/components/schemas/Decimal' }
+        bestAsk: { $ref: '#/components/schemas/Decimal' }
+        high24h: { $ref: '#/components/schemas/Decimal' }
+        low24h: { $ref: '#/components/schemas/Decimal' }
+        baseVolume24h: { $ref: '#/components/schemas/Decimal' }
+        quoteVolume24h: { $ref: '#/components/schemas/Decimal' }
+        priceChangePct: { $ref: '#/components/schemas/Decimal' }
+    Candle:
+      type: array
+      description: '[openTime, open, high, low, close, baseVolume]'
+      items: {}
+      minItems: 6
+      maxItems: 6
+    PublicTrade:
+      type: object
+      properties:
+        price: { $ref: '#/components/schemas/Decimal' }
+        quantity: { $ref: '#/components/schemas/Decimal' }
+        makerSide: { $ref: '#/components/schemas/OrderSide' }
+        executedAt: { $ref: '#/components/schemas/Timestamp' }
+
+    # ======================= DTOs: Orders / Trades =======================
+    PlaceOrderRequest:
+      type: object
+      additionalProperties: false
+      required: [market, side, type]
+      properties:
+        market: { type: string, example: BTC-USDT }
+        side: { $ref: '#/components/schemas/OrderSide' }
+        type: { $ref: '#/components/schemas/OrderType' }
+        tif: { $ref: '#/components/schemas/TimeInForce' }
+        price: { $ref: '#/components/schemas/Decimal' }
+        stopPrice: { $ref: '#/components/schemas/Decimal' }
+        quantity: { $ref: '#/components/schemas/Decimal' }
+        quoteBudget: { allOf: [{ $ref: '#/components/schemas/Decimal' }], description: For MARKET BUY — quote amount to spend. }
+        clientOrderId: { type: string, maxLength: 64, description: Per-user idempotency token. }
+      allOf:
+        - description: |
+            Conditional requirements (enforced server-side):
+            LIMIT → price & quantity; MARKET BUY → quoteBudget; MARKET SELL → quantity;
+            STOP_LIMIT → stopPrice & price & quantity. Price/qty must satisfy the
+            market's tickSize/stepSize/minNotional.
+    Order:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        clientOrderId: { type: [string, 'null'] }
+        market: { type: string }
+        side: { $ref: '#/components/schemas/OrderSide' }
+        type: { $ref: '#/components/schemas/OrderType' }
+        tif: { $ref: '#/components/schemas/TimeInForce' }
+        price: { type: [string, 'null'] }
+        stopPrice: { type: [string, 'null'] }
+        quantity: { type: [string, 'null'] }
+        filledQuantity: { $ref: '#/components/schemas/Decimal' }
+        quoteSpent: { $ref: '#/components/schemas/Decimal' }
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        createdAt: { $ref: '#/components/schemas/Timestamp' }
+        closedAt: { type: [string, 'null'], format: date-time }
+    Trade:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        market: { type: string }
+        orderId: { $ref: '#/components/schemas/Uuid' }
+        role: { type: string, enum: [MAKER, TAKER] }
+        side: { $ref: '#/components/schemas/OrderSide' }
+        price: { $ref: '#/components/schemas/Decimal' }
+        quantity: { $ref: '#/components/schemas/Decimal' }
+        quoteAmount: { $ref: '#/components/schemas/Decimal' }
+        fee: { $ref: '#/components/schemas/Decimal' }
+        feeAsset: { type: string }
+        executedAt: { $ref: '#/components/schemas/Timestamp' }
+
+    # ======================= DTOs: Admin =======================
+    AdminLoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password, totp]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+        totp: { type: string, pattern: '^[0-9]{6}$' }
+    FreezeUserRequest:
+      type: object
+      additionalProperties: false
+      required: [frozen, reason]
+      properties:
+        frozen: { type: boolean }
+        reason: { type: string, minLength: 3, maxLength: 500 }
+    KycDecisionRequest:
+      type: object
+      additionalProperties: false
+      required: [decision]
+      properties:
+        decision: { type: string, enum: [APPROVE, REJECT] }
+        tier: { type: integer, minimum: 0, maximum: 5 }
+        reason: { type: string, maxLength: 500, description: Required when REJECT. }
+    WithdrawalDecisionRequest:
+      type: object
+      additionalProperties: false
+      required: [decision]
+      properties:
+        decision: { type: string, enum: [APPROVE, REJECT] }
+        reason: { type: string, maxLength: 500 }
+    TriggerReconRequest:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type: { type: string, enum: [CHAIN, GATEWAY, LEDGER_INVARIANT] }
+        scope: { type: string, description: chain id / provider / asset }
+    ReconRun:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/Uuid' }
+        type: { type: string, enum: [CHAIN, GATEWAY, LEDGER_INVARIANT] }
+        status: { type: string, enum: [RUNNING, BALANCED, DISCREPANCY, FAILED] }
+        diff: { type: [string, 'null'] }
+        startedAt: { $ref: '#/components/schemas/Timestamp' }
+        finishedAt: { type: [string, 'null'], format: date-time }
+    AuditLog:
+      type: object
+      properties:
+        id: { type: string }
+        actorType: { type: string, enum: [USER, ADMIN, SYSTEM] }
+        actorId: { type: [string, 'null'] }
+        action: { type: string }
+        entityType: { type: [string, 'null'] }
+        entityId: { type: [string, 'null'] }
+        occurredAt: { $ref: '#/components/schemas/Timestamp' }
+    CreateMarketRequest:
+      type: object
+      additionalProperties: false
+      required: [symbol, baseAsset, quoteAsset, tickSize, stepSize, minNotional, makerFeeBps, takerFeeBps]
+      properties:
+        symbol: { type: string, pattern: '^[A-Z0-9]+-[A-Z0-9]+$' }
+        baseAsset: { type: string }
+        quoteAsset: { type: string }
+        tickSize: { $ref: '#/components/schemas/Decimal' }
+        stepSize: { $ref: '#/components/schemas/Decimal' }
+        minNotional: { $ref: '#/components/schemas/Decimal' }
+        makerFeeBps: { type: integer, minimum: 0, maximum: 10000 }
+        takerFeeBps: { type: integer, minimum: 0, maximum: 10000 }
+    MarketStatusRequest:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { $ref: '#/components/schemas/MarketStatus' }
+    SystemFlagRequest:
+      type: object
+      additionalProperties: false
+      required: [value]
+      properties:
+        value: { description: Arbitrary JSON value for the flag. }
+    SystemFlag:
+      type: object
+      properties:
+        key: { type: string }
+        value: {}
+        updatedAt: { $ref: '#/components/schemas/Timestamp' }
+
+    # ======================= Envelopes (success wrappers) =======================
+    UserEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { $ref: '#/components/schemas/User' } } }
+    TokenPairEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { $ref: '#/components/schemas/TokenPair' } } }
+    TotpChallengeEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { $ref: '#/components/schemas/TotpChallenge' } } }
+    StepUpEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { $ref: '#/components/schemas/StepUpToken' } } }
+    TotpEnrollEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { $ref: '#/components/schemas/TotpEnroll' } } }
+    RecoveryCodesEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { $ref: '#/components/schemas/RecoveryCodes' } } }
+    TierLimitEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { $ref: '#/components/schemas/TierLimit' } } }
+    SessionListEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/Session' } } } } } }
+    KycProfileEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { $ref: '#/components/schemas/KycProfile' } } }
+    KycDocumentListEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/KycDocument' } } } } } }
+    KycDocumentUploadEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { $ref: '#/components/schemas/KycDocumentUpload' } } }
+    WalletListEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/Wallet' } } } } } }
+    WalletEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { $ref: '#/components/schemas/Wallet' } } }
+    LedgerEntryPageEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/LedgerEntry' } }, nextCursor: { type: [string, 'null'] } } }, meta: { $ref: '#/components/schemas/PageMeta' } } }
+    DepositAddressEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { $ref: '#/components/schemas/DepositAddress' } } }
+    DepositAddressListEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/DepositAddress' } } } } } }
+    DepositEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { $ref: '#/components/schemas/Deposit' } } }
+    DepositPageEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/Deposit' } }, nextCursor: { type: [string, 'null'] } } } } }
+    WithdrawalEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { $ref: '#/components/schemas/Withdrawal' } } }
+    WithdrawalPageEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/Withdrawal' } }, nextCursor: { type: [string, 'null'] } } } } }
+    WithdrawalAddressEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { $ref: '#/components/schemas/WithdrawalAddress' } } }
+    WithdrawalAddressListEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/WithdrawalAddress' } } } } } }
+    InrDepositIntentEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { $ref: '#/components/schemas/InrDepositIntent' } } }
+    InrTransactionEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { $ref: '#/components/schemas/InrTransaction' } } }
+    InrTransactionPageEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/InrTransaction' } }, nextCursor: { type: [string, 'null'] } } } } }
+    BankAccountEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { $ref: '#/components/schemas/BankAccount' } } }
+    BankAccountListEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/BankAccount' } } } } } }
+    QuoteEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { $ref: '#/components/schemas/Quote' } } }
+    ConversionEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { $ref: '#/components/schemas/Conversion' } } }
+    MarketEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { $ref: '#/components/schemas/Market' } } }
+    MarketListEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/Market' } } } } } }
+    OrderBookEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { $ref: '#/components/schemas/OrderBook' } } }
+    TickerEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { $ref: '#/components/schemas/Ticker' } } }
+    CandleListEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { type: object, properties: { interval: { $ref: '#/components/schemas/CandleInterval' }, items: { type: array, items: { $ref: '#/components/schemas/Candle' } } } } } }
+    PublicTradeListEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/PublicTrade' } } } } } }
+    OrderEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { $ref: '#/components/schemas/Order' } } }
+    OrderPageEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/Order' } }, nextCursor: { type: [string, 'null'] } } } } }
+    TradeEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { $ref: '#/components/schemas/Trade' } } }
+    TradePageEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/Trade' } }, nextCursor: { type: [string, 'null'] } } } } }
+    AdminUserEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { $ref: '#/components/schemas/User' } } }
+    AdminUserPageEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/User' } }, nextCursor: { type: [string, 'null'] } } } } }
+    AdminKycQueueItem:
+      type: object
+      properties:
+        userId: { $ref: '#/components/schemas/Uuid' }
+        email: { type: string }
+        fullName: { type: [string, 'null'] }
+        status: { $ref: '#/components/schemas/KycStatus' }
+        tier: { type: integer }
+        submittedAt: { $ref: '#/components/schemas/Timestamp' }
+    AdminKycPageEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/AdminKycQueueItem' } }, nextCursor: { type: [string, 'null'] } } } } }
+    ReconRunEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { $ref: '#/components/schemas/ReconRun' } } }
+    ReconRunPageEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/ReconRun' } }, nextCursor: { type: [string, 'null'] } } } } }
+    AuditLogPageEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/AuditLog' } }, nextCursor: { type: [string, 'null'] } } } } }
+    SystemFlagEnvelope: { type: object, required: [success, data], properties: { success: { const: true }, data: { $ref: '#/components/schemas/SystemFlag' } } }

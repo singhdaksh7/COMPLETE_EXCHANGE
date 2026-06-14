@@ -1,0 +1,107 @@
+import { env, isProd, isDev, isTest } from './env';
+
+/**
+ * Centralized, typed application configuration derived from validated env.
+ * Import `config` everywhere instead of reading process.env directly.
+ */
+export const config = {
+  env: env.NODE_ENV,
+  isProd,
+  isDev,
+  isTest,
+
+  http: {
+    port: env.PORT,
+    apiPrefix: env.API_PREFIX,
+    corsOrigins: env.CORS_ORIGINS,
+    bodyLimit: env.BODY_LIMIT,
+  },
+
+  admin: {
+    port: env.ADMIN_PORT,
+    apiPrefix: env.ADMIN_API_PREFIX,
+  },
+
+  log: {
+    level: env.LOG_LEVEL,
+    pretty: env.LOG_PRETTY,
+  },
+
+  db: {
+    url: env.DATABASE_URL,
+  },
+
+  redis: {
+    url: env.REDIS_URL,
+  },
+
+  jwt: {
+    accessSecret: env.JWT_ACCESS_SECRET,
+    refreshSecret: env.JWT_REFRESH_SECRET,
+    accessTtl: env.JWT_ACCESS_TTL,
+    refreshTtl: env.JWT_REFRESH_TTL,
+  },
+
+  rateLimit: {
+    windowMs: env.RATE_LIMIT_WINDOW_MS,
+    max: env.RATE_LIMIT_MAX,
+    authMax: env.AUTH_RATE_LIMIT_MAX,
+  },
+
+  loginLockout: {
+    maxAttempts: env.LOGIN_LOCKOUT_MAX_ATTEMPTS,
+    windowMs: env.LOGIN_LOCKOUT_WINDOW_MS,
+  },
+
+  auth: {
+    emailVerificationTtlMs: env.EMAIL_VERIFICATION_TTL_MS,
+    passwordResetTtlMs: env.PASSWORD_RESET_TTL_MS,
+    requireEmailVerification: env.REQUIRE_EMAIL_VERIFICATION,
+    rbacCacheTtlSec: env.RBAC_CACHE_TTL_SEC,
+  },
+
+  kyc: {
+    encryptionKey: env.KYC_ENCRYPTION_KEY,
+    uploadUrlTtlSec: env.KYC_UPLOAD_URL_TTL_SEC,
+    digiLockerProvider: env.KYC_DIGILOCKER_PROVIDER,
+    defaultApprovedTier: env.KYC_DEFAULT_APPROVED_TIER,
+  },
+
+  razorpay: {
+    provider: env.RAZORPAY_PROVIDER,
+    keyId: env.RAZORPAY_KEY_ID,
+    keySecret: env.RAZORPAY_KEY_SECRET,
+    webhookSecret: env.RAZORPAY_WEBHOOK_SECRET,
+    apiBase: env.RAZORPAY_API_BASE,
+    depositMin: env.INR_DEPOSIT_MIN,
+    depositMax: env.INR_DEPOSIT_MAX,
+  },
+
+  scanner: {
+    tronProvider: env.TRON_PROVIDER,
+    tronGridApiKey: env.TRONGRID_API_KEY,
+    tronGridApiBase: env.TRONGRID_API_BASE,
+    safetyLag: env.SCAN_SAFETY_LAG,
+    reorgBuffer: env.SCAN_REORG_BUFFER,
+    startBlock: env.SCAN_START_BLOCK,
+    pollMs: env.SCAN_POLL_MS,
+    runInWorker: env.SCAN_RUN_IN_WORKER,
+  },
+
+  withdrawal: {
+    signer: env.WITHDRAWAL_SIGNER,
+    feeUsdt: env.WITHDRAWAL_FEE_USDT,
+    addressCooldownMs: env.WITHDRAWAL_ADDRESS_COOLDOWN_MS,
+  },
+
+  conversion: {
+    priceProvider: env.PRICE_PROVIDER,
+    mockUsdtInr: env.CONVERSION_MOCK_USDT_INR,
+    spreadBps: env.CONVERSION_SPREAD_BPS,
+    feeBps: env.CONVERSION_FEE_BPS,
+    tdsBps: env.CONVERSION_TDS_BPS,
+    quoteTtlMs: env.CONVERSION_QUOTE_TTL_MS,
+  },
+} as const;
+
+export type Config = typeof config;
