@@ -86,7 +86,7 @@ function VerifyEmailContent() {
                 </p>
 
                 {/* Email Display Box */}
-                <div className="mt-4 flex w-full items-center justify-center gap-2.5 rounded-lg border border-white/10 bg-noir-2/80 px-4 py-3 text-sm font-medium text-white/95">
+                <div className="mt-5 flex w-full items-center justify-center gap-2.5 rounded-lg border border-gold/25 bg-gold/[0.03] px-4 py-3 text-sm font-semibold text-white shadow-[0_0_15px_rgba(245,194,66,0.06)]">
                   <MailIcon className="h-5 w-5 text-gold shrink-0" />
                   <span className="truncate">{email}</span>
                 </div>
@@ -118,7 +118,7 @@ function VerifyEmailContent() {
                   </button>
 
                   {/* Divider */}
-                  <div className="flex items-center gap-3 text-[11px] text-white/20 select-none">
+                  <div className="flex items-center gap-3 text-[10px] font-bold tracking-wider text-white/30 select-none">
                     <span className="h-px flex-1 bg-white/10" />
                     <span>OR</span>
                     <span className="h-px flex-1 bg-white/10" />

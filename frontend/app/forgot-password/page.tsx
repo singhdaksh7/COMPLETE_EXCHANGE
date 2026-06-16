@@ -110,12 +110,12 @@ export default function ForgotPasswordPage() {
                     disabled={m.isPending}
                     className="group relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-lg bg-gradient-to-r from-gold to-gold-glow px-4 py-3 text-sm font-bold text-noir shadow-gold-glow transition hover:brightness-105 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <MailIcon className="h-4.5 w-4.5 stroke-[2.2]" />
+                    <MailIcon className="h-4.5 w-4.5 stroke-[2.2] text-noir" />
                     <span>{m.isPending ? 'Sending Reset Link…' : 'Send Reset Link'}</span>
                   </button>
 
                   {/* Divider */}
-                  <div className="my-5 flex items-center gap-3 text-xs text-white/20 select-none">
+                  <div className="my-5 flex items-center gap-3 text-[10px] font-bold tracking-wider text-white/30 select-none">
                     <span className="h-px flex-1 bg-white/10" />
                     <span>OR</span>
                     <span className="h-px flex-1 bg-white/10" />
@@ -178,8 +178,8 @@ export default function ForgotPasswordPage() {
 /* Page Primitives & Helpers                                          */
 /* ------------------------------------------------------------------ */
 
-function inputClass(extra = '') {
-  return `w-full rounded-lg border border-white/10 bg-noir-2/80 py-3 pl-4 pr-4 text-sm text-white placeholder:text-white/25 transition focus:border-gold/60 focus:outline-none focus:ring-2 focus:ring-gold/25 ${extra}`;
+function inputClass(pl = 'pl-4', pr = 'pr-4') {
+  return `w-full rounded-lg border border-white/10 bg-noir-2/80 py-3 ${pl} ${pr} text-sm text-white placeholder:text-white/25 transition focus:border-gold/60 focus:outline-none focus:ring-2 focus:ring-gold/25`;
 }
 
 function FormField({

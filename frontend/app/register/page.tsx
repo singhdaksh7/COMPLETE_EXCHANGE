@@ -147,18 +147,14 @@ export default function RegisterPage() {
 
                   {/* Mobile Number */}
                   <FormField label="Mobile Number" htmlFor="phone">
-                    <div className="relative flex items-center rounded-lg border border-white/10 bg-noir-2/80 transition-within focus-within:border-gold/60 focus-within:ring-2 focus-within:ring-gold/25">
-                      <PhoneIcon className="pointer-events-none absolute left-3.5 h-[18px] w-[18px] text-white/30" />
-                      
-                      {/* Flag + Country Code display */}
-                      <div className="flex items-center gap-1.5 pl-10 pr-2.5 py-3 text-sm font-medium text-white/80 select-none">
+                    <div className="relative flex items-center rounded-lg border border-white/10 bg-noir-2/80 transition focus-within:border-gold/60 focus-within:ring-2 focus-within:ring-gold/25">
+                      {/* Premium flag + country code prefix container */}
+                      <div className="flex items-center gap-1.5 bg-white/[0.03] pl-3.5 pr-2.5 py-3 text-sm font-semibold text-white/80 select-none rounded-l-lg border-r border-white/10 hover:bg-white/[0.06] transition duration-200">
+                        <PhoneIcon className="h-[18px] w-[18px] text-white/30 shrink-0" />
                         <span className="text-base leading-none">🇮🇳</span>
                         <span>+91</span>
                         <ChevronDownIcon className="h-3 w-3 text-white/40" />
                       </div>
-                      
-                      {/* Vertical line divider */}
-                      <div className="h-6 w-px bg-white/10" />
 
                       <input
                         id="phone"
@@ -167,7 +163,7 @@ export default function RegisterPage() {
                         value={phone}
                         onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
                         placeholder="Enter your mobile number"
-                        className="w-full bg-transparent py-3 pl-3 pr-4 text-sm text-white placeholder:text-white/25 focus:outline-none"
+                        className="w-full bg-transparent py-3 pl-3.5 pr-4 text-sm text-white placeholder:text-white/25 focus:outline-none"
                       />
                     </div>
                   </FormField>
@@ -183,12 +179,12 @@ export default function RegisterPage() {
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         placeholder="Create a strong password"
-                        className={inputClass('pl-11 pr-11')}
+                        className={inputClass('pl-11', 'pr-11')}
                       />
                       <button
                         type="button"
                         onClick={() => setShowPassword((s) => !s)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-white/40 transition hover:text-gold focus:outline-none"
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 rounded-md p-1 text-white/40 transition hover:text-gold focus:outline-none"
                       >
                         {showPassword ? <EyeOffIcon className="h-5 w-5" /> : <EyeIcon className="h-5 w-5" />}
                       </button>
@@ -206,12 +202,12 @@ export default function RegisterPage() {
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
                         placeholder="Confirm your password"
-                        className={inputClass('pl-11 pr-11')}
+                        className={inputClass('pl-11', 'pr-11')}
                       />
                       <button
                         type="button"
                         onClick={() => setShowConfirmPassword((s) => !s)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-white/40 transition hover:text-gold focus:outline-none"
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 rounded-md p-1 text-white/40 transition hover:text-gold focus:outline-none"
                       >
                         {showConfirmPassword ? <EyeOffIcon className="h-5 w-5" /> : <EyeIcon className="h-5 w-5" />}
                       </button>
@@ -240,19 +236,19 @@ export default function RegisterPage() {
                       role="checkbox"
                       aria-checked={agreeTerms}
                       onClick={() => setAgreeTerms(!agreeTerms)}
-                      className={`flex h-[18px] w-[18px] shrink-0 mt-0.5 items-center justify-center rounded border transition ${
+                      className={`flex h-[18px] w-[18px] shrink-0 mt-[2px] items-center justify-center rounded border transition focus:outline-none focus:ring-2 focus:ring-gold/25 hover:border-gold/60 ${
                         agreeTerms ? 'border-gold bg-gold text-noir' : 'border-white/25 bg-transparent'
                       }`}
                     >
                       {agreeTerms && <CheckIcon className="h-3 w-3" />}
                     </button>
-                    <span className="text-xs leading-normal text-white/60">
+                    <span className="text-xs leading-5 text-white/60">
                       I agree to the{' '}
-                      <a href="#" className="text-gold hover:underline">
+                      <a href="#" className="text-gold hover:underline font-semibold">
                         Terms & Conditions
                       </a>{' '}
                       and{' '}
-                      <a href="#" className="text-gold hover:underline">
+                      <a href="#" className="text-gold hover:underline font-semibold">
                         Privacy Policy
                       </a>
                     </span>
@@ -320,8 +316,8 @@ export default function RegisterPage() {
 /* Page Primitives & Helpers                                          */
 /* ------------------------------------------------------------------ */
 
-function inputClass(extra = '') {
-  return `w-full rounded-lg border border-white/10 bg-noir-2/80 py-3 pl-4 pr-4 text-sm text-white placeholder:text-white/25 transition focus:border-gold/60 focus:outline-none focus:ring-2 focus:ring-gold/25 ${extra}`;
+function inputClass(pl = 'pl-4', pr = 'pr-4') {
+  return `w-full rounded-lg border border-white/10 bg-noir-2/80 py-3 ${pl} ${pr} text-sm text-white placeholder:text-white/25 transition focus:border-gold/60 focus:outline-none focus:ring-2 focus:ring-gold/25`;
 }
 
 function FormField({
