@@ -60,6 +60,17 @@ export const config = {
     rbacCacheTtlSec: env.RBAC_CACHE_TTL_SEC,
   },
 
+  mail: {
+    provider: env.MAIL_PROVIDER,
+    from: env.MAIL_FROM,
+    awsRegion: env.AWS_REGION,
+    sesConfigurationSet: env.SES_CONFIGURATION_SET,
+  },
+
+  urls: {
+    frontendUrl: env.FRONTEND_URL,
+  },
+
   kyc: {
     encryptionKey: env.KYC_ENCRYPTION_KEY,
     uploadUrlTtlSec: env.KYC_UPLOAD_URL_TTL_SEC,

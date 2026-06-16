@@ -12,7 +12,8 @@ dotenv.config();
  * invalid or missing variable rather than failing later at request time.
  * This is a custodial financial system — fail fast, fail loud.
  */
-const envSchema = z.object({
+const envSchema = z
+  .object({
   NODE_ENV: z
     .enum(['development', 'test', 'production'])
     .default('development'),
@@ -84,6 +85,26 @@ const envSchema = z.object({
     .transform((v) => v !== 'false'),
   // TTL of the per-user RBAC permission cache in Redis (seconds).
   RBAC_CACHE_TTL_SEC: z.coerce.number().int().positive().default(60),
+
+  // ---- EMAIL / MAILER ----
+  // Provider selection. 'log' is a fully-offline stub (dev + tests) that records
+  // to an in-memory outbox and logs the dispatch; 'ses' sends real email via AWS
+  // SES (staging/prod). 'ses' requires AWS_REGION (enforced in superRefine).
+  MAIL_PROVIDER: z.enum(['log', 'ses']).default('log'),
+  // From identity for outbound mail. In 'ses' mode this MUST be an SES-verified
+  // identity in AWS_REGION. Accepts "Name <addr@domain>" or a bare address.
+  MAIL_FROM: z.string().min(3).default('Exora <no-reply@exora.local>'),
+  // Public base URL of the frontend, used to build verification/reset links.
+  // Trailing slashes are stripped so links never become "//verify-email".
+  FRONTEND_URL: z
+    .string()
+    .url()
+    .default('http://localhost:3000')
+    .transform((v) => v.replace(/\/+$/, '')),
+  // AWS region for SES. Required only in 'ses' mode (enforced in superRefine).
+  AWS_REGION: z.string().min(1).optional(),
+  // Optional SES configuration set for bounce/complaint tracking.
+  SES_CONFIGURATION_SET: z.string().min(1).optional(),
 
   // ---- KYC ----
   // Secret used to derive the AES-256-GCM key that seals KYC PII (PAN, Aadhaar
@@ -191,7 +212,17 @@ const envSchema = z.object({
   CONVERSION_TDS_BPS: z.coerce.number().int().min(0).max(10_000).default(100),
   // Quote lifetime (ms). Short-lived; expired quotes are rejected at execution.
   CONVERSION_QUOTE_TTL_MS: z.coerce.number().int().positive().default(30_000),
-});
+  })
+  // Fail fast: 'ses' mode is useless (and silently drops mail) without a region.
+  .superRefine((val, ctx) => {
+    if (val.MAIL_PROVIDER === 'ses' && !val.AWS_REGION) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['AWS_REGION'],
+        message: 'AWS_REGION is required when MAIL_PROVIDER=ses',
+      });
+    }
+  });
 
 const parsed = envSchema.safeParse(process.env);
 

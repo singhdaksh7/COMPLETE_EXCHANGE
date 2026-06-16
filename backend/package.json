@@ -32,6 +32,7 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-sesv2": "^3.1070.0",
     "@node-rs/argon2": "^2.0.2",
     "@prisma/client": "^5.22.0",
     "compression": "^1.7.5",
