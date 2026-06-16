@@ -81,13 +81,20 @@ async function authed<T>(
 }
 
 export const userApi = {
-  // Register accepts ONLY email + password — the backend rejects extra fields
-  // (e.g. full name). Full name is collected on the KYC profile, not here.
-  register: (body: { email: string; password: string }) =>
+  register: (body: { email: string; password: string; phone?: string }) =>
     apiFetch<RegisterData>(USER_API_URL, '/auth/register', { method: 'POST', body }),
 
   login: (body: { email: string; password: string }) =>
     apiFetch<LoginData>(USER_API_URL, '/auth/login', { method: 'POST', body }),
+
+  forgotPassword: (body: { email: string }) =>
+    apiFetch<void>(USER_API_URL, '/auth/forgot-password', { method: 'POST', body }),
+
+  verifyEmail: (body: { token: string }) =>
+    apiFetch<void>(USER_API_URL, '/auth/verify-email', { method: 'POST', body }),
+
+  resendVerification: (body: { email: string }) =>
+    apiFetch<void>(USER_API_URL, '/auth/resend-verification', { method: 'POST', body }),
 
   me: () => authed<MeData>('/auth/me'),
 
