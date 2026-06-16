@@ -7,6 +7,11 @@ import type {
   SelectHTMLAttributes,
 } from 'react';
 
+/**
+ * Shared dark-mode UI primitives (fintech / crypto-exchange style).
+ * Every page composes these so the look stays consistent and easy to retheme.
+ */
+
 export function Card({
   children,
   className = '',
@@ -15,23 +20,31 @@ export function Card({
   className?: string;
 }) {
   return (
-    <div
-      className={`rounded-lg border border-gray-200 bg-white p-6 shadow-sm ${className}`}
-    >
+    <div className={`rounded-xl border border-line bg-panel p-5 shadow-sm ${className}`}>
       {children}
     </div>
   );
 }
 
+type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'success';
+
 export function Button({
   children,
   className = '',
+  variant = 'primary',
   ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement>) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant }) {
+  const variants: Record<ButtonVariant, string> = {
+    primary: 'bg-brand text-black hover:bg-brand-dark',
+    secondary: 'bg-panel-2 text-ink border border-line hover:bg-line',
+    ghost: 'bg-transparent text-muted hover:text-ink hover:bg-panel-2',
+    danger: 'bg-down text-white hover:opacity-90',
+    success: 'bg-up text-white hover:opacity-90',
+  };
   return (
     <button
       {...rest}
-      className={`inline-flex items-center justify-center rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+      className={`inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${variants[variant]} ${className}`}
     >
       {children}
     </button>
@@ -43,7 +56,7 @@ export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       {...rest}
-      className={`w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-gray-500 focus:outline-none ${className}`}
+      className={`w-full rounded-lg border border-line bg-panel-2 px-3 py-2 text-sm text-ink placeholder:text-muted-2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/40 ${className}`}
     />
   );
 }
@@ -53,26 +66,16 @@ export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <select
       {...rest}
-      className={`w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-gray-500 focus:outline-none ${className}`}
+      className={`w-full rounded-lg border border-line bg-panel-2 px-3 py-2 text-sm text-ink focus:border-brand focus:outline-none ${className}`}
     />
   );
 }
 
 export function Label({ children }: { children: ReactNode }) {
-  return (
-    <label className="mb-1 block text-sm font-medium text-gray-700">
-      {children}
-    </label>
-  );
+  return <label className="mb-1.5 block text-xs font-medium text-muted">{children}</label>;
 }
 
-export function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
+export function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="mb-3">
       <Label>{label}</Label>
@@ -90,21 +93,21 @@ export function Alert({
 }) {
   const styles =
     kind === 'error'
-      ? 'bg-red-50 text-red-700 border-red-200'
+      ? 'bg-down/10 text-down border-down/30'
       : kind === 'success'
-        ? 'bg-green-50 text-green-700 border-green-200'
-        : 'bg-blue-50 text-blue-700 border-blue-200';
+        ? 'bg-up/10 text-up border-up/30'
+        : 'bg-brand/10 text-brand border-brand/30';
   return (
-    <div className={`rounded-md border px-3 py-2 text-sm ${styles}`}>{children}</div>
+    <div className={`rounded-lg border px-3 py-2 text-sm ${styles}`}>{children}</div>
   );
 }
 
 export function StatusBadge({ status }: { status: string }) {
-  const green = 'bg-green-100 text-green-800';
-  const yellow = 'bg-yellow-100 text-yellow-800';
-  const red = 'bg-red-100 text-red-800';
-  const blue = 'bg-blue-100 text-blue-800';
-  const gray = 'bg-gray-100 text-gray-700';
+  const green = 'bg-up/15 text-up';
+  const yellow = 'bg-brand/15 text-brand';
+  const red = 'bg-down/15 text-down';
+  const blue = 'bg-sky-500/15 text-sky-400';
+  const gray = 'bg-panel-2 text-muted';
   const map: Record<string, string> = {
     // KYC
     APPROVED: green,
@@ -125,14 +128,18 @@ export function StatusBadge({ status }: { status: string }) {
     SIGNING: blue,
     QUEUED: blue,
     REQUESTED: blue,
+    OPEN: blue,
+    PARTIALLY_FILLED: yellow,
+    FILLED: green,
     FAILED: red,
     ORPHANED: red,
     CANCELLED: gray,
+    EXPIRED: gray,
     REVERSED: gray,
   };
   return (
     <span
-      className={`rounded-full px-2 py-0.5 text-xs font-medium ${map[status] ?? gray}`}
+      className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${map[status] ?? gray}`}
     >
       {status}
     </span>
@@ -141,9 +148,73 @@ export function StatusBadge({ status }: { status: string }) {
 
 export function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="flex items-center justify-between border-b border-gray-100 py-2 text-sm last:border-0">
-      <span className="text-gray-500">{label}</span>
-      <span className="font-medium">{value}</span>
+    <div className="flex items-center justify-between border-b border-line py-2.5 text-sm last:border-0">
+      <span className="text-muted">{label}</span>
+      <span className="font-medium text-ink">{value}</span>
+    </div>
+  );
+}
+
+/** Page section heading. */
+export function PageHeader({
+  title,
+  subtitle,
+  action,
+}: {
+  title: string;
+  subtitle?: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="mb-5 flex items-end justify-between gap-3">
+      <div>
+        <h1 className="text-xl font-semibold text-ink">{title}</h1>
+        {subtitle && <p className="mt-0.5 text-sm text-muted">{subtitle}</p>}
+      </div>
+      {action}
+    </div>
+  );
+}
+
+/** Compact stat tile for dashboards. */
+export function StatCard({
+  label,
+  value,
+  hint,
+  tone = 'default',
+}: {
+  label: string;
+  value: ReactNode;
+  hint?: ReactNode;
+  tone?: 'default' | 'up' | 'down';
+}) {
+  const toneCls = tone === 'up' ? 'text-up' : tone === 'down' ? 'text-down' : 'text-ink';
+  return (
+    <div className="rounded-xl border border-line bg-panel p-4">
+      <div className="text-xs text-muted">{label}</div>
+      <div className={`mt-1 font-mono text-xl font-semibold ${toneCls}`}>{value}</div>
+      {hint && <div className="mt-0.5 text-xs text-muted-2">{hint}</div>}
+    </div>
+  );
+}
+
+/** Skeleton block for loading states. */
+export function Skeleton({ className = '' }: { className?: string }) {
+  return <div className={`animate-pulse rounded-md bg-panel-2 ${className}`} />;
+}
+
+/** Centered empty / placeholder state. */
+export function EmptyState({
+  title,
+  hint,
+}: {
+  title: string;
+  hint?: string;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-1 py-10 text-center">
+      <p className="text-sm font-medium text-muted">{title}</p>
+      {hint && <p className="text-xs text-muted-2">{hint}</p>}
     </div>
   );
 }

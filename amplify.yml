@@ -1,0 +1,24 @@
+# AWS Amplify Hosting build spec (monorepo).
+# App root is the Next.js app under frontend/. Amplify auto-detects Next.js and
+# deploys it on the WEB_COMPUTE (SSR) platform; the env vars below must be set in
+# the Amplify console (App settings -> Environment variables), NOT committed here.
+version: 1
+applications:
+  - appRoot: frontend
+    frontend:
+      phases:
+        preBuild:
+          commands:
+            - npm ci
+        build:
+          commands:
+            - npm run build
+      artifacts:
+        # Next.js output. Amplify reads .next for the SSR/compute deployment.
+        baseDirectory: .next
+        files:
+          - '**/*'
+      cache:
+        paths:
+          - node_modules/**/*
+          - .next/cache/**/*

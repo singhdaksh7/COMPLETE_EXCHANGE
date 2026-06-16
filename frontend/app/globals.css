@@ -1,3 +1,40 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-bg text-ink antialiased;
+    font-feature-settings: 'tnum' 1;
+  }
+  /* Tabular numbers everywhere prices/quantities render. */
+  .font-mono {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  /* Reusable surface used by Card and ad-hoc panels. */
+  .surface {
+    @apply rounded-xl border border-line bg-panel;
+  }
+}
+
+/* Dark, slim scrollbars to match the exchange aesthetic. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #0b0e11;
+}
+::-webkit-scrollbar-thumb {
+  background: #2b3139;
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3a424c;
+}
