@@ -31,6 +31,7 @@ function LoginPageContent() {
   const searchParams = useSearchParams();
   const justRegistered = searchParams.get('registered') === 'true';
   const justVerified = searchParams.get('verified') === 'true';
+  const justReset = searchParams.get('reset') === 'true';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -60,11 +61,13 @@ function LoginPageContent() {
             remember={remember}
             isPending={m.isPending}
             notice={
-              justVerified
-                ? 'Email verified successfully. You can now log in.'
-                : justRegistered
-                  ? 'Account created. Please sign in to continue.'
-                  : null
+              justReset
+                ? 'Password reset successfully. You can now log in.'
+                : justVerified
+                  ? 'Email verified successfully. You can now log in.'
+                  : justRegistered
+                    ? 'Account created. Please sign in to continue.'
+                    : null
             }
             error={m.isError ? errorMessage(m.error) : null}
             onEmail={setEmail}

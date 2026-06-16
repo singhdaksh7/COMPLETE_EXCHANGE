@@ -90,6 +90,9 @@ export const userApi = {
   forgotPassword: (body: { email: string }) =>
     apiFetch<void>(USER_API_URL, '/auth/forgot-password', { method: 'POST', body }),
 
+  resetPassword: (body: { token: string; password: string }) =>
+    apiFetch<void>(USER_API_URL, '/auth/reset-password', { method: 'POST', body }),
+
   verifyEmail: (body: { token: string }) =>
     apiFetch<void>(USER_API_URL, '/auth/verify-email', { method: 'POST', body }),
 
