@@ -30,6 +30,7 @@ function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const justRegistered = searchParams.get('registered') === 'true';
+  const justVerified = searchParams.get('verified') === 'true';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -58,7 +59,13 @@ function LoginPageContent() {
             showPassword={showPassword}
             remember={remember}
             isPending={m.isPending}
-            notice={justRegistered ? 'Account created. Please sign in to continue.' : null}
+            notice={
+              justVerified
+                ? 'Email verified successfully. You can now log in.'
+                : justRegistered
+                  ? 'Account created. Please sign in to continue.'
+                  : null
+            }
             error={m.isError ? errorMessage(m.error) : null}
             onEmail={setEmail}
             onPassword={setPassword}
