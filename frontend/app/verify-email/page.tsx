@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import type { ReactNode, SVGProps } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
 import { userApi } from '@/lib/user-api';
 import { errorMessage } from '@/lib/api';
@@ -17,11 +17,33 @@ export default function VerifyEmailPage() {
 }
 
 function VerifyEmailContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const email = searchParams.get('email') || 'example@email.com';
-  
+  // Email links land here with ?token=...; resend links land here with ?email=...
+  const token = searchParams.get('token');
+
   const [resendSuccess, setResendSuccess] = useState(false);
   const [resendError, setResendError] = useState<string | null>(null);
+
+  // Token verification (only when arriving from an email link).
+  const verifyM = useMutation({
+    mutationFn: () => userApi.verifyEmail({ token: token ?? '' }),
+    onSuccess: () => {
+      // Show a brief confirmation, then send the user to sign in.
+      setTimeout(() => router.replace('/login?verified=true'), 1500);
+    },
+  });
+
+  // Auto-verify exactly once when a token is present.
+  const verifyStarted = useRef(false);
+  useEffect(() => {
+    if (token && !verifyStarted.current) {
+      verifyStarted.current = true;
+      verifyM.mutate();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   const m = useMutation({
     mutationFn: () => userApi.resendVerification({ email }),
@@ -96,6 +118,22 @@ function VerifyEmailContent() {
                 </p>
 
                 {/* Status/Feedback Messages */}
+                {token && verifyM.isPending && (
+                  <div className="mt-4 w-full rounded-lg border border-gold/30 bg-gold/10 px-3.5 py-2.5 text-xs text-gold animate-fade-in">
+                    Verifying your email…
+                  </div>
+                )}
+                {token && verifyM.isSuccess && (
+                  <div className="mt-4 w-full rounded-lg border border-up/30 bg-up/10 px-3.5 py-2.5 text-xs text-up animate-fade-in">
+                    Email verified successfully! Redirecting to sign in…
+                  </div>
+                )}
+                {token && verifyM.isError && (
+                  <div className="mt-4 w-full rounded-lg border border-red-500/30 bg-red-500/10 px-3.5 py-2.5 text-xs text-red-300 animate-fade-in">
+                    {errorMessage(verifyM.error)} You can request a new link below.
+                  </div>
+                )}
+
                 {resendSuccess && (
                   <div className="mt-4 w-full rounded-lg border border-up/30 bg-up/10 px-3.5 py-2.5 text-xs text-up animate-fade-in">
                     Verification link resent successfully! Please check spam if not found.
