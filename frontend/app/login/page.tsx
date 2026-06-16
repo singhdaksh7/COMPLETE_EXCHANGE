@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import type { ReactNode, SVGProps } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
 import { userApi } from '@/lib/user-api';
 import { tokenStore } from '@/lib/auth';
@@ -18,14 +18,25 @@ import { errorMessage } from '@/lib/api';
  * the app — only the markup/styling is bespoke.
  */
 export default function LoginPage() {
+  // `useSearchParams` requires a Suspense boundary under static export.
+  return (
+    <Suspense fallback={null}>
+      <LoginPageContent />
+    </Suspense>
+  );
+}
+
+function LoginPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const justRegistered = searchParams.get('registered') === 'true';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(true);
 
   const m = useMutation({
-    mutationFn: () => userApi.login({ email, password }),
+    mutationFn: () => userApi.login({ email: email.trim(), password }),
     onSuccess: (res) => {
       const { accessToken, refreshToken } = res.data.tokens;
       tokenStore.setUser(accessToken, refreshToken);
@@ -47,6 +58,7 @@ export default function LoginPage() {
             showPassword={showPassword}
             remember={remember}
             isPending={m.isPending}
+            notice={justRegistered ? 'Account created. Please sign in to continue.' : null}
             error={m.isError ? errorMessage(m.error) : null}
             onEmail={setEmail}
             onPassword={setPassword}
@@ -161,6 +173,7 @@ function LoginCard(props: {
   showPassword: boolean;
   remember: boolean;
   isPending: boolean;
+  notice: string | null;
   error: string | null;
   onEmail: (v: string) => void;
   onPassword: (v: string) => void;
@@ -184,6 +197,15 @@ function LoginCard(props: {
           <p className="mt-1.5 text-sm text-white/50">
             Sign in to your Exora account to continue trading.
           </p>
+
+          {props.notice && !props.error && (
+            <div
+              role="status"
+              className="mt-5 rounded-lg border border-up/30 bg-up/10 px-3.5 py-2.5 text-sm text-up"
+            >
+              {props.notice}
+            </div>
+          )}
 
           {props.error && (
             <div

@@ -59,7 +59,13 @@ export default function RegisterPage() {
       setValidationError('Please enter a valid 10-digit mobile number.');
       return;
     }
-    if (password.length < 10) {
+    // Mirror the backend validator: min 10 chars + lowercase + uppercase + digit.
+    if (
+      password.length < 10 ||
+      !/[a-z]/.test(password) ||
+      !/[A-Z]/.test(password) ||
+      !/[0-9]/.test(password)
+    ) {
       setValidationError('Password must be at least 10 characters and contain an uppercase letter, lowercase letter, and a number.');
       return;
     }
