@@ -19,8 +19,9 @@ export default function ForgotPasswordPage() {
     e.preventDefault();
     setValidationError(null);
 
-    // Validation check
-    if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    // Validation check (test the trimmed value we actually send)
+    const cleanEmail = email.trim();
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       setValidationError('Please enter a valid email address.');
       return;
     }
