@@ -87,6 +87,10 @@ export const userApi = {
   login: (body: { email: string; password: string }) =>
     apiFetch<LoginData>(USER_API_URL, '/auth/login', { method: 'POST', body }),
 
+  /** Redeem the one-time OAuth code (from /auth/callback) for a normal session. */
+  oauthExchange: (body: { code: string }) =>
+    apiFetch<LoginData>(USER_API_URL, '/auth/oauth/exchange', { method: 'POST', body }),
+
   forgotPassword: (body: { email: string }) =>
     apiFetch<void>(USER_API_URL, '/auth/forgot-password', { method: 'POST', body }),
 

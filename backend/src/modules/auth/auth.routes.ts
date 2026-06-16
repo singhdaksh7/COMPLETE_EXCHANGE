@@ -14,6 +14,7 @@ import {
   resetPasswordSchema,
   changePasswordSchema,
   sessionIdParamSchema,
+  oauthExchangeSchema,
 } from './auth.validators';
 
 /**
@@ -52,6 +53,22 @@ authRouter.post(
   authRateLimiter,
   validate({ body: loginSchema }),
   asyncHandler(authController.login),
+);
+
+// ---- Google OAuth (Authorization Code + PKCE, one-time code exchange) ----
+authRouter.get('/google/start', authRateLimiter, asyncHandler(authController.googleStart));
+
+authRouter.get(
+  '/google/callback',
+  authRateLimiter,
+  asyncHandler(authController.googleCallback),
+);
+
+authRouter.post(
+  '/oauth/exchange',
+  authRateLimiter,
+  validate({ body: oauthExchangeSchema }),
+  asyncHandler(authController.oauthExchange),
 );
 
 authRouter.post(

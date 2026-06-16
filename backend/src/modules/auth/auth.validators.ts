@@ -84,6 +84,12 @@ export const sessionIdParamSchema = z
   })
   .strict();
 
+export const oauthExchangeSchema = z
+  .object({
+    code: z.string().min(16, 'Invalid code').max(512),
+  })
+  .strict();
+
 export type RegisterDto = z.infer<typeof registerSchema>;
 export type LoginDto = z.infer<typeof loginSchema>;
 export type RefreshDto = z.infer<typeof refreshSchema>;
@@ -93,3 +99,4 @@ export type ForgotPasswordDto = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordDto = z.infer<typeof resetPasswordSchema>;
 export type ChangePasswordDto = z.infer<typeof changePasswordSchema>;
 export type SessionIdParamDto = z.infer<typeof sessionIdParamSchema>;
+export type OAuthExchangeDto = z.infer<typeof oauthExchangeSchema>;

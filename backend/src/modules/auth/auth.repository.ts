@@ -30,6 +30,51 @@ export const authRepository = {
     });
   },
 
+  /** Find a linked OAuth identity (with its owning user), or null. */
+  findOAuthAccountWithUser(provider: string, providerAccountId: string) {
+    return prisma.oAuthAccount.findUnique({
+      where: { provider_providerAccountId: { provider, providerAccountId } },
+      include: { user: true },
+    });
+  },
+
+  /** Link an OAuth identity to an existing user. */
+  linkOAuthAccount(data: {
+    userId: string;
+    provider: string;
+    providerAccountId: string;
+    email?: string;
+  }) {
+    return prisma.oAuthAccount.create({ data });
+  },
+
+  /**
+   * Create a brand-new OAuth-only user plus its linked identity, atomically.
+   * The email is treated as verified (the provider asserted ownership) and the
+   * caller supplies an unusable random password hash so password login fails.
+   */
+  createUserWithOAuth(data: {
+    email: string;
+    passwordHash: string;
+    provider: string;
+    providerAccountId: string;
+  }): Promise<User> {
+    return prisma.user.create({
+      data: {
+        email: data.email,
+        passwordHash: data.passwordHash,
+        emailVerifiedAt: new Date(),
+        oauthAccounts: {
+          create: {
+            provider: data.provider,
+            providerAccountId: data.providerAccountId,
+            email: data.email,
+          },
+        },
+      },
+    });
+  },
+
   createSession(data: {
     id: string;
     userId: string;

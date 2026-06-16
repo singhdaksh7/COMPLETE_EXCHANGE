@@ -8,6 +8,16 @@ import { useMutation } from '@tanstack/react-query';
 import { userApi } from '@/lib/user-api';
 import { tokenStore } from '@/lib/auth';
 import { errorMessage } from '@/lib/api';
+import { USER_API_URL } from '@/lib/config';
+
+/** Map a backend OAuth error code (?error=) to a safe, user-facing message. */
+function oauthErrorMessage(code: string | null): string | null {
+  if (!code) return null;
+  if (code === 'oauth_email_unverified') {
+    return 'An account with this email already exists. Please sign in with your password and verify your email first.';
+  }
+  return 'Google sign-in failed. Please try again.';
+}
 
 /**
  * Exora — "Luxury Black + Metallic Gold" login.
@@ -32,6 +42,7 @@ function LoginPageContent() {
   const justRegistered = searchParams.get('registered') === 'true';
   const justVerified = searchParams.get('verified') === 'true';
   const justReset = searchParams.get('reset') === 'true';
+  const oauthError = oauthErrorMessage(searchParams.get('error'));
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -69,7 +80,10 @@ function LoginPageContent() {
                     ? 'Account created. Please sign in to continue.'
                     : null
             }
-            error={m.isError ? errorMessage(m.error) : null}
+            error={m.isError ? errorMessage(m.error) : oauthError}
+            onGoogle={() => {
+              window.location.href = `${USER_API_URL}/auth/google/start`;
+            }}
             onEmail={setEmail}
             onPassword={setPassword}
             onToggleShow={() => setShowPassword((s) => !s)}
@@ -185,6 +199,7 @@ function LoginCard(props: {
   isPending: boolean;
   notice: string | null;
   error: string | null;
+  onGoogle: () => void;
   onEmail: (v: string) => void;
   onPassword: (v: string) => void;
   onToggleShow: () => void;
@@ -319,7 +334,9 @@ function LoginCard(props: {
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <SocialButton icon={<GoogleIcon className="h-5 w-5" />}>Google</SocialButton>
+            <SocialButton icon={<GoogleIcon className="h-5 w-5" />} onClick={props.onGoogle}>
+              Google
+            </SocialButton>
             <SocialButton icon={<AppleIcon className="h-5 w-5" />}>Apple</SocialButton>
           </div>
 
@@ -373,10 +390,19 @@ function FormField({
   );
 }
 
-function SocialButton({ icon, children }: { icon: ReactNode; children: ReactNode }) {
+function SocialButton({
+  icon,
+  children,
+  onClick,
+}: {
+  icon: ReactNode;
+  children: ReactNode;
+  onClick?: () => void;
+}) {
   return (
     <button
       type="button"
+      onClick={onClick}
       className="flex items-center justify-center gap-2.5 rounded-lg border border-white/[0.12] bg-white/[0.03] px-4 py-2.5 text-sm font-medium text-white/80 transition hover:border-gold/40 hover:bg-white/[0.06]"
     >
       {icon}

@@ -1,7 +1,8 @@
 import type { Request, Response } from 'express';
 import { sendSuccess } from '../../utils/response';
 import { authService } from './auth.service';
-import { UnauthorizedError } from '../../lib/errors';
+import { AppError, UnauthorizedError } from '../../lib/errors';
+import { config } from '../../config';
 import type { AuthContext } from './auth.types';
 
 /** Pull request-scoped forensic context for audit logging. */
@@ -42,6 +43,42 @@ export const authController = {
       userAgent: req.headers['user-agent'],
       requestId: String(req.id),
     });
+    sendSuccess(res, result);
+  },
+
+  // ---- Google OAuth ----
+  async googleStart(_req: Request, res: Response): Promise<void> {
+    try {
+      const { url } = await authService.googleStart();
+      res.redirect(url);
+    } catch {
+      // Browser-facing: never render JSON; bounce back to login with a safe flag.
+      res.redirect(`${config.urls.frontendUrl}/login?error=oauth`);
+    }
+  },
+
+  async googleCallback(req: Request, res: Response): Promise<void> {
+    try {
+      const code = await authService.googleCallback({
+        code: typeof req.query.code === 'string' ? req.query.code : undefined,
+        state: typeof req.query.state === 'string' ? req.query.state : undefined,
+        ...ctx(req),
+      });
+      res.redirect(
+        `${config.urls.frontendUrl}/auth/callback?code=${encodeURIComponent(code)}`,
+      );
+    } catch (err) {
+      // Surface only the blocked-link case specifically; everything else generic.
+      const reason =
+        err instanceof AppError && err.errorCode === 'OAUTH_LOCAL_ACCOUNT_UNVERIFIED'
+          ? 'oauth_email_unverified'
+          : 'oauth';
+      res.redirect(`${config.urls.frontendUrl}/login?error=${reason}`);
+    }
+  },
+
+  async oauthExchange(req: Request, res: Response): Promise<void> {
+    const result = await authService.oauthExchange(req.body.code);
     sendSuccess(res, result);
   },
 

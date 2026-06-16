@@ -106,6 +106,20 @@ const envSchema = z
   // Optional SES configuration set for bounce/complaint tracking.
   SES_CONFIGURATION_SET: z.string().min(1).optional(),
 
+  // ---- GOOGLE OAUTH ----
+  // Off by default. When enabled, CLIENT_ID/SECRET/CALLBACK_URL are required
+  // (enforced in superRefine) and the /auth/google/* routes go live; otherwise
+  // they respond with a clear "disabled" error.
+  GOOGLE_OAUTH_ENABLED: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
+  GOOGLE_CLIENT_ID: z.string().min(1).optional(),
+  GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
+  // Must exactly match an Authorized Redirect URI on the Google OAuth client,
+  // e.g. https://api.example.com/api/v1/auth/google/callback
+  GOOGLE_CALLBACK_URL: z.string().url().optional(),
+
   // ---- KYC ----
   // Secret used to derive the AES-256-GCM key that seals KYC PII (PAN, Aadhaar
   // ref) into the frozen `*_enc` Bytes columns. Production MUST supply a strong,
@@ -221,6 +235,18 @@ const envSchema = z
         path: ['AWS_REGION'],
         message: 'AWS_REGION is required when MAIL_PROVIDER=ses',
       });
+    }
+    // Fail fast: don't boot with OAuth "enabled" but unconfigured.
+    if (val.GOOGLE_OAUTH_ENABLED) {
+      for (const key of ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GOOGLE_CALLBACK_URL'] as const) {
+        if (!val[key]) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message: `${key} is required when GOOGLE_OAUTH_ENABLED=true`,
+          });
+        }
+      }
     }
   });
 

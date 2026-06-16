@@ -71,6 +71,13 @@ export const config = {
     frontendUrl: env.FRONTEND_URL,
   },
 
+  google: {
+    enabled: env.GOOGLE_OAUTH_ENABLED,
+    clientId: env.GOOGLE_CLIENT_ID,
+    clientSecret: env.GOOGLE_CLIENT_SECRET,
+    callbackUrl: env.GOOGLE_CALLBACK_URL,
+  },
+
   kyc: {
     encryptionKey: env.KYC_ENCRYPTION_KEY,
     uploadUrlTtlSec: env.KYC_UPLOAD_URL_TTL_SEC,

@@ -23,6 +23,12 @@ import {
   NotFoundError,
 } from '../../lib/errors';
 import { generateOpaqueToken, sha256 } from '../../lib/tokens';
+import {
+  buildAuthUrl,
+  exchangeCodeForProfile,
+  generatePkce,
+  type GoogleProfile,
+} from '../../lib/google-oauth';
 import { mailer } from '../../lib/mailer';
 import { recordAudit, AuditAction } from '../../lib/audit';
 import type {
@@ -48,6 +54,13 @@ const ARGON_OPTS = {
 const VERIFY_KEY = (h: string): string => `auth:verify:${h}`;
 const RESET_KEY = (h: string): string => `auth:reset:${h}`;
 const RBAC_KEY = (userId: string): string => `rbac:perms:${userId}`;
+// OAuth: CSRF state→PKCE-verifier, and the one-time post-login exchange code
+// (stored hashed). Both short-lived and single-use.
+const OAUTH_STATE_KEY = (state: string): string => `auth:oauth:state:${state}`;
+const OAUTH_EXCHANGE_KEY = (hash: string): string => `auth:oauth:exchange:${hash}`;
+const OAUTH_STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const OAUTH_EXCHANGE_TTL_MS = 2 * 60 * 1000; // 2 minutes
+const GOOGLE_PROVIDER = 'google';
 const LOCKOUT_EMAIL_MULTIPLIER = 3;
 const LOCKOUT_IP_MULTIPLIER = 10;
 
@@ -361,6 +374,168 @@ export const authService = {
     });
 
     return { accessToken, refreshToken };
+  },
+
+  // ------------------------------------------------------------------
+  // Google OAuth (Authorization Code + PKCE, one-time code exchange)
+  // ------------------------------------------------------------------
+  /** Build the Google consent URL; stash state→PKCE-verifier in Redis (single-use). */
+  async googleStart(): Promise<{ url: string }> {
+    if (!config.google.enabled) {
+      throw new ForbiddenError('Google sign-in is not enabled', 'OAUTH_DISABLED');
+    }
+    const state = generateOpaqueToken();
+    const { verifier, challenge } = generatePkce();
+    await authRedisSet(OAUTH_STATE_KEY(state), verifier, 'PX', OAUTH_STATE_TTL_MS);
+    return { url: buildAuthUrl({ state, codeChallenge: challenge }) };
+  },
+
+  /**
+   * Handle Google's redirect: validate state (single-use → CSRF safe), exchange
+   * the code, strictly verify the id_token, apply linking rules, issue OUR own
+   * session, and return a one-time exchange code. Tokens never travel via URL.
+   */
+  async googleCallback(input: {
+    code?: string;
+    state?: string;
+    ip?: string;
+    userAgent?: string;
+    requestId?: string;
+  }): Promise<string> {
+    if (!config.google.enabled) {
+      throw new ForbiddenError('Google sign-in is not enabled', 'OAUTH_DISABLED');
+    }
+    if (!input.code || !input.state) {
+      throw new BadRequestError('Missing authorization code or state', undefined);
+    }
+
+    const verifier = await authRedisGetDel(OAUTH_STATE_KEY(input.state));
+    if (!verifier) {
+      throw new UnauthorizedError('Invalid or expired OAuth state', 'OAUTH_STATE_INVALID');
+    }
+
+    const profile = await exchangeCodeForProfile({
+      code: input.code,
+      codeVerifier: verifier,
+    });
+
+    const ctx: AuthContext = {
+      ip: input.ip,
+      userAgent: input.userAgent,
+      requestId: input.requestId,
+    };
+    const user = await this.resolveGoogleUser(profile, ctx);
+
+    if (user.status !== 'ACTIVE') {
+      throw new ForbiddenError('Account is not active', 'ACCOUNT_NOT_ACTIVE');
+    }
+
+    const tokens = await this.issueSession(user, {
+      ip: input.ip,
+      userAgent: input.userAgent,
+    });
+
+    await recordAudit({
+      actorType: 'USER',
+      actorId: user.id,
+      action: AuditAction.LOGIN,
+      entityType: 'user',
+      entityId: user.id,
+      ip: input.ip,
+      userAgent: input.userAgent,
+      requestId: input.requestId,
+      metadata: { method: 'google_oauth' },
+    });
+
+    // Hand the issued result back via a hashed, single-use, short-TTL code.
+    const code = generateOpaqueToken();
+    const payload: AuthResult = { user: toPublicUser(user), tokens };
+    await authRedisSet(
+      OAUTH_EXCHANGE_KEY(sha256(code)),
+      JSON.stringify(payload),
+      'PX',
+      OAUTH_EXCHANGE_TTL_MS,
+    );
+    return code;
+  },
+
+  /** Apply the approved linking rules and return the resolved/created user. */
+  async resolveGoogleUser(profile: GoogleProfile, ctx: AuthContext): Promise<User> {
+    // 1) Already linked → returning user.
+    const linked = await authRepository.findOAuthAccountWithUser(
+      GOOGLE_PROVIDER,
+      profile.sub,
+    );
+    if (linked) return linked.user;
+
+    // Any email-based decision requires Google to have verified the email.
+    if (!profile.emailVerified) {
+      throw new ForbiddenError(
+        'Your Google email is not verified',
+        'OAUTH_EMAIL_UNVERIFIED',
+      );
+    }
+
+    const existing = await authRepository.findUserByEmail(profile.email);
+    if (existing) {
+      // 3) Email belongs to an UNVERIFIED local account → block (anti-takeover).
+      if (!existing.emailVerifiedAt) {
+        throw new ConflictError(
+          'An account with this email already exists. Please sign in with your password and verify your email first.',
+          'OAUTH_LOCAL_ACCOUNT_UNVERIFIED',
+        );
+      }
+      // 2) Verified local account → link and proceed.
+      await authRepository.linkOAuthAccount({
+        userId: existing.id,
+        provider: GOOGLE_PROVIDER,
+        providerAccountId: profile.sub,
+        email: profile.email,
+      });
+      await recordAudit({
+        actorType: 'USER',
+        actorId: existing.id,
+        action: AuditAction.LOGIN,
+        entityType: 'oauth_account',
+        entityId: existing.id,
+        ip: ctx.ip,
+        userAgent: ctx.userAgent,
+        requestId: ctx.requestId,
+        metadata: { event: 'oauth_link', provider: GOOGLE_PROVIDER },
+      });
+      return existing;
+    }
+
+    // 4) No local account → create an OAuth-only user with an unusable password
+    //    (random argon2 hash) so password login can never succeed for them.
+    const unusablePassword = await hash(generateOpaqueToken(), ARGON_OPTS);
+    const user = await authRepository.createUserWithOAuth({
+      email: profile.email,
+      passwordHash: unusablePassword,
+      provider: GOOGLE_PROVIDER,
+      providerAccountId: profile.sub,
+    });
+    await recordAudit({
+      actorType: 'USER',
+      actorId: user.id,
+      action: AuditAction.REGISTER,
+      entityType: 'user',
+      entityId: user.id,
+      ip: ctx.ip,
+      userAgent: ctx.userAgent,
+      requestId: ctx.requestId,
+      metadata: { method: 'google_oauth', event: 'oauth_signup' },
+    });
+    return user;
+  },
+
+  /** Redeem a one-time OAuth exchange code for the issued session (single-use). */
+  async oauthExchange(code: string): Promise<AuthResult> {
+    const stored = await authRedisGetDel(OAUTH_EXCHANGE_KEY(sha256(code)));
+    if (!stored) {
+      throw new UnauthorizedError('Invalid or expired code', 'OAUTH_CODE_INVALID');
+    }
+    return JSON.parse(stored) as AuthResult;
   },
 
   // ------------------------------------------------------------------
