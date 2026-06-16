@@ -15,7 +15,8 @@ INSERT INTO "assets" ("symbol","name","kind","decimals","is_active") VALUES
   ('TRX',  'TRON',         'CRYPTO', 6,  true),
   ('ETH',  'Ether',        'CRYPTO', 18, true),
   ('BNB',  'BNB',          'CRYPTO', 18, true),
-  ('BTC',  'Bitcoin',      'CRYPTO', 8,  true)
+  ('BTC',  'Bitcoin',      'CRYPTO', 8,  true),
+  ('SOL',  'Solana',       'CRYPTO', 9,  true)
 ON CONFLICT ("symbol") DO NOTHING;
 
 -- ---------------------------------------------------------------------------
@@ -37,6 +38,33 @@ INSERT INTO "asset_chains" ("asset","chain","contract_addr","decimals","min_conf
 ON CONFLICT ("asset","chain") DO NOTHING;
 
 -- ---------------------------------------------------------------------------
+-- CUSTODY  (Module 2 — chain signers + hot/cold wallets)
+--   Signing is MOCKED: we persist a KMS/HSM key REFERENCE only (kms_key_ref),
+--   NEVER key material. Cold wallets reuse hot_wallets with tier = 'COLD'.
+-- ---------------------------------------------------------------------------
+INSERT INTO "chain_signers" ("id","chain","name","kms_key_ref","public_key","status") VALUES
+  ('00000000-0000-0000-0000-0000000005a1', 'TRON', 'TRON Treasury Signer (mock)', 'kms://mock/tron/treasury-1', NULL, 'ACTIVE')
+ON CONFLICT ("chain","kms_key_ref") DO NOTHING;
+
+INSERT INTO "hot_wallets" ("id","chain","signer_id","address","tier","label","is_active") VALUES
+  ('00000000-0000-0000-0000-0000000006a1', 'TRON', '00000000-0000-0000-0000-0000000005a1', 'TMockHotWalletTRONxxxxxxxxxxxxxxxxx',  'HOT',  'TRON hot wallet',  true),
+  ('00000000-0000-0000-0000-0000000006c1', 'TRON', '00000000-0000-0000-0000-0000000005a1', 'TMockColdWalletTRONxxxxxxxxxxxxxxxx', 'COLD', 'TRON cold wallet', true)
+ON CONFLICT ("chain","address") DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- MARKETS  (internal spot order books — USDT/INR on-ramp + crypto/USDT pairs)
+-- tick_size: quote price increment · step_size: base lot increment
+-- min_notional: smallest order value (quote) · fees in basis points
+-- ---------------------------------------------------------------------------
+INSERT INTO "markets" ("id","symbol","base_asset","quote_asset","status","tick_size","step_size","min_notional","maker_fee_bps","taker_fee_bps") VALUES
+  (gen_random_uuid(), 'USDT-INR', 'USDT', 'INR',  'ACTIVE', 0.01,  0.000001, 10, 10, 20),
+  (gen_random_uuid(), 'BTC-USDT', 'BTC',  'USDT', 'ACTIVE', 0.01,  0.000001, 10, 10, 20),
+  (gen_random_uuid(), 'ETH-USDT', 'ETH',  'USDT', 'ACTIVE', 0.01,  0.00001,  10, 10, 20),
+  (gen_random_uuid(), 'BNB-USDT', 'BNB',  'USDT', 'ACTIVE', 0.01,  0.0001,   10, 10, 20),
+  (gen_random_uuid(), 'SOL-USDT', 'SOL',  'USDT', 'ACTIVE', 0.001, 0.001,    10, 10, 20)
+ON CONFLICT ("symbol") DO NOTHING;
+
+-- ---------------------------------------------------------------------------
 -- PERMISSIONS  (the codes the API authorizes against)
 -- ---------------------------------------------------------------------------
 INSERT INTO "permissions" ("id","code","description") VALUES
@@ -49,6 +77,11 @@ INSERT INTO "permissions" ("id","code","description") VALUES
   (gen_random_uuid(), 'withdrawal.view',      'View withdrawals'),
   (gen_random_uuid(), 'withdrawal.approve',   'Approve a withdrawal (dual control)'),
   (gen_random_uuid(), 'withdrawal.reject',    'Reject a withdrawal'),
+  (gen_random_uuid(), 'treasury.manage',      'Approve hot/cold treasury movements'),
+  (gen_random_uuid(), 'compliance.view',      'View risk profiles, alerts & compliance summary'),
+  (gen_random_uuid(), 'compliance.review',    'Evaluate users, assign/triage alerts, manual flag'),
+  (gen_random_uuid(), 'compliance.manage',    'Manage compliance configuration & overrides'),
+  (gen_random_uuid(), 'ops.view',             'View the operational health dashboard'),
   (gen_random_uuid(), 'inr.view',             'View INR transactions'),
   (gen_random_uuid(), 'inr.approve',          'Approve an INR payout'),
   (gen_random_uuid(), 'ledger.view',          'Read the ledger'),
@@ -87,7 +120,8 @@ ON CONFLICT DO NOTHING;
 -- COMPLIANCE
 INSERT INTO "role_permissions" ("role_id","permission_id")
 SELECT r."id", p."id" FROM "roles" r JOIN "permissions" p
-  ON p."code" IN ('user.view','user.freeze','kyc.view','kyc.review','audit.view','deposit.view')
+  ON p."code" IN ('user.view','user.freeze','kyc.view','kyc.review','audit.view','deposit.view',
+                  'compliance.view','compliance.review','compliance.manage')
 WHERE r."name" = 'COMPLIANCE'
 ON CONFLICT DO NOTHING;
 
@@ -95,7 +129,8 @@ ON CONFLICT DO NOTHING;
 INSERT INTO "role_permissions" ("role_id","permission_id")
 SELECT r."id", p."id" FROM "roles" r JOIN "permissions" p
   ON p."code" IN ('withdrawal.view','withdrawal.approve','withdrawal.reject',
-                  'inr.view','inr.approve','ledger.view','recon.run','deposit.view')
+                  'inr.view','inr.approve','ledger.view','recon.run','deposit.view',
+                  'treasury.manage')
 WHERE r."name" = 'FINANCE'
 ON CONFLICT DO NOTHING;
 

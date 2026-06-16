@@ -3,7 +3,7 @@ import { logger } from '../../lib/logger';
 import { withdrawalRepository } from './withdrawal.repository';
 import { withdrawalService } from './withdrawal.service';
 import { getWithdrawalSigner } from './providers';
-import { ASSET, CHAIN } from './withdrawal.types';
+import { ASSET, CHAIN, SUPPORTED_CHAINS } from './withdrawal.types';
 import type { WithdrawalSignerProvider } from './providers';
 
 /**
@@ -27,10 +27,12 @@ export interface WithdrawalCycleResult {
   failed: number;
 }
 
+/** Broadcast APPROVED withdrawals for ONE chain (default TRON). */
 export async function runBroadcastCycle(
   signer: WithdrawalSignerProvider,
+  chain: string = CHAIN,
 ): Promise<number> {
-  const pending = await withdrawalRepository.listForBroadcast(CHAIN);
+  const pending = await withdrawalRepository.listForBroadcast(chain);
   let broadcast = 0;
   for (const w of pending) {
     if (await withdrawalService.broadcastWithdrawal(w, signer)) broadcast += 1;
@@ -38,20 +40,22 @@ export async function runBroadcastCycle(
   return broadcast;
 }
 
+/** Poll/confirm in-flight withdrawals for ONE chain (default TRON). */
 export async function runConfirmationCycle(
   signer: WithdrawalSignerProvider,
+  chain: string = CHAIN,
 ): Promise<{ promoted: number; completed: number; failed: number }> {
-  const token = await withdrawalRepository.getSupportedToken(ASSET, CHAIN);
+  const token = await withdrawalRepository.getSupportedToken(ASSET, chain);
   const minConf = token?.minConfirmations ?? 20;
 
-  const inFlight = await withdrawalRepository.listForConfirmation(CHAIN);
+  const inFlight = await withdrawalRepository.listForConfirmation(chain);
   let promoted = 0;
   let completed = 0;
   let failed = 0;
 
   for (const w of inFlight) {
     if (!w.txHash) continue;
-    const status = await signer.getConfirmations({ chain: CHAIN, txHash: w.txHash });
+    const status = await signer.getConfirmations({ chain, txHash: w.txHash });
     if (!status.found) continue; // not yet visible to the (mock) network
     if (!status.success) {
       if (await withdrawalService.failWithdrawal(w, 'tx_failed_or_dropped')) failed += 1;
@@ -67,13 +71,32 @@ export async function runConfirmationCycle(
   return { promoted, completed, failed };
 }
 
-/** One full broadcast → confirm cycle. Exposed for tests + schedulers. */
+/**
+ * One full broadcast → confirm cycle. Defaults to TRON for back-compat (the
+ * existing single-chain callers/tests); the worker process runs it per chain.
+ */
 export async function runWithdrawalCycle(
   signer: WithdrawalSignerProvider,
+  chain: string = CHAIN,
 ): Promise<WithdrawalCycleResult> {
-  const broadcast = await runBroadcastCycle(signer);
-  const { promoted, completed, failed } = await runConfirmationCycle(signer);
+  const broadcast = await runBroadcastCycle(signer, chain);
+  const { promoted, completed, failed } = await runConfirmationCycle(signer, chain);
   return { broadcast, promoted, completed, failed };
+}
+
+/** Run a withdrawal cycle across EVERY supported chain (used by the worker). */
+export async function runAllChainsWithdrawalCycle(
+  signer: WithdrawalSignerProvider,
+): Promise<WithdrawalCycleResult> {
+  const totals: WithdrawalCycleResult = { broadcast: 0, promoted: 0, completed: 0, failed: 0 };
+  for (const chain of SUPPORTED_CHAINS) {
+    const r = await runWithdrawalCycle(signer, chain);
+    totals.broadcast += r.broadcast;
+    totals.promoted += r.promoted;
+    totals.completed += r.completed;
+    totals.failed += r.failed;
+  }
+  return totals;
 }
 
 export interface WithdrawalWorkerHandle {
@@ -94,7 +117,7 @@ export function startWithdrawalWorker(
   const tick = async (): Promise<void> => {
     if (!running) return;
     try {
-      const result = await runWithdrawalCycle(signer);
+      const result = await runAllChainsWithdrawalCycle(signer);
       if (result.broadcast || result.completed || result.failed || result.promoted) {
         logger.info({ ...result, signer: signer.mode }, 'Withdrawal cycle complete');
       }

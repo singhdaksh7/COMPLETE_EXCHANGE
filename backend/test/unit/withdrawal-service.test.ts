@@ -37,6 +37,11 @@ vi.mock('../../src/lib/audit', async (orig) => {
   return { ...actual, recordAudit: vi.fn().mockResolvedValue(undefined) };
 });
 
+// Notifications are a fire-and-forget side effect; stub them in the unit test.
+vi.mock('../../src/modules/notification/notification.service', () => ({
+  notificationService: { notifyUser: vi.fn(), notifyAdmins: vi.fn() },
+}));
+
 import { ConflictError } from '../../src/lib/errors';
 import { withdrawalRepository } from '../../src/modules/withdrawal/withdrawal.repository';
 import { ledgerService } from '../../src/modules/ledger/ledger.service';

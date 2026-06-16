@@ -18,6 +18,11 @@ vi.mock('../../src/lib/audit', () => ({
   recordAudit: vi.fn().mockResolvedValue(undefined),
 }));
 
+// Notifications are a fire-and-forget side effect; stub them in the unit test.
+vi.mock('../../src/modules/notification/notification.service', () => ({
+  notificationService: { notifyUser: vi.fn(), notifyAdmins: vi.fn() },
+}));
+
 import { kycRepository } from '../../src/modules/kyc/kyc.repository';
 import { kycService } from '../../src/modules/kyc/kyc.service';
 import { recordAudit } from '../../src/lib/audit';

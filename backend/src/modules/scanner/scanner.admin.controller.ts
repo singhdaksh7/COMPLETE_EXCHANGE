@@ -21,7 +21,9 @@ function ctx(req: Request): ScannerContext {
 export const adminScannerController = {
   async health(req: Request, res: Response): Promise<void> {
     if (!req.admin) throw new UnauthorizedError();
-    const data = await scannerService.getHealth(ctx(req));
+    // The legacy /admin/v1/scanner/health endpoint is TRON-scoped; the
+    // multi-chain view lives at /admin/v1/chains/:chain/health.
+    const data = await scannerService.getHealth('TRON', ctx(req));
     sendSuccess(res, data);
   },
 

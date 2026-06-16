@@ -41,8 +41,20 @@ export function createMockTronProvider(seed: MockSeed = {}): MockTronProvider {
 
   const hashFor = (n: bigint): string => hashOverrides.get(n) ?? `tron_block_${n}`;
 
+  const transfersIn = (input: GetTransfersInput): Trc20Transfer[] =>
+    transfers
+      .filter(
+        (t) =>
+          t.contract === input.contract &&
+          t.blockNumber >= input.fromBlock &&
+          t.blockNumber <= input.toBlock &&
+          t.blockNumber <= head,
+      )
+      .map((t) => ({ ...t, blockHash: hashFor(t.blockNumber) }));
+
   return {
     name: 'tron-mock',
+    chain: 'TRON',
     mode: 'mock',
 
     async getLatestBlock(): Promise<BlockRef> {
@@ -54,16 +66,13 @@ export function createMockTronProvider(seed: MockSeed = {}): MockTronProvider {
       return { number: blockNumber, hash: hashFor(blockNumber) };
     },
 
+    // Generic seam used by the multi-chain scanner.
+    async getTokenTransfers(input: GetTransfersInput): Promise<Trc20Transfer[]> {
+      return transfersIn(input);
+    },
+    // Back-compat alias retained for existing TRON callers/tests.
     async getTrc20Transfers(input: GetTransfersInput): Promise<Trc20Transfer[]> {
-      return transfers
-        .filter(
-          (t) =>
-            t.contract === input.contract &&
-            t.blockNumber >= input.fromBlock &&
-            t.blockNumber <= input.toBlock &&
-            t.blockNumber <= head,
-        )
-        .map((t) => ({ ...t, blockHash: hashFor(t.blockNumber) }));
+      return transfersIn(input);
     },
 
     // ---- test controls ----

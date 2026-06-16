@@ -21,10 +21,10 @@ function ctx(req: Request): WithdrawalContext {
 export const adminWithdrawalController = {
   async queue(req: Request, res: Response): Promise<void> {
     if (!req.admin) throw new UnauthorizedError();
-    const { status, userId, cursor, limit } =
+    const { status, chain, asset, userId, cursor, limit } =
       req.query as unknown as AdminQueueQueryDto;
     const result = await withdrawalService.adminListQueue(
-      { status, userId, cursor, limit },
+      { status, chain, asset, userId, cursor, limit },
       ctx(req),
     );
     sendSuccess(res, result);

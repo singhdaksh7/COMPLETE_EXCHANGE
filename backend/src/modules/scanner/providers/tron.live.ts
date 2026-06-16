@@ -43,8 +43,18 @@ export function createLiveTronProvider(deps: {
     return (await res.json()) as T;
   }
 
+  async function trc20Transfers(input: GetTransfersInput): Promise<Trc20Transfer[]> {
+    // TronGrid exposes contract event logs; a production implementation would
+    // page the event endpoint and map results. Left as a typed stub because
+    // live scanning requires real credentials and is never run in tests.
+    throw new ServiceUnavailableError(
+      `Live TRC20 transfer scanning is not implemented (contract ${input.contract})`,
+    );
+  }
+
   return {
     name: 'tron-live',
+    chain: 'TRON',
     mode: 'live',
 
     async getLatestBlock(): Promise<BlockRef> {
@@ -70,13 +80,7 @@ export function createLiveTronProvider(deps: {
       };
     },
 
-    async getTrc20Transfers(input: GetTransfersInput): Promise<Trc20Transfer[]> {
-      // TronGrid exposes contract event logs; a production implementation would
-      // page the event endpoint and map results. Left as a typed stub because
-      // live scanning requires real credentials and is never run in tests.
-      throw new ServiceUnavailableError(
-        `Live TRC20 transfer scanning is not implemented (contract ${input.contract})`,
-      );
-    },
+    getTokenTransfers: trc20Transfers,
+    getTrc20Transfers: trc20Transfers,
   };
 }

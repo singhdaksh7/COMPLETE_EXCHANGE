@@ -6,19 +6,25 @@ const usdtAmount = z
   .regex(/^(0|[1-9]\d*)(\.\d{1,6})?$/, 'Amount must be a decimal string (≤6 dp)')
   .refine((v) => !/^0(?:\.0+)?$/.test(v), 'Amount must be greater than zero');
 
-const chainId = z
+// The withdrawal flow supports TRON + EVM (Ethereum/BSC).
+const chainEnum = z
   .string()
   .trim()
-  .min(1)
-  .max(40)
-  .regex(/^[A-Za-z0-9_]+$/, 'Invalid chain id')
-  .transform((v) => v.toUpperCase());
+  .transform((v) => v.toUpperCase())
+  .pipe(z.enum(['TRON', 'ETHEREUM', 'BSC']));
 
-// TRON base58 address shape (T + 33 base58 chars). Kept lenient but bounded.
-const tronAddress = z
-  .string()
-  .trim()
-  .regex(/^T[1-9A-HJ-NP-Za-km-z]{33}$/, 'Invalid TRON address');
+// A destination address — its FORMAT is validated against the chain in a
+// superRefine below (EVM → 0x+40 hex; TRON → base58 T-address).
+const anyAddress = z.string().trim().min(20).max(64);
+
+const EVM_ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
+const TRON_ADDRESS_RE = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
+
+function addressMatchesChain(chain: string, address: string): boolean {
+  if (chain === 'ETHEREUM' || chain === 'BSC') return EVM_ADDRESS_RE.test(address);
+  if (chain === 'TRON') return TRON_ADDRESS_RE.test(address);
+  return false;
+}
 
 const withdrawalStatus = z.enum([
   'REQUESTED',
@@ -37,22 +43,33 @@ const withdrawalStatus = z.enum([
 
 export const addAddressSchema = z
   .object({
-    chain: chainId.default('TRON'),
-    address: tronAddress,
+    chain: chainEnum.default('TRON'),
+    address: anyAddress,
     label: z.string().trim().min(1).max(64).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((v, ctx) => {
+    if (!addressMatchesChain(v.chain, v.address)) {
+      ctx.addIssue({ code: 'custom', path: ['address'], message: `Invalid ${v.chain} address` });
+    }
+  });
 
 export const addressQuerySchema = z
-  .object({ chain: chainId.optional() })
+  .object({ chain: chainEnum.optional() })
   .strict();
 
 export const createWithdrawalSchema = z
   .object({
-    toAddress: tronAddress,
+    chain: chainEnum.default('TRON'),
+    toAddress: anyAddress,
     amount: usdtAmount,
   })
-  .strict();
+  .strict()
+  .superRefine((v, ctx) => {
+    if (!addressMatchesChain(v.chain, v.toAddress)) {
+      ctx.addIssue({ code: 'custom', path: ['toAddress'], message: `Invalid ${v.chain} address` });
+    }
+  });
 
 export const withdrawalIdParamSchema = z
   .object({ id: z.string().uuid() })
@@ -69,6 +86,13 @@ export const withdrawalQuerySchema = z
 export const adminQueueQuerySchema = z
   .object({
     status: withdrawalStatus.optional(),
+    chain: chainEnum.optional(),
+    asset: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z0-9]{2,16}$/)
+      .transform((v) => v.toUpperCase())
+      .optional(),
     userId: z.string().uuid().optional(),
     cursor: z.string().optional(),
     limit: z.coerce.number().int().min(1).max(100).default(50),

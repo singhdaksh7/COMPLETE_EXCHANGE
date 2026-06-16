@@ -3,7 +3,7 @@ import { config } from '../../config';
 import { logger } from '../../lib/logger';
 import { recordAudit } from '../../lib/audit';
 import { scannerRepository } from './scanner.repository';
-import { getTronProvider } from './providers';
+import { getChainProvider } from './providers';
 import { ScannerAction, baseToHuman, toCryptoDepositDto } from './scanner.types';
 import type {
   CryptoDepositDto,
@@ -11,9 +11,9 @@ import type {
   ScannerContext,
   ScannerHealthDto,
 } from './scanner.types';
-import type { TronProvider, Trc20Transfer } from './providers';
+import type { ChainProvider, TokenTransfer } from './providers';
 
-const CHAIN = 'TRON';
+const DEFAULT_CHAIN = 'TRON';
 const ASSET = 'USDT';
 
 function bigMax(a: bigint, b: bigint): bigint {
@@ -30,8 +30,9 @@ function bigMax(a: bigint, b: bigint): bigint {
  * crediting is the separate confirmation service, after min-confirmations.
  */
 export const scannerService = {
-  async scanOnce(deps: { provider: TronProvider }): Promise<ScanResult> {
+  async scanOnce(deps: { provider: ChainProvider; chain?: string }): Promise<ScanResult> {
     const { provider } = deps;
+    const CHAIN = deps.chain ?? provider.chain ?? DEFAULT_CHAIN;
     const startBlock = BigInt(config.scanner.startBlock);
     const safetyLag = BigInt(config.scanner.safetyLag);
     const reorgBuffer = BigInt(config.scanner.reorgBuffer);
@@ -72,12 +73,12 @@ export const scannerService = {
       addresses.map((a) => [a.address, { userId: a.userId, addressId: a.id }]),
     );
 
-    const transfers = await provider.getTrc20Transfers({
+    const transfers = await provider.getTokenTransfers({
       contract: token.contractAddr,
       fromBlock,
       toBlock,
     });
-    const byBlock = new Map<bigint, Trc20Transfer[]>();
+    const byBlock = new Map<bigint, TokenTransfer[]>();
     for (const t of transfers) {
       const list = byBlock.get(t.blockNumber) ?? [];
       list.push(t);
@@ -160,8 +161,16 @@ export const scannerService = {
   // ------------------------------------------------------------------
   // Admin: scanner health + deposit monitoring
   // ------------------------------------------------------------------
-  async getHealth(ctx: ScannerContext = {}): Promise<ScannerHealthDto> {
-    const provider = getTronProvider();
+  async getHealth(chainInput?: string, ctx: ScannerContext = {}): Promise<ScannerHealthDto> {
+    const CHAIN = (chainInput ?? DEFAULT_CHAIN).toUpperCase();
+    let provider: ChainProvider;
+    try {
+      provider = getChainProvider(CHAIN);
+    } catch {
+      // Unknown/unsupported chain — report a placeholder so the endpoint still
+      // returns structured health rather than 500ing.
+      provider = { name: 'none', chain: CHAIN, mode: 'mock' } as ChainProvider;
+    }
     let headBlock: bigint | null = null;
     try {
       headBlock = (await provider.getLatestBlock()).number;

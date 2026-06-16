@@ -127,6 +127,27 @@ enum SweepStatus {
   FAILED
 }
 
+// Treasury custody movement between the exchange's own wallets:
+//   SWEEP  = hot  -> cold  (move idle balance off the hot wallet)
+//   REFILL = cold -> hot   (top the hot wallet back up for payouts)
+enum TreasuryTransferType {
+  SWEEP
+  REFILL
+}
+
+// Approval-gated lifecycle. Single-control completes at first approval;
+// dual-control (config-gated) parks at PENDING_APPROVAL until a second,
+// distinct approver signs off — then it executes through the ledger.
+enum TreasuryTransferStatus {
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  BROADCAST
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
 enum InrTxnStatus {
   INITIATED
   PENDING
@@ -200,6 +221,35 @@ enum FeeKind {
   SWEEP
 }
 
+// Shared severity scale for risk profiles AND compliance alerts (Module 3).
+enum ComplianceRiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+// Investigation lifecycle for a compliance alert (Module 3).
+enum ComplianceAlertStatus {
+  OPEN
+  REVIEWING
+  ESCALATED
+  CLOSED
+}
+
+// In-app notification severity + read lifecycle (Phase 5.5).
+enum NotificationSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum NotificationStatus {
+  UNREAD
+  READ
+  ARCHIVED
+}
+
 enum ReconType {
   CHAIN // ledger vs on-chain hot/cold balances
   GATEWAY // ledger vs payment-gateway settlement
@@ -255,6 +305,7 @@ model Chain {
   sweeps            Sweep[]
   gasReserves       GasReserve[]
   networkFees       NetworkFee[]
+  treasuryTransfers TreasuryTransfer[]
 
   @@index([isActive])
   @@map("chains")
@@ -268,14 +319,15 @@ model Asset {
   isActive  Boolean   @default(true) @map("is_active")
   createdAt DateTime  @default(now()) @map("created_at")
 
-  chains          AssetChain[]
-  accounts        Account[]
-  baseMarkets     Market[]      @relation("BaseAsset")
-  quoteMarkets    Market[]      @relation("QuoteAsset")
-  nativeForChains Chain[]       @relation("ChainNativeAsset")
-  gasReserves     GasReserve[]
-  networkFees     NetworkFee[]
-  ledgerEntries   LedgerEntry[]
+  chains            AssetChain[]
+  accounts          Account[]
+  baseMarkets       Market[]           @relation("BaseAsset")
+  quoteMarkets      Market[]           @relation("QuoteAsset")
+  nativeForChains   Chain[]            @relation("ChainNativeAsset")
+  gasReserves       GasReserve[]
+  networkFees       NetworkFee[]
+  ledgerEntries     LedgerEntry[]
+  treasuryTransfers TreasuryTransfer[]
 
   @@map("assets")
 }
@@ -358,6 +410,9 @@ model User {
   totpRecoveryCodes TotpRecoveryCode[]
   makerTrades       Trade[]             @relation("TradeMaker")
   takerTrades       Trade[]             @relation("TradeTaker")
+  riskProfile       UserRiskProfile?
+  complianceAlerts  ComplianceAlert[]
+  notifications     Notification[]
 
   @@index([status])
   @@index([kycStatus])
@@ -483,21 +538,23 @@ model AdminRole {
 // KYC
 // ============================================================================
 model KycProfile {
-  id             String    @id @default(uuid()) @db.Uuid
-  userId         String    @unique @map("user_id") @db.Uuid
-  fullName       String?   @map("full_name")
-  dob            DateTime? @db.Date
-  panEnc         Bytes?    @map("pan_enc")
-  aadhaarRefEnc  Bytes?    @map("aadhaar_ref_enc")
-  address        Json?
-  status         KycStatus @default(PENDING)
-  provider       String?
-  providerRef    String?   @map("provider_ref")
-  rejectedReason String?   @map("rejected_reason")
-  reviewedBy     String?   @map("reviewed_by") @db.Uuid
-  reviewedAt     DateTime? @map("reviewed_at")
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
+  id                String    @id @default(uuid()) @db.Uuid
+  userId            String    @unique @map("user_id") @db.Uuid
+  fullName          String?   @map("full_name")
+  dob               DateTime? @db.Date
+  panEnc            Bytes?    @map("pan_enc")
+  aadhaarRefEnc     Bytes?    @map("aadhaar_ref_enc")
+  address           Json?
+  status            KycStatus @default(PENDING)
+  provider          String?
+  providerRef       String?   @map("provider_ref")
+  providerStatus    String?   @map("provider_status") // normalized: PENDING/VERIFIED/REJECTED
+  providerUpdatedAt DateTime? @map("provider_updated_at")
+  rejectedReason    String?   @map("rejected_reason")
+  reviewedBy        String?   @map("reviewed_by") @db.Uuid
+  reviewedAt        DateTime? @map("reviewed_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
 
   user     User   @relation(fields: [userId], references: [id])
   reviewer Admin? @relation("KycReviewer", fields: [reviewedBy], references: [id])
@@ -562,15 +619,16 @@ model LedgerTransaction {
   metadata      Json?
   createdAt     DateTime @default(now()) @map("created_at")
 
-  entries          LedgerEntry[]
-  creditedDeposits CryptoDeposit[]    @relation("DepositCredit")
-  holdWithdrawals  CryptoWithdrawal[] @relation("WithdrawalHold")
-  finalWithdrawals CryptoWithdrawal[] @relation("WithdrawalFinal")
-  inrSettlements   InrTransaction[]
-  conversions      Conversion[]
-  orderLocks       Order[]
-  tradeSettlements Trade[]
-  sweeps           Sweep[]
+  entries           LedgerEntry[]
+  creditedDeposits  CryptoDeposit[]    @relation("DepositCredit")
+  holdWithdrawals   CryptoWithdrawal[] @relation("WithdrawalHold")
+  finalWithdrawals  CryptoWithdrawal[] @relation("WithdrawalFinal")
+  inrSettlements    InrTransaction[]
+  conversions       Conversion[]
+  orderLocks        Order[]
+  tradeSettlements  Trade[]
+  sweeps            Sweep[]
+  treasuryTransfers TreasuryTransfer[] @relation("TreasuryTransferLedger")
 
   @@index([referenceType, referenceId])
   @@index([kind, createdAt])
@@ -671,12 +729,14 @@ model HotWallet {
   isActive  Boolean    @default(true) @map("is_active")
   createdAt DateTime   @default(now()) @map("created_at")
 
-  chainRef    Chain              @relation(fields: [chain], references: [id])
-  signer      ChainSigner        @relation(fields: [signerId], references: [id])
-  nonce       WalletNonce?
-  withdrawals CryptoWithdrawal[]
-  sweeps      Sweep[]
-  gasReserves GasReserve[]
+  chainRef     Chain              @relation(fields: [chain], references: [id])
+  signer       ChainSigner        @relation(fields: [signerId], references: [id])
+  nonce        WalletNonce?
+  withdrawals  CryptoWithdrawal[]
+  sweeps       Sweep[]
+  gasReserves  GasReserve[]
+  treasuryFrom TreasuryTransfer[] @relation("TreasuryFrom")
+  treasuryTo   TreasuryTransfer[] @relation("TreasuryTo")
 
   @@unique([chain, address])
   @@index([chain, tier, isActive])
@@ -866,6 +926,56 @@ model NetworkFee {
   @@index([withdrawalId])
   @@index([sweepId])
   @@map("network_fees")
+}
+
+// ============================================================================
+// TREASURY TRANSFERS — approval-gated hot<->cold custody movement (Module 2)
+//
+// A treasury transfer moves the exchange's OWN funds between a hot wallet and a
+// cold wallet (both rows in hot_wallets; cold = tier COLD). It NEVER touches a
+// user balance. On execution the money movement is a balanced ledger posting
+// between the HOT_WALLET and COLD_WALLET system accounts for the asset, so the
+// custody position stays reconcilable. No private keys are stored or returned;
+// signing is mocked (signerRef/kmsKeyRef on the wallet's ChainSigner only).
+// ============================================================================
+model TreasuryTransfer {
+  id            String                 @id @default(uuid()) @db.Uuid
+  type          TreasuryTransferType
+  chain         String                 @db.Citext
+  asset         String                 @db.Citext
+  fromWalletId  String                 @map("from_wallet_id") @db.Uuid
+  toWalletId    String                 @map("to_wallet_id") @db.Uuid
+  amount        Decimal                @db.Decimal(38, 18)
+  status        TreasuryTransferStatus @default(PENDING_APPROVAL)
+  reason        String?
+  requestedBy   String                 @map("requested_by") @db.Uuid
+  approvedBy    String?                @map("approved_by") @db.Uuid
+  approvedBy2   String?                @map("approved_by_2") @db.Uuid // dual-control (prepared)
+  rejectedBy    String?                @map("rejected_by") @db.Uuid
+  ledgerTxnId   String?                @map("ledger_txn_id") @db.Uuid
+  txHash        String?                @map("tx_hash") // mock broadcast reference
+  nonce         BigInt?
+  failureReason String?                @map("failure_reason")
+  createdAt     DateTime               @default(now()) @map("created_at")
+  approvedAt    DateTime?              @map("approved_at")
+  completedAt   DateTime?              @map("completed_at")
+  updatedAt     DateTime               @updatedAt @map("updated_at")
+
+  chainRef   Chain              @relation(fields: [chain], references: [id])
+  assetRef   Asset              @relation(fields: [asset], references: [symbol])
+  fromWallet HotWallet          @relation("TreasuryFrom", fields: [fromWalletId], references: [id])
+  toWallet   HotWallet          @relation("TreasuryTo", fields: [toWalletId], references: [id])
+  requester  Admin              @relation("TreasuryRequester", fields: [requestedBy], references: [id])
+  approver   Admin?             @relation("TreasuryApprover1", fields: [approvedBy], references: [id])
+  approver2  Admin?             @relation("TreasuryApprover2", fields: [approvedBy2], references: [id])
+  rejecter   Admin?             @relation("TreasuryRejecter", fields: [rejectedBy], references: [id])
+  ledgerTxn  LedgerTransaction? @relation("TreasuryTransferLedger", fields: [ledgerTxnId], references: [id])
+
+  @@index([status])
+  @@index([type, status])
+  @@index([chain, asset])
+  @@index([createdAt])
+  @@map("treasury_transfers")
 }
 
 // ============================================================================
@@ -1143,6 +1253,14 @@ model Admin {
   approvedWithdrawals2 CryptoWithdrawal[] @relation("WithdrawApprover2")
   grantedRoles         UserRole[]         @relation("RoleGranter")
   updatedFlags         SystemFlag[]       @relation("FlagUpdater")
+  requestedTreasury    TreasuryTransfer[] @relation("TreasuryRequester")
+  approvedTreasury     TreasuryTransfer[] @relation("TreasuryApprover1")
+  approvedTreasury2    TreasuryTransfer[] @relation("TreasuryApprover2")
+  rejectedTreasury     TreasuryTransfer[] @relation("TreasuryRejecter")
+  reviewedRiskProfiles UserRiskProfile[]  @relation("RiskReviewer")
+  assignedAlerts       ComplianceAlert[]  @relation("AlertAssignee")
+  reviewedAlerts       ComplianceAlert[]  @relation("AlertReviewer")
+  notifications        Notification[]
 
   @@map("admins")
 }
@@ -1210,6 +1328,98 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([action, occurredAt])
   @@map("audit_logs")
+}
+
+// ============================================================================
+// COMPLIANCE — FIU/AML readiness foundation (Module 3)
+//
+// Internal-only risk scoring + alerting derived from existing platform events
+// (deposits, withdrawals, conversions, trades, login/session IPs, KYC state).
+// NO third-party AML/sanctions/PEP integration yet — that is future work. These
+// tables hold ONLY derived signals + metadata evidence; they NEVER store PAN /
+// Aadhaar / raw KYC documents (those stay encrypted in kyc_profiles).
+// ============================================================================
+
+// One rolling risk profile per user, recomputed by the rule engine.
+model UserRiskProfile {
+  userId          String              @id @map("user_id") @db.Uuid
+  riskScore       Int                 @default(0) @map("risk_score") // 0–100
+  riskLevel       ComplianceRiskLevel @default(LOW) @map("risk_level")
+  reasons         Json? // [{ code, severity, detail }] — metadata only, no PII
+  manualOverride  Boolean             @default(false) @map("manual_override")
+  lastEvaluatedAt DateTime?           @map("last_evaluated_at")
+  reviewedBy      String?             @map("reviewed_by") @db.Uuid
+  reviewedAt      DateTime?           @map("reviewed_at")
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewer Admin? @relation("RiskReviewer", fields: [reviewedBy], references: [id])
+
+  @@index([riskLevel])
+  @@index([riskScore])
+  @@map("user_risk_profiles")
+}
+
+// A single triggered signal awaiting / under compliance review. `alertType` is a
+// free-form rule code (extensible — new rules need no migration). `dedupeKey`
+// makes rule firing idempotent (re-evaluating a user never duplicates an alert
+// for the same underlying event); NULL keys (manual flags) may repeat.
+model ComplianceAlert {
+  id          String                @id @default(uuid()) @db.Uuid
+  userId      String                @map("user_id") @db.Uuid
+  alertType   String                @map("alert_type")
+  severity    ComplianceRiskLevel   @default(MEDIUM)
+  status      ComplianceAlertStatus @default(OPEN)
+  sourceType  String?               @map("source_type") // e.g. 'inr_transaction'
+  sourceId    String?               @map("source_id")
+  description String
+  evidence    Json? // metadata only — amounts, ids, counts, timestamps; NO PII
+  dedupeKey   String?               @map("dedupe_key")
+  assignedTo  String?               @map("assigned_to") @db.Uuid
+  reviewedBy  String?               @map("reviewed_by") @db.Uuid
+  reviewedAt  DateTime?             @map("reviewed_at")
+  resolution  String?
+  createdAt   DateTime              @default(now()) @map("created_at")
+  updatedAt   DateTime              @updatedAt @map("updated_at")
+
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignee Admin? @relation("AlertAssignee", fields: [assignedTo], references: [id])
+  reviewer Admin? @relation("AlertReviewer", fields: [reviewedBy], references: [id])
+
+  @@unique([dedupeKey]) // idempotent rule firing (NULLs allowed to repeat)
+  @@index([status, severity])
+  @@index([userId, createdAt])
+  @@index([alertType, createdAt])
+  @@map("compliance_alerts")
+}
+
+// ============================================================================
+// NOTIFICATIONS — internal in-app notifications for users + admins (Phase 5.5)
+//
+// Exactly one of (user_id, admin_id) is set: user_id → a user notification,
+// admin_id → an admin notification (team events are fanned out one row per
+// admin). In-app only — NO email/SMS/push. Metadata carries non-PII context.
+// ============================================================================
+model Notification {
+  id        String               @id @default(uuid()) @db.Uuid
+  userId    String?              @map("user_id") @db.Uuid
+  adminId   String?              @map("admin_id") @db.Uuid
+  type      String
+  title     String
+  message   String
+  severity  NotificationSeverity @default(INFO)
+  status    NotificationStatus   @default(UNREAD)
+  metadata  Json?
+  createdAt DateTime             @default(now()) @map("created_at")
+  readAt    DateTime?            @map("read_at")
+
+  user  User?  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  admin Admin? @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, createdAt])
+  @@index([adminId, status, createdAt])
+  @@map("notifications")
 }
 
 // ============================================================================

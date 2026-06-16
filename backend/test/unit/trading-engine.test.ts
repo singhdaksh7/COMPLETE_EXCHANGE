@@ -129,6 +129,23 @@ describe('computeLockRequirement', () => {
       amount: '100.00',
     });
   });
+
+  it('uses the market pair when given (multi-market: BTC-USDT)', () => {
+    // base = BTC (8dp), quote = USDT (6dp) — SELL locks BTC, BUY locks USDT.
+    const BTC_USDT: MarketParams = { baseScale: 8, quoteScale: 6, baseAsset: 'BTC', quoteAsset: 'USDT' };
+    expect(computeLockRequirement({ side: 'SELL', type: 'LIMIT', quantity: '0.5' }, BTC_USDT)).toEqual({
+      asset: 'BTC',
+      amount: '0.50000000',
+    });
+    expect(computeLockRequirement({ side: 'BUY', type: 'LIMIT', price: '60000.00', quantity: '0.5' }, BTC_USDT)).toEqual({
+      asset: 'USDT',
+      amount: '30000.000000',
+    });
+    expect(computeLockRequirement({ side: 'BUY', type: 'MARKET', quoteBudget: '500' }, BTC_USDT)).toEqual({
+      asset: 'USDT',
+      amount: '500.000000',
+    });
+  });
 });
 
 describe('computeFee', () => {

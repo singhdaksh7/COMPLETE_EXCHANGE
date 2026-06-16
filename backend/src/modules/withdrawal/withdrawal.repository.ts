@@ -250,6 +250,8 @@ export const withdrawalRepository = {
 
   adminListQueue(input: {
     status?: WithdrawalStatus;
+    chain?: string;
+    asset?: string;
     userId?: string;
     cursor?: string;
     limit: number;
@@ -261,6 +263,8 @@ export const withdrawalRepository = {
             in: ['REQUESTED', 'RISK_CHECK', 'PENDING_APPROVAL', 'APPROVED', 'QUEUED'],
           },
         };
+    if (input.chain) where.chain = input.chain;
+    if (input.asset) where.asset = input.asset;
     if (input.userId) where.userId = input.userId;
     if (input.cursor) where.id = { lt: input.cursor };
     return prisma.cryptoWithdrawal.findMany({

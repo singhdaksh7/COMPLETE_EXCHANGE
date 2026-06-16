@@ -12,10 +12,12 @@ import { ledgerService } from '../ledger/ledger.service';
 import { withdrawalRepository } from './withdrawal.repository';
 import {
   ASSET,
-  CHAIN,
   LEDGER,
   WithdrawalAction,
+  feeForChain,
   humanToBase,
+  isSupportedChain,
+  isValidAddressForChain,
   toCryptoWithdrawalDto,
   toWithdrawalAddressDto,
 } from './withdrawal.types';
@@ -26,6 +28,8 @@ import type {
 } from './withdrawal.types';
 import type { LedgerPostingLine } from '../ledger/ledger.types';
 import type { WithdrawalSignerProvider } from './providers';
+import { notificationService } from '../notification/notification.service';
+import { NotificationType } from '../notification/notification.types';
 
 function isFrozen(value: unknown): boolean {
   return Boolean((value as { enabled?: boolean } | null)?.enabled);
@@ -66,8 +70,11 @@ export const withdrawalService = {
     input: { chain: string; address: string; label?: string },
     ctx: WithdrawalContext = {},
   ): Promise<WithdrawalAddressDto> {
-    if (input.chain !== CHAIN) {
-      throw new AppError(`Only ${CHAIN} is supported`, 422, 'CHAIN_NOT_SUPPORTED');
+    if (!isSupportedChain(input.chain)) {
+      throw new AppError(`Chain ${input.chain} is not supported`, 422, 'CHAIN_NOT_SUPPORTED');
+    }
+    if (!isValidAddressForChain(input.chain, input.address)) {
+      throw new AppError(`Invalid ${input.chain} address`, 422, 'INVALID_ADDRESS');
     }
     const existing = await withdrawalRepository.findActiveAddress(
       userId,
@@ -111,9 +118,14 @@ export const withdrawalService = {
   // ==================================================================
   async requestWithdrawal(
     userId: string,
-    input: { toAddress: string; amount: string },
+    input: { chain?: string; toAddress: string; amount: string },
     ctx: WithdrawalContext = {},
   ): Promise<CryptoWithdrawalDto> {
+    const chain = (input.chain ?? 'TRON').toUpperCase();
+    if (!isSupportedChain(chain)) {
+      throw new AppError(`Chain ${chain} is not supported`, 422, 'CHAIN_NOT_SUPPORTED');
+    }
+
     // 16. Global freeze kill-switch.
     const freeze = await withdrawalRepository.getWithdrawalFreeze();
     if (isFrozen(freeze?.value)) {
@@ -130,15 +142,15 @@ export const withdrawalService = {
       throw new ForbiddenError('KYC approval is required to withdraw', 'KYC_REQUIRED');
     }
 
-    const token = await withdrawalRepository.getSupportedToken(ASSET, CHAIN);
+    const token = await withdrawalRepository.getSupportedToken(ASSET, chain);
     if (!token || !token.contractAddr) {
-      throw new AppError(`${ASSET} on ${CHAIN} is not supported`, 422, 'ASSET_NOT_SUPPORTED');
+      throw new AppError(`${ASSET} on ${chain} is not supported`, 422, 'ASSET_NOT_SUPPORTED');
     }
 
     // 1. Allowlist enforcement (+ cooling-off).
     const allow = await withdrawalRepository.findActiveAddress(
       userId,
-      CHAIN,
+      chain,
       input.toAddress,
     );
     if (!allow) {
@@ -155,12 +167,12 @@ export const withdrawalService = {
       );
     }
 
-    // Amount, fee, net.
+    // Amount, chain-specific fee, net.
     const amount = new Prisma.Decimal(input.amount);
-    const fee = new Prisma.Decimal(config.withdrawal.feeUsdt);
+    const fee = feeForChain(chain);
     if (amount.lte(fee)) {
       throw new AppError(
-        `Amount must exceed the ${fee.toFixed()} ${ASSET} fee`,
+        `Amount must exceed the ${fee.toFixed()} ${ASSET} ${chain} fee`,
         422,
         'AMOUNT_TOO_SMALL',
       );
@@ -182,7 +194,7 @@ export const withdrawalService = {
 
     const withdrawal = await withdrawalRepository.createWithdrawal({
       userId,
-      chain: CHAIN,
+      chain,
       asset: ASSET,
       toAddress: input.toAddress,
       amount,
@@ -212,12 +224,27 @@ export const withdrawalService = {
       userAgent: ctx.userAgent,
       requestId: ctx.requestId,
       metadata: {
-        chain: CHAIN,
+        chain,
         asset: ASSET,
         amount: amount.toFixed(),
         toAddress: input.toAddress,
         holdTxnId: held.holdTxnId,
       },
+    });
+
+    await notificationService.notifyUser({
+      userId,
+      type: NotificationType.WITHDRAWAL_SUBMITTED,
+      title: 'Withdrawal submitted',
+      message: `Your ${ASSET} withdrawal on ${chain} was submitted for review.`,
+      metadata: { withdrawalId: held.id, chain, asset: ASSET, amount: amount.toFixed() },
+    });
+    await notificationService.notifyAdmins({
+      type: NotificationType.ADMIN_WITHDRAWAL_PENDING,
+      title: 'Withdrawal pending approval',
+      message: `A ${ASSET} withdrawal on ${chain} is awaiting approval.`,
+      severity: 'WARNING',
+      metadata: { withdrawalId: held.id, chain, asset: ASSET, amount: amount.toFixed() },
     });
     return toCryptoWithdrawalDto(held);
   },
@@ -247,7 +274,7 @@ export const withdrawalService = {
   // Admin: queue + approve/reject
   // ==================================================================
   async adminListQueue(
-    input: { status?: WithdrawalStatus; userId?: string; cursor?: string; limit: number },
+    input: { status?: WithdrawalStatus; chain?: string; asset?: string; userId?: string; cursor?: string; limit: number },
     ctx: WithdrawalContext = {},
   ): Promise<{ items: CryptoWithdrawalDto[]; nextCursor: string | null }> {
     const rows = await withdrawalRepository.adminListQueue(input);
@@ -288,6 +315,13 @@ export const withdrawalService = {
       targetId: id,
       afterState: { status: 'APPROVED' },
     });
+    await notificationService.notifyUser({
+      userId: existing.userId,
+      type: NotificationType.WITHDRAWAL_APPROVED,
+      title: 'Withdrawal approved',
+      message: `Your ${existing.asset} withdrawal on ${existing.chain} was approved and is being processed.`,
+      metadata: { withdrawalId: id, chain: existing.chain, asset: existing.asset },
+    });
     return toCryptoWithdrawalDto(updated as CryptoWithdrawal);
   },
 
@@ -317,6 +351,14 @@ export const withdrawalService = {
       reason,
       afterState: { status: 'REJECTED' },
     });
+    await notificationService.notifyUser({
+      userId: existing.userId,
+      type: NotificationType.WITHDRAWAL_REJECTED,
+      title: 'Withdrawal rejected',
+      message: `Your ${existing.asset} withdrawal on ${existing.chain} was rejected and the hold released.`,
+      severity: 'WARNING',
+      metadata: { withdrawalId: id, chain: existing.chain, asset: existing.asset, reason },
+    });
     const updated = await withdrawalRepository.findById(id);
     return toCryptoWithdrawalDto(updated as CryptoWithdrawal);
   },
@@ -333,9 +375,12 @@ export const withdrawalService = {
     if (claim.count === 0) return false;
 
     try {
-      const token = await withdrawalRepository.getSupportedToken(ASSET, CHAIN);
+      // Use the withdrawal's OWN chain/asset so EVM (Ethereum/BSC) and TRON all
+      // resolve the right token + hot wallet. Nonce sequencing is per hot wallet
+      // and each chain has its own hot wallet → nonces are chain-scoped.
+      const token = await withdrawalRepository.getSupportedToken(withdrawal.asset, withdrawal.chain);
       if (!token || !token.contractAddr) throw new Error('token_not_supported');
-      const hot = await withdrawalRepository.pickActiveHotWallet(CHAIN);
+      const hot = await withdrawalRepository.pickActiveHotWallet(withdrawal.chain);
       if (!hot || !hot.signer) throw new Error('no_active_hot_wallet');
 
       // 11. Nonce sequencing via wallet_nonces (atomic per hot wallet).
@@ -345,8 +390,8 @@ export const withdrawalService = {
       const amountBase = humanToBase(withdrawal.netAmount.toFixed(), token.decimals);
 
       const signed = await signer.signTransfer({
-        chain: CHAIN,
-        asset: ASSET,
+        chain: withdrawal.chain,
+        asset: withdrawal.asset,
         contract: token.contractAddr,
         fromAddress: hot.address,
         toAddress: withdrawal.toAddress,
@@ -358,7 +403,7 @@ export const withdrawalService = {
           publicKey: hot.signer.publicKey,
         },
       });
-      const result = await signer.broadcast({ chain: CHAIN, signedTx: signed });
+      const result = await signer.broadcast({ chain: withdrawal.chain, signedTx: signed });
 
       const updated = await withdrawalRepository.setBroadcast(withdrawal.id, {
         hotWalletId: hot.id,
@@ -401,6 +446,13 @@ export const withdrawalService = {
       entityId: withdrawal.id,
       metadata: { finalTxnId: posting.id, txHash: withdrawal.txHash },
     });
+    await notificationService.notifyUser({
+      userId: withdrawal.userId,
+      type: NotificationType.WITHDRAWAL_COMPLETED,
+      title: 'Withdrawal completed',
+      message: `Your ${withdrawal.asset} withdrawal on ${withdrawal.chain} has completed.`,
+      metadata: { withdrawalId: withdrawal.id, chain: withdrawal.chain, asset: withdrawal.asset, txHash: withdrawal.txHash },
+    });
     return true;
   },
 
@@ -426,16 +478,17 @@ export const withdrawalService = {
   // ==================================================================
   placeHold(withdrawal: CryptoWithdrawal) {
     const amount = withdrawal.amount.toFixed();
+    const asset = withdrawal.asset;
     return postWithRetry(() =>
       ledgerService.post(
         {
           kind: LEDGER.HOLD_KIND,
           referenceType: LEDGER.REF_HOLD,
           referenceId: withdrawal.id,
-          metadata: { chain: withdrawal.chain, asset: withdrawal.asset },
+          metadata: { chain: withdrawal.chain, asset },
           lines: [
-            { kind: 'USER_AVAILABLE', userId: withdrawal.userId, asset: ASSET, direction: 'DEBIT', amount },
-            { kind: 'USER_LOCKED', userId: withdrawal.userId, asset: ASSET, direction: 'CREDIT', amount },
+            { kind: 'USER_AVAILABLE', userId: withdrawal.userId, asset, direction: 'DEBIT', amount },
+            { kind: 'USER_LOCKED', userId: withdrawal.userId, asset, direction: 'CREDIT', amount },
           ],
         },
         { userId: withdrawal.userId },
@@ -445,16 +498,17 @@ export const withdrawalService = {
 
   releaseHold(withdrawal: CryptoWithdrawal) {
     const amount = withdrawal.amount.toFixed();
+    const asset = withdrawal.asset;
     return postWithRetry(() =>
       ledgerService.post(
         {
           kind: LEDGER.RELEASE_KIND,
           referenceType: LEDGER.REF_RELEASE,
           referenceId: withdrawal.id,
-          metadata: { chain: withdrawal.chain, asset: withdrawal.asset },
+          metadata: { chain: withdrawal.chain, asset },
           lines: [
-            { kind: 'USER_LOCKED', userId: withdrawal.userId, asset: ASSET, direction: 'DEBIT', amount },
-            { kind: 'USER_AVAILABLE', userId: withdrawal.userId, asset: ASSET, direction: 'CREDIT', amount },
+            { kind: 'USER_LOCKED', userId: withdrawal.userId, asset, direction: 'DEBIT', amount },
+            { kind: 'USER_AVAILABLE', userId: withdrawal.userId, asset, direction: 'CREDIT', amount },
           ],
         },
         { userId: withdrawal.userId },
@@ -466,16 +520,17 @@ export const withdrawalService = {
     const gross = withdrawal.amount.toFixed();
     const net = withdrawal.netAmount.toFixed();
     const fee = withdrawal.fee;
+    const asset = withdrawal.asset;
     // DEBIT user locked (gross) = CREDIT hot wallet (net) [+ CREDIT fee revenue].
     const lines: LedgerPostingLine[] = [
-      { kind: 'USER_LOCKED', userId: withdrawal.userId, asset: ASSET, direction: 'DEBIT', amount: gross },
-      { kind: 'HOT_WALLET', userId: null, asset: ASSET, direction: 'CREDIT', amount: net },
+      { kind: 'USER_LOCKED', userId: withdrawal.userId, asset, direction: 'DEBIT', amount: gross },
+      { kind: 'HOT_WALLET', userId: null, asset, direction: 'CREDIT', amount: net },
     ];
     if (fee.gt(0)) {
       lines.push({
         kind: 'FEE_REVENUE',
         userId: null,
-        asset: ASSET,
+        asset,
         direction: 'CREDIT',
         amount: fee.toFixed(),
       });

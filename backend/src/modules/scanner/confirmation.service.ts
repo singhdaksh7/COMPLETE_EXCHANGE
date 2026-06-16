@@ -3,16 +3,17 @@ import { logger } from '../../lib/logger';
 import { recordAudit } from '../../lib/audit';
 import { ledgerService } from '../ledger/ledger.service';
 import { scannerRepository } from './scanner.repository';
+import { notificationService } from '../notification/notification.service';
+import { NotificationType } from '../notification/notification.types';
 import {
   DEPOSIT_CREDIT_KIND,
   DEPOSIT_REFERENCE_TYPE,
   ScannerAction,
 } from './scanner.types';
 import type { ConfirmResult } from './scanner.types';
-import type { TronProvider } from './providers';
+import type { ChainProvider } from './providers';
 
-const CHAIN = 'TRON';
-const ASSET = 'USDT';
+const DEFAULT_CHAIN = 'TRON';
 
 /**
  * Confirmation + crediting service (ARCHITECTURE.md §8.3–8.4).
@@ -28,7 +29,8 @@ const ASSET = 'USDT';
  * double-credit.
  */
 export const confirmationService = {
-  async runConfirmations(deps: { provider: TronProvider }): Promise<ConfirmResult> {
+  async runConfirmations(deps: { provider: ChainProvider; chain?: string }): Promise<ConfirmResult> {
+    const CHAIN = deps.chain ?? deps.provider.chain ?? DEFAULT_CHAIN;
     const head = await deps.provider.getLatestBlock();
     const candidates = await scannerRepository.listCreditableCandidates(CHAIN);
 
@@ -93,6 +95,9 @@ export const confirmationService = {
     }
 
     const amount = deposit.amount.toFixed();
+    // Credit the deposit's OWN asset (USDT on every supported chain today), so
+    // the ledger leg is correct per chain — never a hardcoded constant.
+    const asset = deposit.asset;
 
     // Double-entry: incoming clearing (asset) → user available (liability).
     const posted = await ledgerService.post(
@@ -110,14 +115,14 @@ export const confirmationService = {
           {
             kind: 'SWEEP_CLEARING',
             userId: null,
-            asset: ASSET,
+            asset,
             direction: 'DEBIT',
             amount,
           },
           {
             kind: 'USER_AVAILABLE',
             userId: deposit.userId,
-            asset: ASSET,
+            asset,
             direction: 'CREDIT',
             amount,
           },
@@ -142,6 +147,13 @@ export const confirmationService = {
         ledgerTxnId: posted.id,
         txHash: deposit.txHash,
       },
+    });
+    await notificationService.notifyUser({
+      userId: deposit.userId,
+      type: NotificationType.CRYPTO_DEPOSIT_CREDITED,
+      title: 'Deposit credited',
+      message: `Your ${deposit.asset} deposit on ${deposit.chain} was credited.`,
+      metadata: { depositId: deposit.id, chain: deposit.chain, asset: deposit.asset, amount },
     });
     return true;
   },

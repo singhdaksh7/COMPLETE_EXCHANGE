@@ -47,7 +47,7 @@ export const withdrawalController = {
     const user = requireUser(req);
     const dto = await withdrawalService.requestWithdrawal(
       user.id,
-      { toAddress: req.body.toAddress, amount: req.body.amount },
+      { chain: req.body.chain, toAddress: req.body.toAddress, amount: req.body.amount },
       ctx(req),
     );
     sendSuccess(res, dto, 201);

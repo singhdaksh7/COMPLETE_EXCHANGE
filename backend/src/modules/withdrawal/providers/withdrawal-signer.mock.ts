@@ -36,6 +36,7 @@ export function createMockWithdrawalSigner(): MockWithdrawalSigner {
   const txs = new Map<string, TxState>();
 
   function hashFor(input: {
+    chain: string;
     fromAddress: string;
     nonce: bigint;
     toAddress: string;
@@ -47,7 +48,9 @@ export function createMockWithdrawalSigner(): MockWithdrawalSigner {
       )
       .digest('hex')
       .slice(0, 56);
-    return `trxw_${digest}`;
+    // Chain-shaped prefix so the mock hash resembles the real chain's format:
+    // EVM tx hashes are 0x-hex; TRON keeps the original `trxw_` mock prefix.
+    return input.chain === 'TRON' ? `trxw_${digest}` : `0x${digest}`;
   }
 
   return {

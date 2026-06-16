@@ -4,6 +4,7 @@ import {
   type WithdrawalAddress,
   type WithdrawalStatus,
 } from '@prisma/client';
+import { config } from '../../config';
 
 /** Request-scoped forensic context threaded into the service for auditing. */
 export interface WithdrawalContext {
@@ -38,8 +39,36 @@ export const LEDGER = {
   REF_FINAL: 'crypto_withdrawal_final',
 } as const;
 
+/** Default chain for the legacy single-chain surface (back-compat). */
 export const CHAIN = 'TRON';
 export const ASSET = 'USDT';
+
+/** Chains the withdrawal flow supports (TRON + EVM Ethereum/BSC). */
+export const SUPPORTED_CHAINS = ['TRON', 'ETHEREUM', 'BSC'] as const;
+export type WithdrawalChain = (typeof SUPPORTED_CHAINS)[number];
+
+/** EVM chains share the 0x-address + nonce semantics. */
+const EVM_CHAINS = new Set<string>(['ETHEREUM', 'BSC']);
+
+const EVM_ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
+const TRON_ADDRESS_RE = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
+
+export function isSupportedChain(chain: string): chain is WithdrawalChain {
+  return (SUPPORTED_CHAINS as readonly string[]).includes(chain);
+}
+
+/** Is `address` well-formed for `chain`? EVM → 0x+40 hex; TRON → base58 T-addr. */
+export function isValidAddressForChain(chain: string, address: string): boolean {
+  if (EVM_CHAINS.has(chain)) return EVM_ADDRESS_RE.test(address);
+  if (chain === 'TRON') return TRON_ADDRESS_RE.test(address);
+  return false;
+}
+
+/** Flat USDT withdrawal fee for a chain (gas profile differs per network). */
+export function feeForChain(chain: string): Prisma.Decimal {
+  const fee = config.withdrawal.feeByChain[chain] ?? config.withdrawal.feeUsdt;
+  return new Prisma.Decimal(fee);
+}
 
 export interface WithdrawalAddressDto {
   id: string;
