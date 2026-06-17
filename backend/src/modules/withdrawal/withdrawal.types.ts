@@ -4,6 +4,7 @@ import {
   type WithdrawalAddress,
   type WithdrawalStatus,
 } from '@prisma/client';
+import { buildExplorerTxUrl } from '../../lib/explorer';
 
 /** Request-scoped forensic context threaded into the service for auditing. */
 export interface WithdrawalContext {
@@ -64,6 +65,7 @@ export interface CryptoWithdrawalDto {
   netAmount: string;
   status: WithdrawalStatus;
   txHash: string | null;
+  explorerUrl: string | null;
   nonce: string | null;
   failureReason: string | null;
   requestedAt: Date;
@@ -99,6 +101,7 @@ export function toCryptoWithdrawalDto(row: CryptoWithdrawal): CryptoWithdrawalDt
     netAmount: row.netAmount.toFixed(),
     status: row.status,
     txHash: row.txHash,
+    explorerUrl: buildExplorerTxUrl(row.chain, row.txHash),
     nonce: row.nonce === null ? null : row.nonce.toString(),
     failureReason: row.failureReason,
     requestedAt: row.requestedAt,

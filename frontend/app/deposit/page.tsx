@@ -3,19 +3,11 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { userApi } from '@/lib/user-api';
-import { errorMessage } from '@/lib/api';
+import { errorMessage, isKycRequired } from '@/lib/api';
 import { useGuard } from '@/components/guards';
-import { UserNav } from '@/components/nav';
+import { UserShell } from '@/components/user-shell';
 import { StatusBadge } from '@/components/ui';
-
-function BackdropGlow() {
-  return (
-    <>
-      <div className="absolute -left-32 top-1/4 h-[350px] w-[350px] rounded-full bg-gold/5 blur-[120px] pointer-events-none" />
-      <div className="absolute -right-20 bottom-0 h-[350px] w-[350px] rounded-full bg-gold-glow/[0.04] blur-[130px] pointer-events-none" />
-    </>
-  );
-}
+import { CopyButton, ExplorerLink, KycRequiredNotice } from '@/components/wallet-bits';
 
 export default function DepositPage() {
   const ready = useGuard('user');
@@ -28,6 +20,18 @@ export default function DepositPage() {
     enabled: ready,
   });
 
+  // Crypto deposit addresses (from wallet overview) + on-chain deposit history.
+  const overview = useQuery({
+    queryKey: ['wallet-overview'],
+    queryFn: () => userApi.walletOverview(),
+    enabled: ready,
+  });
+  const cryptoDeposits = useQuery({
+    queryKey: ['crypto-deposits'],
+    queryFn: () => userApi.listCryptoDeposits(),
+    enabled: ready,
+  });
+
   const create = useMutation({
     mutationFn: () => userApi.createInrDeposit(amount),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['inr-deposits'] }),
@@ -35,19 +39,12 @@ export default function DepositPage() {
 
   if (!ready) return null;
   const intent = create.data?.data;
+  const cryptoNetworks = (overview.data?.data.assets ?? []).flatMap((a) =>
+    a.networks.map((n) => ({ asset: a.asset, ...n })),
+  );
 
   return (
-    <div className="relative min-h-screen bg-noir font-sans text-white pb-20">
-      <style dangerouslySetInnerHTML={{ __html: `
-        header { background-color: #111114 !important; border-bottom: 1px solid rgba(245,194,66,0.15) !important; }
-        header span, header nav a { color: #eaecef !important; }
-        header nav a:hover { color: #F5C242 !important; }
-        header button { color: #f6465d !important; }
-      `}} />
-      <UserNav />
-      <BackdropGlow />
-
-      <main className="relative z-10 mx-auto max-w-4xl px-5 pt-8">
+    <UserShell className="max-w-[1400px]">
         
         {/* Header */}
         <div className="mb-8 flex justify-between items-center border-b border-white/5 pb-4">
@@ -68,9 +65,13 @@ export default function DepositPage() {
                 <h2 className="text-sm font-bold text-white tracking-tight border-b border-white/5 pb-3">Initiate Razorpay Gateway Order</h2>
 
                 {create.isError && (
-                  <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-4 text-xs text-red-300">
-                    {errorMessage(create.error)}
-                  </div>
+                  isKycRequired(create.error) ? (
+                    <KycRequiredNotice action="deposit INR" />
+                  ) : (
+                    <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-4 text-xs text-red-300">
+                      {errorMessage(create.error)}
+                    </div>
+                  )
                 )}
                 {intent && (
                   <div className="rounded-lg bg-up/10 border border-up/20 p-4 text-xs text-up">
@@ -182,6 +183,111 @@ export default function DepositPage() {
               )}
             </div>
 
+            {/* Crypto deposit addresses */}
+            <div className="relative rounded-2xl border border-white/5 bg-white/[0.01] p-6 space-y-4">
+              <div className="border-b border-white/5 pb-3">
+                <h3 className="text-sm font-bold text-white tracking-tight">Crypto Deposit Addresses</h3>
+                <p className="text-[10px] text-white/40 mt-0.5">Send only the matching asset on the matching network.</p>
+              </div>
+
+              {overview.isError && <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-4 text-xs text-red-300">{errorMessage(overview.error)}</div>}
+
+              {cryptoNetworks.length === 0 ? (
+                <p className="text-xs text-white/40 py-4 text-center">
+                  No deposit addresses yet — generate one from the Wallet page.
+                </p>
+              ) : (
+                <div className="space-y-2.5">
+                  {cryptoNetworks.map((n) => (
+                    <div
+                      key={`${n.asset}-${n.chain}`}
+                      className="rounded-xl border border-white/5 bg-white/[0.02] px-4 py-3 text-xs space-y-2"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-gold uppercase tracking-wider">
+                          {n.asset} · {n.chain} ({n.family})
+                        </span>
+                        {n.scanned === false && (
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-brand bg-brand/10 px-2 py-0.5 rounded">
+                            not yet credited
+                          </span>
+                        )}
+                      </div>
+                      {n.depositAddress ? (
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="break-all font-mono text-white text-xs select-all">
+                            {n.depositAddress}
+                          </span>
+                          <CopyButton value={n.depositAddress} />
+                        </div>
+                      ) : (
+                        <div className="text-white/30">No address generated yet.</div>
+                      )}
+                      {n.scanned === false && n.depositAddress && (
+                        <p className="text-[10px] text-brand/80 leading-relaxed">
+                          ⚠ {n.chain} deposits are not actively monitored yet. Funds sent
+                          here will not be detected or credited — use a supported network.
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Crypto deposit history */}
+            <div className="relative rounded-2xl border border-white/5 bg-white/[0.01] p-6 space-y-4">
+              <div className="flex justify-between items-center border-b border-white/5 pb-3">
+                <div>
+                  <h3 className="text-sm font-bold text-white tracking-tight">Crypto Deposit History</h3>
+                  <p className="text-[10px] text-white/40 mt-0.5">On-chain deposits detected for your addresses.</p>
+                </div>
+                <button
+                  onClick={() => cryptoDeposits.refetch()}
+                  className="text-xs text-gold font-bold hover:underline"
+                >
+                  Refresh
+                </button>
+              </div>
+
+              {cryptoDeposits.isError && <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-4 text-xs text-red-300">{errorMessage(cryptoDeposits.error)}</div>}
+
+              {cryptoDeposits.data && cryptoDeposits.data.data.items.length === 0 ? (
+                <p className="text-xs text-white/40 py-6 text-center">No crypto deposits detected yet.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-white/5 text-white/45 font-semibold text-[10px] uppercase tracking-wider">
+                        <th className="py-2.5">Asset / Chain</th>
+                        <th>Amount</th>
+                        <th>Confirmations</th>
+                        <th>Status</th>
+                        <th className="text-right">Tx</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {cryptoDeposits.data?.data.items.map((d) => (
+                        <tr key={d.id} className="hover:bg-white/[0.01]">
+                          <td className="py-3 text-white/70">{d.asset} · {d.chain}</td>
+                          <td className="font-mono text-gold font-semibold">{d.amount}</td>
+                          <td className="font-mono text-white/60">
+                            {d.confirmations}/{d.requiredConfirmations}
+                          </td>
+                          <td>
+                            <StatusBadge status={d.status} />
+                          </td>
+                          <td className="text-right">
+                            <ExplorerLink txHash={d.txHash} explorerUrl={d.explorerUrl} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
           </div>
 
           {/* Right sidebar: help notes */}
@@ -207,7 +313,6 @@ export default function DepositPage() {
             </div>
           </div>
         </div>
-      </main>
-    </div>
+      </UserShell>
   );
 }

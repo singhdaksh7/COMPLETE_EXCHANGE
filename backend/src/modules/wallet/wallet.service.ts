@@ -1,6 +1,7 @@
 import { Prisma, type WalletTier } from '@prisma/client';
 import { AppError } from '../../lib/errors';
 import { recordAudit } from '../../lib/audit';
+import { isChainScanned } from '../../lib/explorer';
 import { ledgerService } from '../ledger/ledger.service';
 import { walletRepository } from './wallet.repository';
 import { getAddressDerivationProvider } from './providers';
@@ -78,6 +79,7 @@ export const walletService = {
         contractAddr: n.contractAddr,
         minConfirmations: n.minConfirmations,
         depositAddress: addrByChain.get(n.chain.toUpperCase()) ?? null,
+        scanned: isChainScanned(n.chain),
       });
     }
 

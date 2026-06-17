@@ -10,6 +10,7 @@ export interface PublicUser {
   emailVerifiedAt: string | null;
   totpEnabled: boolean;
   createdAt: string;
+  fullName?: string | null;
 }
 
 export interface TokenPair {
@@ -136,6 +137,8 @@ export interface WalletNetwork {
   contractAddr: string | null;
   minConfirmations: number;
   depositAddress: string | null;
+  /** False when deposits on this chain are not yet scanned/credited. */
+  scanned?: boolean;
 }
 
 export interface WalletOverviewAsset {
@@ -232,11 +235,27 @@ export interface CryptoWithdrawal {
   netAmount: string;
   status: string;
   txHash: string | null;
+  explorerUrl: string | null;
   nonce: string | null;
   failureReason: string | null;
   requestedAt: string;
   broadcastAt: string | null;
   completedAt: string | null;
+}
+
+/** User-facing crypto deposit (GET /wallets/deposits). */
+export interface UserCryptoDeposit {
+  id: string;
+  chain: string;
+  asset: string;
+  amount: string;
+  status: string;
+  txHash: string;
+  confirmations: number;
+  requiredConfirmations: number;
+  explorerUrl: string | null;
+  detectedAt: string;
+  creditedAt: string | null;
 }
 
 // ---- spot trading ----

@@ -1,4 +1,5 @@
 import { Prisma, type CryptoDeposit, type DepositStatus } from '@prisma/client';
+import { buildExplorerTxUrl } from '../../lib/explorer';
 
 /** Request-scoped forensic context threaded into admin reads for auditing. */
 export interface ScannerContext {
@@ -56,6 +57,41 @@ export interface CryptoDepositDto {
   creditedTxnId: string | null;
   detectedAt: Date;
   creditedAt: Date | null;
+}
+
+/**
+ * User-facing crypto deposit view. A focused projection of {@link CryptoDepositDto}
+ * (no internal block hash / log index / ledger txn id) plus an explorer link and
+ * a `requiredConfirmations` alias for the client.
+ */
+export interface UserCryptoDepositDto {
+  id: string;
+  chain: string;
+  asset: string;
+  amount: string;
+  status: DepositStatus;
+  txHash: string;
+  confirmations: number;
+  requiredConfirmations: number;
+  explorerUrl: string | null;
+  detectedAt: Date;
+  creditedAt: Date | null;
+}
+
+export function toUserCryptoDepositDto(row: CryptoDeposit): UserCryptoDepositDto {
+  return {
+    id: row.id,
+    chain: row.chain,
+    asset: row.asset,
+    amount: row.amount.toFixed(),
+    status: row.status,
+    txHash: row.txHash,
+    confirmations: row.confirmations,
+    requiredConfirmations: row.reqConfirmations,
+    explorerUrl: buildExplorerTxUrl(row.chain, row.txHash),
+    detectedAt: row.detectedAt,
+    creditedAt: row.creditedAt,
+  };
 }
 
 export interface ScannerHealthDto {

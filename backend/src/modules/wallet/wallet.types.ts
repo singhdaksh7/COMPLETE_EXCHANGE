@@ -63,6 +63,12 @@ export interface WalletOverviewAssetDto {
     minConfirmations: number;
     /** The user's active deposit address for this chain, if derived. */
     depositAddress: string | null;
+    /**
+     * Whether deposits on this chain are actively scanned + credited today.
+     * When false, an address can be derived but funds sent there are not yet
+     * detected — the UI warns the user.
+     */
+    scanned: boolean;
   }>;
 }
 

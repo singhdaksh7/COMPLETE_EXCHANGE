@@ -223,6 +223,26 @@ export const scannerRepository = {
     return out;
   },
 
+  /** A user's own crypto deposits, newest first, keyset-paginated by id. */
+  listUserDeposits(input: {
+    userId: string;
+    chain?: string;
+    status?: DepositStatus;
+    cursor?: string;
+    limit: number;
+  }): Promise<CryptoDeposit[]> {
+    return prisma.cryptoDeposit.findMany({
+      where: {
+        userId: input.userId,
+        ...(input.chain ? { chain: input.chain } : {}),
+        ...(input.status ? { status: input.status } : {}),
+        ...(input.cursor ? { id: { lt: input.cursor } } : {}),
+      },
+      orderBy: { id: 'desc' },
+      take: input.limit + 1,
+    });
+  },
+
   adminListDeposits(filter: {
     chain?: string;
     status?: DepositStatus;

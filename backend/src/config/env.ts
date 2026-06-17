@@ -215,7 +215,22 @@ const envSchema = z
     .default('1'),
   // Cooling-off before a newly-added withdrawal address can be used (ms).
   // Default 0 makes addresses usable immediately (dev/test); production sets >0.
+  // RECOMMENDED for staging/production: 86400000 (24h) to match the documented
+  // UX. Left at 0 here so dev/test are unaffected (no env change in this phase).
   WITHDRAWAL_ADDRESS_COOLDOWN_MS: z.coerce.number().int().min(0).default(0),
+
+  // ---- CHAIN EXPLORERS (tx URL bases for deposit/withdrawal links) ----
+  // Block-explorer transaction URL prefixes; the tx hash is appended verbatim.
+  EXPLORER_TRON_TX_BASE: z
+    .string()
+    .url()
+    .default('https://tronscan.org/#/transaction/'),
+  EXPLORER_ETHEREUM_TX_BASE: z.string().url().default('https://etherscan.io/tx/'),
+  EXPLORER_BSC_TX_BASE: z.string().url().default('https://bscscan.com/tx/'),
+  // Comma-separated chains whose deposits are ACTIVELY scanned + credited today.
+  // Only TRON is wired (TRC20 USDT); others can derive an address but deposits
+  // there are not yet detected — the UI warns users accordingly.
+  SCANNED_CHAINS: z.string().default('TRON'),
 
   // ---- INR ↔ USDT CONVERSION ----
   // Price provider. 'mock' is a deterministic offline mid-price; 'live' (KuCoin

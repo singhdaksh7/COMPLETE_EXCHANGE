@@ -4,12 +4,18 @@ import { logger } from '../../lib/logger';
 import { recordAudit } from '../../lib/audit';
 import { scannerRepository } from './scanner.repository';
 import { getTronProvider } from './providers';
-import { ScannerAction, baseToHuman, toCryptoDepositDto } from './scanner.types';
+import {
+  ScannerAction,
+  baseToHuman,
+  toCryptoDepositDto,
+  toUserCryptoDepositDto,
+} from './scanner.types';
 import type {
   CryptoDepositDto,
   ScanResult,
   ScannerContext,
   ScannerHealthDto,
+  UserCryptoDepositDto,
 } from './scanner.types';
 import type { TronProvider, Trc20Transfer } from './providers';
 
@@ -154,6 +160,25 @@ export const scannerService = {
       headBlock: head.number.toString(),
       detected,
       orphaned,
+    };
+  },
+
+  // ------------------------------------------------------------------
+  // User: own crypto deposit history / status (read-only; no audit needed)
+  // ------------------------------------------------------------------
+  async listUserDeposits(input: {
+    userId: string;
+    chain?: string;
+    status?: DepositStatus;
+    cursor?: string;
+    limit: number;
+  }): Promise<{ items: UserCryptoDepositDto[]; nextCursor: string | null }> {
+    const rows = await scannerRepository.listUserDeposits(input);
+    const hasMore = rows.length > input.limit;
+    const slice = hasMore ? rows.slice(0, input.limit) : rows;
+    return {
+      items: slice.map(toUserCryptoDepositDto),
+      nextCursor: hasMore ? slice[slice.length - 1].id : null,
     };
   },
 

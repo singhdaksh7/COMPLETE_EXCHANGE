@@ -28,6 +28,7 @@ import type {
   SubmitKycInput,
   Ticker,
   Trade,
+  UserCryptoDeposit,
   Wallet,
   WalletOverview,
   WithdrawalAddress,
@@ -132,6 +133,10 @@ export const userApi = {
       body: { chain },
       headers: { 'Idempotency-Key': idemKey() },
     }),
+
+  /** The caller's crypto deposit history/status (detected → credited). */
+  listCryptoDeposits: () =>
+    authed<Page<UserCryptoDeposit>>('/wallets/deposits'),
 
   // ---- INR deposit (Razorpay mock order) ----
   createInrDeposit: (amount: string) =>

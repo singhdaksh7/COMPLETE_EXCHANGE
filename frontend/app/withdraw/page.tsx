@@ -3,19 +3,11 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { userApi } from '@/lib/user-api';
-import { errorMessage } from '@/lib/api';
+import { errorMessage, isKycRequired } from '@/lib/api';
 import { useGuard } from '@/components/guards';
-import { UserNav } from '@/components/nav';
+import { UserShell } from '@/components/user-shell';
 import { StatusBadge } from '@/components/ui';
-
-function BackdropGlow() {
-  return (
-    <>
-      <div className="absolute -left-32 top-1/4 h-[350px] w-[350px] rounded-full bg-gold/5 blur-[120px] pointer-events-none" />
-      <div className="absolute -right-20 bottom-0 h-[350px] w-[350px] rounded-full bg-gold-glow/[0.04] blur-[130px] pointer-events-none" />
-    </>
-  );
-}
+import { ExplorerLink, KycRequiredNotice } from '@/components/wallet-bits';
 
 export default function WithdrawPage() {
   const ready = useGuard('user');
@@ -62,17 +54,7 @@ export default function WithdrawPage() {
   const allow = addresses.data?.data.items ?? [];
 
   return (
-    <div className="relative min-h-screen bg-noir font-sans text-white pb-20">
-      <style dangerouslySetInnerHTML={{ __html: `
-        header { background-color: #111114 !important; border-bottom: 1px solid rgba(245,194,66,0.15) !important; }
-        header span, header nav a { color: #eaecef !important; }
-        header nav a:hover { color: #F5C242 !important; }
-        header button { color: #f6465d !important; }
-      `}} />
-      <UserNav />
-      <BackdropGlow />
-
-      <main className="relative z-10 mx-auto max-w-4xl px-5 pt-8">
+    <UserShell className="max-w-[1400px]">
         
         {/* Header */}
         <div className="mb-8 flex justify-between items-center border-b border-white/5 pb-4">
@@ -174,9 +156,13 @@ export default function WithdrawPage() {
                 <h2 className="text-sm font-bold text-white tracking-tight border-b border-white/5 pb-3">Initiate USDT Withdrawal request</h2>
 
                 {request.isError && (
-                  <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-4 text-xs text-red-300">
-                    {errorMessage(request.error)}
-                  </div>
+                  isKycRequired(request.error) ? (
+                    <KycRequiredNotice action="withdraw" />
+                  ) : (
+                    <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-4 text-xs text-red-300">
+                      {errorMessage(request.error)}
+                    </div>
+                  )
                 )}
                 {request.isSuccess && (
                   <div className="rounded-lg bg-up/10 border border-up/20 p-4 text-xs text-up space-y-1">
@@ -257,6 +243,7 @@ export default function WithdrawPage() {
                         <th>Gross</th>
                         <th>Net (USDT)</th>
                         <th>State</th>
+                        <th>Tx</th>
                         <th className="text-right">Time</th>
                       </tr>
                     </thead>
@@ -270,6 +257,9 @@ export default function WithdrawPage() {
                           <td className="font-mono text-gold font-semibold">{w.netAmount}</td>
                           <td>
                             <StatusBadge status={w.status} />
+                          </td>
+                          <td>
+                            <ExplorerLink txHash={w.txHash} explorerUrl={w.explorerUrl} />
                           </td>
                           <td className="text-right text-white/45">
                             {new Date(w.requestedAt).toLocaleString()}
@@ -307,7 +297,6 @@ export default function WithdrawPage() {
             </div>
           </div>
         </div>
-      </main>
-    </div>
+      </UserShell>
   );
 }

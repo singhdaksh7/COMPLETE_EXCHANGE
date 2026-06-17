@@ -87,3 +87,8 @@ export function errorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
   return 'Something went wrong';
 }
+
+/** True when a request was rejected because the user's KYC is not approved. */
+export function isKycRequired(err: unknown): boolean {
+  return err instanceof ApiError && err.code === 'KYC_REQUIRED';
+}

@@ -113,6 +113,19 @@ export const config = {
     addressCooldownMs: env.WITHDRAWAL_ADDRESS_COOLDOWN_MS,
   },
 
+  chains: {
+    // Per-chain block-explorer tx URL prefixes (tx hash appended verbatim).
+    explorerTxBase: {
+      TRON: env.EXPLORER_TRON_TX_BASE,
+      ETHEREUM: env.EXPLORER_ETHEREUM_TX_BASE,
+      BSC: env.EXPLORER_BSC_TX_BASE,
+    } as Record<string, string>,
+    // Chains whose deposits are actively scanned + credited today.
+    scanned: env.SCANNED_CHAINS.split(',')
+      .map((s) => s.trim().toUpperCase())
+      .filter(Boolean),
+  },
+
   conversion: {
     priceProvider: env.PRICE_PROVIDER,
     mockUsdtInr: env.CONVERSION_MOCK_USDT_INR,

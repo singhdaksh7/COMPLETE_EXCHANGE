@@ -27,3 +27,15 @@ export const adminDepositQuerySchema = z
   .strict();
 
 export type AdminDepositQueryDto = z.infer<typeof adminDepositQuerySchema>;
+
+/** User-facing crypto deposit listing (own deposits only). */
+export const userDepositQuerySchema = z
+  .object({
+    chain: chainId.optional(),
+    status: depositStatus.optional(),
+    cursor: z.string().optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+  })
+  .strict();
+
+export type UserDepositQueryDto = z.infer<typeof userDepositQuerySchema>;

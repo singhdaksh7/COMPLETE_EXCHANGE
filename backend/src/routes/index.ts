@@ -8,6 +8,7 @@ import {
 } from '../modules/ledger/ledger.routes';
 import { depositRouter } from '../modules/deposit/deposit.routes';
 import { walletInfraRouter } from '../modules/wallet/wallet.routes';
+import { cryptoDepositRouter } from '../modules/scanner/scanner.routes';
 import { withdrawalRouter } from '../modules/withdrawal/withdrawal.routes';
 import { conversionRouter } from '../modules/conversion/conversion.routes';
 import {
@@ -28,6 +29,9 @@ apiRouter.use('/kyc', kycRouter);
 // registered BEFORE the ledger wallet router, whose `/:asset` would otherwise
 // shadow these specific paths. Unmatched paths fall through to walletRouter.
 apiRouter.use('/wallets', walletInfraRouter);
+// Crypto deposit history (/wallets/deposits) before the ledger wallet router,
+// whose `/:asset` would otherwise capture "deposits" as an asset symbol.
+apiRouter.use('/wallets', cryptoDepositRouter);
 apiRouter.use('/wallets', walletRouter);
 apiRouter.use('/inr/deposits', depositRouter);
 apiRouter.use('/inr', inrLedgerRouter);
