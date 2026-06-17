@@ -183,7 +183,8 @@ d('kyc module (integration)', () => {
       .send({ fullName, dob: '1990-05-15', pan: 'ABCDE1234F', aadhaarRef: 'tok_aadhaar_ref' });
     expect(res.status).toBe(202);
     expect(res.body.data.status).toBe('PENDING');
-    expect(res.body.meta.digilocker.authorizationUrl).toContain('mock.local');
+    expect(res.body.meta.session.redirectUrl).toContain('mock.local');
+    expect(res.body.meta.session.providerSessionId).toBeTruthy();
 
     // The raw PAN must be sealed in the Bytes column, never stored as plaintext.
     const profile = await prisma.kycProfile.findUnique({ where: { userId } });

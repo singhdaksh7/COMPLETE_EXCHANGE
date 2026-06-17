@@ -131,8 +131,16 @@ const envSchema = z
     .default('dev-only-change-me-kyc-pii-encryption-key'),
   // Lifetime of the (stub) presigned document upload URL, seconds.
   KYC_UPLOAD_URL_TTL_SEC: z.coerce.number().int().positive().default(900),
-  // DigiLocker provider selection. 'real' is intentionally not implemented yet.
-  KYC_DIGILOCKER_PROVIDER: z.enum(['mock', 'real']).default('mock'),
+  // Generic KYC provider selection. 'mock' is a fully-offline deterministic
+  // stub; 'external' is the real vendor and stays a throwing stub until a
+  // vendor is finalized and wired (Phase 3).
+  KYC_PROVIDER: z.enum(['mock', 'external']).default('mock'),
+  // HMAC secret used to verify inbound KYC provider webhooks over the raw body.
+  // The dev default only unblocks local/test runs and is NOT safe for prod.
+  KYC_WEBHOOK_SECRET: z
+    .string()
+    .min(8, 'KYC_WEBHOOK_SECRET must be >= 8 chars')
+    .default('dev-only-kyc-webhook-secret-change-me'),
   // Default KYC tier granted on approval when the reviewer omits an explicit one.
   KYC_DEFAULT_APPROVED_TIER: z.coerce.number().int().min(1).max(5).default(1),
 

@@ -15,6 +15,10 @@ import { kycDocumentSchema, kycSubmitSchema } from './kyc.validators';
  */
 export const kycRouter = Router();
 
+// Provider server-to-server webhook (signature-verified, no user auth). Mounted
+// BEFORE the authenticated routes since the provider cannot present a user JWT.
+kycRouter.post('/webhook', asyncHandler(kycController.webhook));
+
 kycRouter.get('/', authenticate, asyncHandler(kycController.getStatus));
 
 kycRouter.post(
@@ -23,6 +27,13 @@ kycRouter.post(
   authRateLimiter,
   validate({ body: kycSubmitSchema }),
   asyncHandler(kycController.submitProfile),
+);
+
+kycRouter.post(
+  '/refresh',
+  authenticate,
+  authRateLimiter,
+  asyncHandler(kycController.refresh),
 );
 
 kycRouter.get('/documents', authenticate, asyncHandler(kycController.listDocuments));

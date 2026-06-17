@@ -1,16 +1,23 @@
 import { randomUUID } from 'node:crypto';
-import type { KycDocType, Prisma } from '@prisma/client';
+import type { KycDocType, KycProfile, Prisma } from '@prisma/client';
 import { config } from '../../config';
-import { ConflictError, NotFoundError } from '../../lib/errors';
+import { BadRequestError, ConflictError, NotFoundError } from '../../lib/errors';
 import { recordAudit } from '../../lib/audit';
 import { encryptPII } from '../../lib/encryption';
 import { kycRepository } from './kyc.repository';
-import { getDigiLockerProvider } from './providers';
+import { getKycProvider } from './providers';
+import type { KycProviderResult, KycWebhookInput } from './providers';
+import {
+  assertTransition,
+  mapProviderStatusToKyc,
+  maskPan,
+} from './kyc.status';
 import {
   KycAction,
   toAdminKycQueueItem,
   toKycDocumentDto,
   toKycProfileDto,
+  toKycSessionDto,
 } from './kyc.types';
 import type {
   KycContext,
@@ -20,6 +27,7 @@ import type {
   KycProfileDto,
   KycQueueResult,
   KycSubmitResult,
+  KycWebhookResult,
   SubmitDocumentInput,
   SubmitProfileInput,
 } from './kyc.types';
@@ -52,9 +60,13 @@ function buildStubUploadUrl(
  * Service layer: all KYC business logic and orchestration.
  *
  * It depends on the repository for persistence, the encryption lib to seal PII,
- * and the DigiLocker provider abstraction — never on Express types. Sensitive
- * inputs (PAN, Aadhaar ref) are encrypted before persistence and are NEVER
- * written to logs or audit metadata.
+ * the generic KYC provider abstraction (vendor-neutral), and the status machine
+ * — never on Express types. Sensitive inputs (PAN, Aadhaar ref) are encrypted
+ * before persistence and are NEVER written to logs or audit metadata.
+ *
+ * The status machine (`assertTransition`) is the single authority over the
+ * gating fields (`user.kycStatus` / `user.kycTier`), so both the provider-driven
+ * path and the admin manual fallback move state consistently.
  */
 export const kycService = {
   // ------------------------------------------------------------------
@@ -68,7 +80,7 @@ export const kycService = {
   },
 
   // ------------------------------------------------------------------
-  // User: profile submission
+  // User: profile submission (opens a provider verification session)
   // ------------------------------------------------------------------
   async submitProfile(
     userId: string,
@@ -82,26 +94,28 @@ export const kycService = {
     }
 
     const existing = await kycRepository.findProfileByUserId(userId);
-    if (existing && existing.status === 'PENDING') {
+    if (existing && (existing.status === 'PENDING' || existing.status === 'IN_REVIEW')) {
       throw new ConflictError('KYC is already under review', 'KYC_IN_REVIEW');
     }
 
-    // Begin a DigiLocker consent session (mock today). The opaque reference is
-    // persisted so a later document pull can be attributed to this submission.
-    const provider = getDigiLockerProvider();
-    const session = await provider.createSession({ userId });
+    // Begin a provider verification session (mock today). The opaque session +
+    // applicant ids are persisted so later webhooks/polls can be attributed.
+    const provider = getKycProvider();
+    const session = await provider.createKycSession({ userId });
 
     const profile = await kycRepository.submitProfile(userId, {
       fullName: input.fullName,
       dob: new Date(input.dob),
       panEnc: encryptPII(input.pan),
       aadhaarRefEnc: input.aadhaarRef ? encryptPII(input.aadhaarRef) : null,
+      panMasked: maskPan(input.pan),
       address: input.address as Prisma.InputJsonValue | undefined,
       provider: session.provider,
-      providerRef: session.providerRef,
+      providerSessionId: session.providerSessionId,
+      providerApplicantId: session.providerApplicantId,
     });
 
-    // Audit WITHOUT any PII — only non-sensitive shape of the submission.
+    // Audit WITHOUT any PII — only the non-sensitive shape of the submission.
     await recordAudit({
       actorType: 'USER',
       actorId: userId,
@@ -120,10 +134,7 @@ export const kycService = {
 
     return {
       profile: toKycProfileDto(profile, user.kycTier, profile.status),
-      digilocker: {
-        authorizationUrl: session.authorizationUrl,
-        expiresIn: session.expiresIn,
-      },
+      session: toKycSessionDto(session),
     };
   },
 
@@ -145,6 +156,19 @@ export const kycService = {
       storageKey,
       sha256: input.sha256,
     });
+
+    // Register the document with the provider (mock accepts + marks pending).
+    const profile = await kycRepository.findProfileByUserId(userId);
+    if (profile?.providerSessionId) {
+      const provider = getKycProvider();
+      await provider.submitDocuments({
+        userId,
+        providerSessionId: profile.providerSessionId,
+        docType: input.docType,
+        storageKey,
+        sha256: input.sha256,
+      });
+    }
 
     const uploadUrl = buildStubUploadUrl(
       storageKey,
@@ -179,6 +203,158 @@ export const kycService = {
   },
 
   // ------------------------------------------------------------------
+  // User: poll the provider for the latest result (webhook fallback)
+  // ------------------------------------------------------------------
+  async refreshStatus(userId: string, ctx: KycContext = {}): Promise<KycProfileDto> {
+    const profile = await kycRepository.findProfileByUserId(userId);
+    if (!profile || !profile.providerSessionId || !profile.provider) {
+      throw new NotFoundError('No KYC session to refresh', 'KYC_NO_SESSION');
+    }
+    const provider = getKycProvider();
+    const result = await provider.getStatus({
+      providerSessionId: profile.providerSessionId,
+      providerApplicantId: profile.providerApplicantId,
+    });
+    const updated = await this.applyProviderResult(profile, result, ctx, 'poll');
+    const user = await kycRepository.findUserById(userId);
+    return toKycProfileDto(updated, user?.kycTier ?? 0, updated.status);
+  },
+
+  // ------------------------------------------------------------------
+  // Provider: inbound webhook (signature-verified, idempotent)
+  // ------------------------------------------------------------------
+  async handleWebhook(
+    input: KycWebhookInput,
+    ctx: KycContext = {},
+  ): Promise<KycWebhookResult> {
+    if (!input.rawBody) throw new BadRequestError('Missing webhook body');
+
+    const provider = getKycProvider();
+    const event = await provider.verifyWebhook(input);
+    if (!event) {
+      await recordAudit({
+        actorType: 'SYSTEM',
+        action: KycAction.WEBHOOK_INVALID_SIGNATURE,
+        entityType: 'kyc_webhook_event',
+        ip: ctx.ip,
+        requestId: ctx.requestId,
+        metadata: { provider: provider.name },
+      });
+      throw new BadRequestError('Invalid KYC webhook signature', {
+        code: 'KYC_WEBHOOK_INVALID_SIGNATURE',
+      });
+    }
+
+    // Idempotency: a redelivered event is recorded once and processed once.
+    const existing = await kycRepository.findWebhookEvent(
+      provider.name,
+      event.providerEventId,
+    );
+    if (existing?.processedAt) {
+      await recordAudit({
+        actorType: 'SYSTEM',
+        action: KycAction.WEBHOOK_DUPLICATE,
+        entityType: 'kyc_webhook_event',
+        entityId: existing.id,
+        ip: ctx.ip,
+        requestId: ctx.requestId,
+        metadata: { provider: provider.name, eventId: event.providerEventId },
+      });
+      return { status: 'duplicate' };
+    }
+    if (!existing) {
+      await kycRepository.createWebhookEvent({
+        provider: provider.name,
+        providerEventId: event.providerEventId,
+        eventType: event.eventType,
+        signatureOk: true,
+        payload: (input.body ?? {}) as Prisma.InputJsonValue,
+      });
+    }
+
+    await recordAudit({
+      actorType: 'SYSTEM',
+      action: KycAction.WEBHOOK_RECEIVED,
+      entityType: 'kyc_webhook_event',
+      ip: ctx.ip,
+      requestId: ctx.requestId,
+      metadata: {
+        provider: provider.name,
+        eventId: event.providerEventId,
+        eventType: event.eventType,
+      },
+    });
+
+    // Attribute the event to a profile via its session/applicant id.
+    const ref = event.providerApplicantId ?? event.providerSessionId;
+    const profile = ref
+      ? await kycRepository.findProfileByProviderRef(provider.name, ref)
+      : null;
+    if (!profile) {
+      await kycRepository.markWebhookProcessed(provider.name, event.providerEventId);
+      return { status: 'ignored' };
+    }
+
+    await this.applyProviderResult(profile, event.result, ctx, 'webhook');
+    await kycRepository.markWebhookProcessed(provider.name, event.providerEventId);
+    return { status: 'processed' };
+  },
+
+  /**
+   * Apply a normalized provider result to a profile through the status machine.
+   * Shared by the webhook and poll paths. Idempotent: when the target status
+   * equals the current one, only the detail fields are refreshed (no status /
+   * user change, no re-assert), so a redelivered terminal event is safe.
+   */
+  async applyProviderResult(
+    profile: KycProfile,
+    result: KycProviderResult,
+    ctx: KycContext,
+    source: 'webhook' | 'poll',
+  ): Promise<KycProfile> {
+    const target = mapProviderStatusToKyc(result.status);
+    const changeStatus = profile.status !== target;
+    if (changeStatus) assertTransition(profile.status, target);
+
+    const tier =
+      changeStatus && target === 'APPROVED'
+        ? config.kyc.defaultApprovedTier
+        : undefined;
+
+    const updated = await kycRepository.applyProviderUpdate(profile.userId, {
+      status: target,
+      livenessStatus: result.livenessStatus,
+      documentStatus: result.documentStatus,
+      riskScore: result.riskScore,
+      panMasked: result.panMasked,
+      aadhaarMasked: result.aadhaarMasked,
+      rejectedReason: target === 'REJECTED' ? result.rejectionReason : null,
+      tier,
+      changeStatus,
+    });
+
+    await recordAudit({
+      actorType: 'SYSTEM',
+      action: KycAction.PROVIDER_UPDATE,
+      entityType: 'kyc_profile',
+      entityId: profile.id,
+      ip: ctx.ip,
+      requestId: ctx.requestId,
+      metadata: {
+        source,
+        provider: profile.provider,
+        from: profile.status,
+        to: target,
+        livenessStatus: result.livenessStatus,
+        documentStatus: result.documentStatus,
+        riskScore: result.riskScore,
+      },
+    });
+
+    return updated;
+  },
+
+  // ------------------------------------------------------------------
   // Admin: review queue
   // ------------------------------------------------------------------
   async reviewQueue(
@@ -203,7 +379,7 @@ export const kycService = {
   },
 
   // ------------------------------------------------------------------
-  // Admin: approve / reject decision (with tier assignment)
+  // Admin: approve / reject decision (manual fallback, with tier assignment)
   // ------------------------------------------------------------------
   async decide(
     userId: string,
@@ -217,6 +393,8 @@ export const kycService = {
     const reviewedBy = ctx.actorId ?? '';
 
     if (input.decision === 'APPROVE') {
+      // Guard the transition through the same machine as the provider path.
+      assertTransition(profile.status, 'APPROVED');
       const tier = input.tier ?? config.kyc.defaultApprovedTier;
       const updated = await kycRepository.decide(userId, {
         status: 'APPROVED',
@@ -237,6 +415,7 @@ export const kycService = {
     }
 
     // REJECT — reason is guaranteed present by the validator.
+    assertTransition(profile.status, 'REJECTED');
     const reason = input.reason ?? 'Rejected';
     const updated = await kycRepository.decide(userId, {
       status: 'REJECTED',

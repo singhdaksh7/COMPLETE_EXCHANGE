@@ -5,11 +5,16 @@ vi.mock('../../src/modules/kyc/kyc.repository', () => ({
   kycRepository: {
     findUserById: vi.fn(),
     findProfileByUserId: vi.fn(),
+    findProfileByProviderRef: vi.fn(),
     submitProfile: vi.fn(),
     createDocument: vi.fn(),
     listDocumentsByUser: vi.fn(),
     listPendingProfiles: vi.fn(),
     decide: vi.fn(),
+    applyProviderUpdate: vi.fn(),
+    findWebhookEvent: vi.fn(),
+    createWebhookEvent: vi.fn(),
+    markWebhookProcessed: vi.fn(),
     writeAdminLog: vi.fn(),
   },
 }));
@@ -41,10 +46,17 @@ function makeProfile(over: Partial<KycProfile> = {}): KycProfile {
     dob: new Date('1990-01-01'),
     panEnc: Buffer.alloc(0),
     aadhaarRefEnc: null,
+    panMasked: 'ABCDE****F',
+    aadhaarMasked: null,
     address: null,
     status: 'PENDING',
-    provider: 'digilocker',
-    providerRef: 'dl_ref',
+    provider: 'mock',
+    providerRef: 'sess_ref',
+    providerSessionId: 'sess_ref',
+    providerApplicantId: 'appl_ref',
+    livenessStatus: null,
+    documentStatus: null,
+    riskScore: null,
     rejectedReason: null,
     reviewedBy: null,
     reviewedAt: null,
@@ -91,7 +103,8 @@ describe('kycService.submitProfile', () => {
     });
 
     expect(result.profile.status).toBe('PENDING');
-    expect(result.digilocker.authorizationUrl).toContain('mock.local');
+    expect(result.session.redirectUrl).toContain('mock.local');
+    expect(result.session.providerSessionId).toBeTruthy();
 
     // Persisted values are encrypted Buffers, not the raw strings.
     const persisted = repo.submitProfile.mock.calls[0][1];

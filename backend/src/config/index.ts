@@ -81,7 +81,8 @@ export const config = {
   kyc: {
     encryptionKey: env.KYC_ENCRYPTION_KEY,
     uploadUrlTtlSec: env.KYC_UPLOAD_URL_TTL_SEC,
-    digiLockerProvider: env.KYC_DIGILOCKER_PROVIDER,
+    provider: env.KYC_PROVIDER,
+    webhookSecret: env.KYC_WEBHOOK_SECRET,
     defaultApprovedTier: env.KYC_DEFAULT_APPROVED_TIER,
   },
 

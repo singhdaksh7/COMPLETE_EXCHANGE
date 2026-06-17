@@ -1,4 +1,5 @@
 import type {
+  KycCheckStatus,
   KycDocType,
   KycDocument,
   KycProfile,
@@ -27,6 +28,23 @@ export const kycRepository = {
   },
 
   /**
+   * Attribute an inbound provider event/poll back to a profile by its session
+   * or applicant id. Scoped to the provider so refs can never collide across
+   * vendors.
+   */
+  findProfileByProviderRef(
+    provider: string,
+    ref: string,
+  ): Promise<KycProfile | null> {
+    return prisma.kycProfile.findFirst({
+      where: {
+        provider,
+        OR: [{ providerSessionId: ref }, { providerApplicantId: ref }],
+      },
+    });
+  },
+
+  /**
    * Create/replace the user's KYC profile (one row per user) and move the user
    * into PENDING review — atomically.
    */
@@ -37,9 +55,11 @@ export const kycRepository = {
       dob: Date;
       panEnc: Buffer;
       aadhaarRefEnc: Buffer | null;
+      panMasked: string | null;
       address?: Prisma.InputJsonValue;
       provider: string;
-      providerRef: string;
+      providerSessionId: string;
+      providerApplicantId: string | null;
     },
   ): Promise<KycProfile> {
     const writable = {
@@ -47,9 +67,13 @@ export const kycRepository = {
       dob: data.dob,
       panEnc: data.panEnc,
       aadhaarRefEnc: data.aadhaarRefEnc,
+      panMasked: data.panMasked,
       address: data.address,
       provider: data.provider,
-      providerRef: data.providerRef,
+      // `providerRef` retained for back-compat; mirrors the session id.
+      providerRef: data.providerSessionId,
+      providerSessionId: data.providerSessionId,
+      providerApplicantId: data.providerApplicantId,
     };
     return prisma.$transaction(async (tx) => {
       const profile = await tx.kycProfile.upsert({
@@ -57,10 +81,14 @@ export const kycRepository = {
         update: {
           ...writable,
           status: 'PENDING',
-          // A resubmission clears any prior review outcome.
+          // A resubmission clears any prior review/provider outcome.
           rejectedReason: null,
           reviewedBy: null,
           reviewedAt: null,
+          livenessStatus: null,
+          documentStatus: null,
+          riskScore: null,
+          aadhaarMasked: null,
         },
         create: { userId, ...writable, status: 'PENDING' },
       });
@@ -139,6 +167,80 @@ export const kycRepository = {
         data: { status: data.status },
       });
       return profile;
+    });
+  },
+
+  /**
+   * Apply a provider-driven (webhook/poll) verification result atomically:
+   * update the profile's normalized outcome + status, mirror the user's
+   * kycStatus (and tier only on APPROVED). The status transition itself is
+   * validated by the service before this runs.
+   */
+  applyProviderUpdate(
+    userId: string,
+    data: {
+      status: KycStatus;
+      livenessStatus: KycCheckStatus | null;
+      documentStatus: KycCheckStatus | null;
+      riskScore: number | null;
+      panMasked: string | null;
+      aadhaarMasked: string | null;
+      rejectedReason: string | null;
+      tier?: number;
+      changeStatus: boolean;
+    },
+  ): Promise<KycProfile> {
+    return prisma.$transaction(async (tx) => {
+      const profile = await tx.kycProfile.update({
+        where: { userId },
+        data: {
+          ...(data.changeStatus ? { status: data.status } : {}),
+          livenessStatus: data.livenessStatus,
+          documentStatus: data.documentStatus,
+          riskScore: data.riskScore,
+          ...(data.panMasked !== null ? { panMasked: data.panMasked } : {}),
+          ...(data.aadhaarMasked !== null
+            ? { aadhaarMasked: data.aadhaarMasked }
+            : {}),
+          rejectedReason: data.rejectedReason,
+        },
+      });
+      if (data.changeStatus) {
+        await tx.user.update({
+          where: { id: userId },
+          data: {
+            kycStatus: data.status,
+            ...(data.tier !== undefined ? { kycTier: data.tier } : {}),
+          },
+        });
+      }
+      return profile;
+    });
+  },
+
+  // ----------------------------------------------------------------------
+  // Webhook idempotency (append-only kyc_webhook_events).
+  // ----------------------------------------------------------------------
+  findWebhookEvent(provider: string, providerEventId: string) {
+    return prisma.kycWebhookEvent.findUnique({
+      where: { provider_providerEventId: { provider, providerEventId } },
+    });
+  },
+
+  createWebhookEvent(data: {
+    provider: string;
+    providerEventId: string;
+    eventType: string;
+    signatureOk: boolean;
+    payload: Prisma.InputJsonValue;
+  }) {
+    return prisma.kycWebhookEvent.create({ data });
+  },
+
+  markWebhookProcessed(provider: string, providerEventId: string) {
+    return prisma.kycWebhookEvent.update({
+      where: { provider_providerEventId: { provider, providerEventId } },
+      data: { processedAt: new Date() },
     });
   },
 

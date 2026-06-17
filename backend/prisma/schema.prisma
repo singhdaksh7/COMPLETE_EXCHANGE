@@ -54,6 +54,8 @@ enum UserStatus {
 enum KycStatus {
   NOT_STARTED
   PENDING
+  IN_REVIEW
+  MANUAL_REVIEW
   APPROVED
   REJECTED
 }
@@ -64,6 +66,14 @@ enum KycDocType {
   PASSPORT
   SELFIE
   ADDRESS_PROOF
+}
+
+// Normalized status of an individual provider check (liveness, document, …).
+enum KycCheckStatus {
+  PENDING
+  PASS
+  FAIL
+  UNAVAILABLE
 }
 
 enum ChainFamily {
@@ -512,6 +522,14 @@ model KycProfile {
   status         KycStatus @default(PENDING)
   provider       String?
   providerRef    String?   @map("provider_ref")
+  // Generic third-party provider linkage + normalized outcome (vendor-neutral).
+  providerSessionId   String?         @map("provider_session_id")
+  providerApplicantId String?         @map("provider_applicant_id")
+  panMasked           String?         @map("pan_masked")
+  aadhaarMasked       String?         @map("aadhaar_masked")
+  livenessStatus      KycCheckStatus? @map("liveness_status")
+  documentStatus      KycCheckStatus? @map("document_status")
+  riskScore           Int?            @map("risk_score")
   rejectedReason String?   @map("rejected_reason")
   reviewedBy     String?   @map("reviewed_by") @db.Uuid
   reviewedAt     DateTime? @map("reviewed_at")
@@ -522,7 +540,27 @@ model KycProfile {
   reviewer Admin? @relation("KycReviewer", fields: [reviewedBy], references: [id])
 
   @@index([status])
+  @@index([providerSessionId])
+  @@index([providerApplicantId])
   @@map("kyc_profiles")
+}
+
+// Append-only inbound KYC provider webhook events. Mirrors
+// PaymentWebhookEvent: the (provider, providerEventId) unique key is the
+// idempotency guard so redelivered events are processed at most once.
+model KycWebhookEvent {
+  id              String    @id @default(uuid()) @db.Uuid
+  provider        String
+  providerEventId String    @map("provider_event_id")
+  eventType       String    @map("event_type")
+  signatureOk     Boolean   @map("signature_ok")
+  payload         Json
+  processedAt     DateTime? @map("processed_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@unique([provider, providerEventId])
+  @@index([processedAt])
+  @@map("kyc_webhook_events")
 }
 
 model KycDocument {
