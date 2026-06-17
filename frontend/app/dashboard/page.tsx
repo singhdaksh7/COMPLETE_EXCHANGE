@@ -6,7 +6,16 @@ import { userApi } from '@/lib/user-api';
 import { errorMessage } from '@/lib/api';
 import { useGuard } from '@/components/guards';
 import { UserNav } from '@/components/nav';
-import { Card, Alert, Row, StatusBadge } from '@/components/ui';
+import { StatusBadge } from '@/components/ui';
+
+function BackdropGlow() {
+  return (
+    <>
+      <div className="absolute -left-32 top-1/4 h-[350px] w-[350px] rounded-full bg-gold/5 blur-[120px] pointer-events-none" />
+      <div className="absolute -right-20 bottom-0 h-[350px] w-[350px] rounded-full bg-gold-glow/[0.04] blur-[130px] pointer-events-none" />
+    </>
+  );
+}
 
 export default function DashboardPage() {
   const ready = useGuard('user');
@@ -20,44 +29,79 @@ export default function DashboardPage() {
   const me = q.data?.data;
 
   return (
-    <>
+    <div className="relative min-h-screen bg-noir font-sans text-white pb-20">
+      <style dangerouslySetInnerHTML={{ __html: `
+        header { background-color: #111114 !important; border-bottom: 1px solid rgba(245,194,66,0.15) !important; }
+        header span, header nav a { color: #eaecef !important; }
+        header nav a:hover { color: #F5C242 !important; }
+        header button { color: #f6465d !important; }
+      `}} />
       <UserNav />
-      <main className="mx-auto max-w-xl px-4">
-        <h1 className="mb-4 text-xl font-semibold">Dashboard</h1>
+      <BackdropGlow />
 
-        {q.isLoading && <p className="text-sm text-gray-500">Loading…</p>}
-        {q.isError && <Alert>{errorMessage(q.error)}</Alert>}
+      <main className="relative z-10 mx-auto max-w-2xl px-5 pt-8">
+        <div className="mb-6 flex justify-between items-center border-b border-white/5 pb-4">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-gold via-gold-glow to-gold bg-clip-text text-transparent">User Dashboard</h1>
+            <p className="text-xs text-white/50 mt-1">Manage credentials, permissions, and status.</p>
+          </div>
+        </div>
+
+        {q.isLoading && <p className="text-sm text-white/40">Retrieving profile...</p>}
+        {q.isError && <div className="mb-4 rounded-lg bg-red-500/10 border border-red-500/20 p-4 text-sm text-red-300">{errorMessage(q.error)}</div>}
 
         {me && (
-          <Card>
-            <Row label="Email" value={me.user.email} />
-            <Row label="Account status" value={me.user.status} />
-            <Row
-              label="KYC status"
-              value={<StatusBadge status={me.user.kycStatus} />}
-            />
-            <Row label="KYC tier" value={String(me.user.kycTier)} />
-            <Row label="Roles" value={me.roles.join(', ') || '—'} />
-            <div className="mt-4 flex flex-wrap gap-4 text-sm">
-              <Link href="/wallet" className="underline">
-                Wallet
-              </Link>
-              <Link href="/deposit" className="underline">
-                Deposit INR
-              </Link>
-              <Link href="/convert" className="underline">
-                Convert
-              </Link>
-              <Link href="/withdraw" className="underline">
-                Withdraw USDT
-              </Link>
-              <Link href="/kyc/submit" className="underline">
-                Submit KYC
-              </Link>
+          <div className="relative rounded-2xl border border-gold/20 bg-white/[0.03] p-7 shadow-gold-soft backdrop-blur-2xl">
+            <div className="pointer-events-none absolute -inset-px rounded-2xl bg-gradient-to-b from-gold/15 to-transparent opacity-60" />
+            
+            <div className="relative space-y-4 text-sm">
+              <div className="flex justify-between border-b border-white/5 pb-2.5">
+                <span className="text-white/45">Email Address</span>
+                <span className="font-semibold text-ink">{me.user.email}</span>
+              </div>
+              <div className="flex justify-between border-b border-white/5 pb-2.5">
+                <span className="text-white/45">Account Status</span>
+                <span className="font-semibold text-gold">{me.user.status}</span>
+              </div>
+              <div className="flex justify-between border-b border-white/5 pb-2.5">
+                <span className="text-white/45">KYC Level</span>
+                <span className="font-semibold text-ink">
+                  <StatusBadge status={me.user.kycStatus} />
+                </span>
+              </div>
+              <div className="flex justify-between border-b border-white/5 pb-2.5">
+                <span className="text-white/45">Verification Tier</span>
+                <span className="font-semibold text-gold">Tier {me.user.kycTier}</span>
+              </div>
+              <div className="flex justify-between pb-1.5">
+                <span className="text-white/45">Roles & Authorizations</span>
+                <span className="font-semibold text-ink">{me.roles.join(', ') || '—'}</span>
+              </div>
+
+              <div className="border-t border-white/5 pt-6 mt-4">
+                <h3 className="text-xs font-bold text-gold uppercase tracking-wider mb-4">Quick Desk Actions</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <Link href="/wallet" className="flex items-center justify-center rounded-lg border border-white/[0.12] bg-white/[0.02] py-2.5 text-xs font-bold text-white/80 hover:border-gold/40 hover:bg-white/[0.06] transition text-center">
+                    Wallet Overview
+                  </Link>
+                  <Link href="/deposit" className="flex items-center justify-center rounded-lg border border-white/[0.12] bg-white/[0.02] py-2.5 text-xs font-bold text-white/80 hover:border-gold/40 hover:bg-white/[0.06] transition text-center">
+                    Deposit INR
+                  </Link>
+                  <Link href="/convert" className="flex items-center justify-center rounded-lg border border-white/[0.12] bg-white/[0.02] py-2.5 text-xs font-bold text-white/80 hover:border-gold/40 hover:bg-white/[0.06] transition text-center">
+                    Convert Quote
+                  </Link>
+                  <Link href="/withdraw" className="flex items-center justify-center rounded-lg border border-white/[0.12] bg-white/[0.02] py-2.5 text-xs font-bold text-white/80 hover:border-gold/40 hover:bg-white/[0.06] transition text-center">
+                    Withdraw USDT
+                  </Link>
+                  <Link href="/kyc/submit" className="flex items-center justify-center rounded-lg bg-gradient-to-r from-gold to-gold-glow py-2.5 text-xs font-bold text-noir shadow-gold-glow hover:brightness-105 transition text-center col-span-2 sm:col-span-1">
+                    Identity Verification
+                  </Link>
+                </div>
+              </div>
             </div>
-          </Card>
+          </div>
         )}
       </main>
-    </>
+    </div>
   );
 }

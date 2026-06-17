@@ -9,7 +9,7 @@ import { useRealtime } from '@/lib/use-realtime';
 import { useGuard } from '@/components/guards';
 import { UserNav } from '@/components/nav';
 import { MarketChart } from '@/components/market-chart';
-import { Card, Alert, Button, Field, Input, Select, StatusBadge } from '@/components/ui';
+import { StatusBadge } from '@/components/ui';
 import type {
   Market,
   Order,
@@ -19,6 +19,15 @@ import type {
 } from '@/lib/types';
 
 const DEFAULT_SYMBOL = 'USDT-INR';
+
+function BackdropGlow() {
+  return (
+    <>
+      <div className="absolute -left-32 top-1/4 h-[350px] w-[350px] rounded-full bg-gold/5 blur-[120px] pointer-events-none" />
+      <div className="absolute -right-20 bottom-0 h-[350px] w-[350px] rounded-full bg-gold-glow/[0.04] blur-[130px] pointer-events-none" />
+    </>
+  );
+}
 
 export default function TradePage() {
   return (
@@ -42,72 +51,89 @@ function TradeInner() {
   const markets = marketsQ.data?.data.items ?? [];
   const market = markets.find((m) => m.symbol === symbol);
 
-  // Live exchange feed. `live` gates per-panel polling: when the socket is
-  // connected we rely on pushed updates; when it drops we poll as a fallback.
   const { connected: live } = useRealtime(symbol);
 
   if (!ready) return null;
 
   return (
-    <>
+    <div className="relative min-h-screen bg-noir font-sans text-white pb-20">
+      <style dangerouslySetInnerHTML={{ __html: `
+        header { background-color: #111114 !important; border-bottom: 1px solid rgba(245,194,66,0.15) !important; }
+        header span, header nav a { color: #eaecef !important; }
+        header nav a:hover { color: #F5C242 !important; }
+        header button { color: #f6465d !important; }
+      `}} />
       <UserNav />
-      <main className="mx-auto max-w-5xl px-4 pb-16">
-        <div className="mb-4 flex items-center justify-between">
+      <BackdropGlow />
+
+      <main className="relative z-10 mx-auto max-w-6xl px-5 pt-8">
+        
+        {/* Header toolbar */}
+        <div className="mb-6 flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-white/5 pb-4">
           <div className="flex items-center gap-3">
-            <h1 className="text-xl font-semibold">Trade</h1>
+            <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-gold via-gold-glow to-gold bg-clip-text text-transparent">Spot Trading Desk</h1>
             <ConnectionBadge live={live} />
           </div>
-          <div className="w-48">
-            <Select
+          
+          <div className="w-full sm:w-56 flex flex-col gap-1.5">
+            <label className="text-[10px] font-bold text-white/45 uppercase tracking-wider">Trading Market</label>
+            <select
               value={symbol}
               onChange={(e) =>
                 router.push(`/trade?symbol=${encodeURIComponent(e.target.value)}`)
               }
+              className="w-full rounded-lg border border-white/10 bg-noir px-3 py-2 text-xs text-white focus:border-gold/60 focus:outline-none"
             >
               {markets.length === 0 && <option value={symbol}>{symbol}</option>}
               {markets.map((m) => (
-                <option key={m.symbol} value={m.symbol}>
+                <option key={m.symbol} value={m.symbol} className="bg-noir">
                   {m.symbol}
                 </option>
               ))}
-            </Select>
+            </select>
           </div>
         </div>
 
-        {marketsQ.isError && <Alert>{errorMessage(marketsQ.error)}</Alert>}
+        {marketsQ.isError && <div className="mb-4 rounded-lg bg-red-500/10 border border-red-500/20 p-4 text-xs text-red-300">{errorMessage(marketsQ.error)}</div>}
 
-        <div className="mb-4">
+        {/* Live chart overlay */}
+        <div className="mb-6 rounded-2xl border border-white/5 bg-white/[0.01] p-4 overflow-hidden">
           <MarketChart symbol={symbol} live={live} />
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-3">
+        <div className="grid gap-6 lg:grid-cols-3">
+          
+          {/* Orderbook card */}
           <div className="lg:col-span-1">
             <OrderBookPanel symbol={symbol} live={live} />
           </div>
-          <div className="lg:col-span-1">
+          
+          {/* Trade panel */}
+          <div className="lg:col-span-1 space-y-6">
             <OrderForm symbol={symbol} market={market} />
-            <div className="mt-4">
-              <Balances live={live} />
-            </div>
+            <Balances live={live} />
           </div>
+          
+          {/* Recent Trades list */}
           <div className="lg:col-span-1">
             <RecentTrades symbol={symbol} live={live} />
           </div>
         </div>
 
-        <div className="mt-4">
+        {/* Open Orders */}
+        <div className="mt-6">
           <OpenOrders symbol={symbol} live={live} />
         </div>
       </main>
-    </>
+    </div>
   );
 }
 
 function ConnectionBadge({ live }: { live: boolean }) {
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
-        live ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+        live ? 'bg-up/10 text-up' : 'bg-brand/10 text-brand'
       }`}
       title={
         live
@@ -116,7 +142,7 @@ function ConnectionBadge({ live }: { live: boolean }) {
       }
     >
       <span
-        className={`h-1.5 w-1.5 rounded-full ${live ? 'bg-green-600' : 'bg-amber-600'}`}
+        className={`h-1.5 w-1.5 rounded-full ${live ? 'bg-up animate-pulse' : 'bg-brand'}`}
       />
       {live ? 'Live' : 'Polling'}
     </span>
@@ -127,47 +153,53 @@ function OrderBookPanel({ symbol, live }: { symbol: string; live: boolean }) {
   const q = useQuery({
     queryKey: ['orderbook', symbol],
     queryFn: () => userApi.orderBook(symbol, 15),
-    // Live pushes replace polling; poll only as a fallback when disconnected.
     refetchInterval: live ? false : 3000,
   });
   const book = q.data?.data;
 
   return (
-    <Card>
-      <h2 className="mb-2 text-sm font-semibold">Order book · {symbol}</h2>
-      {q.isError && <Alert>{errorMessage(q.error)}</Alert>}
-      <div className="grid grid-cols-2 gap-1 text-xs font-medium text-gray-500">
-        <span>Price (INR)</span>
-        <span className="text-right">Qty</span>
-      </div>
+    <div className="relative rounded-2xl border border-gold/15 bg-white/[0.03] p-5 shadow-gold-soft backdrop-blur-2xl">
+      <div className="pointer-events-none absolute -inset-px rounded-2xl bg-gradient-to-b from-gold/10 to-transparent opacity-50" />
+      
+      <div className="relative z-10 space-y-3">
+        <h2 className="text-xs font-bold uppercase tracking-wider text-gold">Order Book · {symbol}</h2>
+        {q.isError && <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-xs text-red-300">{errorMessage(q.error)}</div>}
+        
+        <div className="grid grid-cols-2 gap-1 text-[10px] font-bold uppercase tracking-wider text-white/40 border-b border-white/5 pb-2">
+          <span>Price (INR)</span>
+          <span className="text-right">Qty</span>
+        </div>
 
-      <div className="mt-1 space-y-0.5">
-        {(book?.asks ?? [])
-          .slice()
-          .reverse()
-          .map((lvl, i) => (
-            <div key={`a${i}`} className="grid grid-cols-2 text-xs">
-              <span className="font-mono text-red-600">{lvl.price}</span>
-              <span className="text-right font-mono">{lvl.quantity}</span>
+        <div className="space-y-1">
+          {/* Asks (Sell orders) - top of book */}
+          {(book?.asks ?? [])
+            .slice()
+            .reverse()
+            .map((lvl, i) => (
+              <div key={`a${i}`} className="grid grid-cols-2 text-xs hover:bg-white/[0.02] px-1 py-0.5 rounded transition">
+                <span className="font-mono text-down font-medium">{lvl.price}</span>
+                <span className="text-right font-mono text-white/80">{lvl.quantity}</span>
+              </div>
+            ))}
+        </div>
+
+        <div className="my-2 border-t border-white/5" />
+
+        <div className="space-y-1">
+          {/* Bids (Buy orders) - bottom of book */}
+          {(book?.bids ?? []).map((lvl, i) => (
+            <div key={`b${i}`} className="grid grid-cols-2 text-xs hover:bg-white/[0.02] px-1 py-0.5 rounded transition">
+              <span className="font-mono text-up font-medium">{lvl.price}</span>
+              <span className="text-right font-mono text-white/80">{lvl.quantity}</span>
             </div>
           ))}
+        </div>
+
+        {book && book.asks.length === 0 && book.bids.length === 0 && (
+          <p className="py-4 text-xs text-white/40 text-center">No resting orders inside book.</p>
+        )}
       </div>
-
-      <div className="my-1 border-t border-gray-200" />
-
-      <div className="space-y-0.5">
-        {(book?.bids ?? []).map((lvl, i) => (
-          <div key={`b${i}`} className="grid grid-cols-2 text-xs">
-            <span className="font-mono text-green-600">{lvl.price}</span>
-            <span className="text-right font-mono">{lvl.quantity}</span>
-          </div>
-        ))}
-      </div>
-
-      {book && book.asks.length === 0 && book.bids.length === 0 && (
-        <p className="py-3 text-xs text-gray-500">No resting orders.</p>
-      )}
-    </Card>
+    </div>
   );
 }
 
@@ -210,115 +242,138 @@ function OrderForm({ symbol, market }: { symbol: string; market?: Market }) {
   const quoteAsset = market?.quoteAsset ?? 'INR';
 
   return (
-    <Card>
-      <div className="mb-3 grid grid-cols-2 gap-2">
-        <button
-          type="button"
-          onClick={() => setSide('BUY')}
-          className={`rounded-md py-2 text-sm font-medium ${
-            side === 'BUY'
-              ? 'bg-green-600 text-white'
-              : 'bg-gray-100 text-gray-600'
-          }`}
-        >
-          Buy
-        </button>
-        <button
-          type="button"
-          onClick={() => setSide('SELL')}
-          className={`rounded-md py-2 text-sm font-medium ${
-            side === 'SELL' ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-600'
-          }`}
-        >
-          Sell
-        </button>
-      </div>
+    <div className="relative rounded-2xl border border-gold/15 bg-white/[0.03] p-5 shadow-gold-soft backdrop-blur-2xl">
+      <div className="pointer-events-none absolute -inset-px rounded-2xl bg-gradient-to-b from-gold/10 to-transparent opacity-50" />
+      
+      <div className="relative z-10 space-y-4">
+        
+        {/* Buy/Sell Selector */}
+        <div className="grid grid-cols-2 gap-2.5">
+          <button
+            type="button"
+            onClick={() => setSide('BUY')}
+            className={`rounded-lg py-2.5 text-xs font-bold uppercase tracking-wider transition ${
+              side === 'BUY'
+                ? 'bg-up text-white shadow-[0_0_15px_rgba(14,203,129,0.3)]'
+                : 'bg-white/5 border border-white/5 text-white/50 hover:bg-white/10'
+            }`}
+          >
+            Buy
+          </button>
+          <button
+            type="button"
+            onClick={() => setSide('SELL')}
+            className={`rounded-lg py-2.5 text-xs font-bold uppercase tracking-wider transition ${
+              side === 'SELL'
+                ? 'bg-down text-white shadow-[0_0_15px_rgba(246,70,93,0.3)]'
+                : 'bg-white/5 border border-white/5 text-white/50 hover:bg-white/10'
+            }`}
+          >
+            Sell
+          </button>
+        </div>
 
-      <Field label="Order type">
-        <Select value={type} onChange={(e) => setType(e.target.value as OrderType)}>
-          <option value="LIMIT">Limit</option>
-          <option value="MARKET">Market</option>
-        </Select>
-      </Field>
+        {/* Order Type */}
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[10px] font-bold text-white/45 uppercase tracking-wider">Order Type</label>
+          <select 
+            value={type} 
+            onChange={(e) => setType(e.target.value as OrderType)}
+            className="w-full rounded-lg border border-white/10 bg-noir px-3 py-2 text-xs text-white focus:border-gold/60 focus:outline-none"
+          >
+            <option value="LIMIT" className="bg-noir">Limit Order</option>
+            <option value="MARKET" className="bg-noir">Market Order</option>
+          </select>
+        </div>
 
-      <form onSubmit={submit}>
-        {type === 'LIMIT' && (
-          <>
-            <Field label={`Price (${quoteAsset})`}>
-              <Input
+        <form onSubmit={submit} className="space-y-4">
+          {type === 'LIMIT' && (
+            <>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-bold text-white/45 uppercase tracking-wider">Price ({quoteAsset})</label>
+                <input
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
+                  className="w-full rounded-lg border border-white/10 bg-noir px-3 py-2 text-xs text-white focus:border-gold/60 focus:outline-none font-mono"
+                  required
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-bold text-white/45 uppercase tracking-wider">Quantity ({baseAsset})</label>
+                <input
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value)}
+                  className="w-full rounded-lg border border-white/10 bg-noir px-3 py-2 text-xs text-white focus:border-gold/60 focus:outline-none font-mono"
+                  required
+                />
+              </div>
+            </>
+          )}
+
+          {type === 'MARKET' && side === 'BUY' && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[10px] font-bold text-white/45 uppercase tracking-wider">Budget ({quoteAsset})</label>
+              <input
                 inputMode="decimal"
                 placeholder="0.00"
-                value={price}
-                onChange={(e) => setPrice(e.target.value)}
+                value={quoteBudget}
+                onChange={(e) => setQuoteBudget(e.target.value)}
+                className="w-full rounded-lg border border-white/10 bg-noir px-3 py-2 text-xs text-white focus:border-gold/60 focus:outline-none font-mono"
+                required
               />
-            </Field>
-            <Field label={`Quantity (${baseAsset})`}>
-              <Input
+            </div>
+          )}
+
+          {type === 'MARKET' && side === 'SELL' && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[10px] font-bold text-white/45 uppercase tracking-wider">Quantity ({baseAsset})</label>
+              <input
                 inputMode="decimal"
                 placeholder="0.00"
                 value={quantity}
                 onChange={(e) => setQuantity(e.target.value)}
+                className="w-full rounded-lg border border-white/10 bg-noir px-3 py-2 text-xs text-white focus:border-gold/60 focus:outline-none font-mono"
+                required
               />
-            </Field>
-          </>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={place.isPending}
+            className={`w-full rounded-lg py-2.5 text-xs font-bold uppercase tracking-wider text-white transition ${
+              side === 'BUY'
+                ? 'bg-up hover:opacity-90'
+                : 'bg-down hover:opacity-90'
+            }`}
+          >
+            {place.isPending
+              ? 'Placing...'
+              : `${side === 'BUY' ? 'Buy' : 'Sell'} ${baseAsset}`}
+          </button>
+        </form>
+
+        {place.isError && (
+          <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-xs text-red-300">
+            {errorMessage(place.error)}
+          </div>
         )}
-
-        {type === 'MARKET' && side === 'BUY' && (
-          <Field label={`Budget (${quoteAsset})`}>
-            <Input
-              inputMode="decimal"
-              placeholder="0.00"
-              value={quoteBudget}
-              onChange={(e) => setQuoteBudget(e.target.value)}
-            />
-          </Field>
-        )}
-
-        {type === 'MARKET' && side === 'SELL' && (
-          <Field label={`Quantity (${baseAsset})`}>
-            <Input
-              inputMode="decimal"
-              placeholder="0.00"
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-            />
-          </Field>
-        )}
-
-        <Button
-          type="submit"
-          disabled={place.isPending}
-          className={`w-full ${
-            side === 'BUY'
-              ? 'bg-green-600 hover:bg-green-500'
-              : 'bg-red-600 hover:bg-red-500'
-          }`}
-        >
-          {place.isPending
-            ? 'Placing…'
-            : `${side === 'BUY' ? 'Buy' : 'Sell'} ${baseAsset}`}
-        </Button>
-      </form>
-
-      {place.isError && (
-        <div className="mt-3">
-          <Alert>{errorMessage(place.error)}</Alert>
-        </div>
-      )}
-      {place.isSuccess && (
-        <div className="mt-3">
-          <Alert kind="success">
+        {place.isSuccess && (
+          <div className="rounded-lg bg-up/10 border border-up/20 p-3 text-xs text-up">
             Order {place.data?.data.status.toLowerCase()} ({place.data?.data.id.slice(0, 8)})
-          </Alert>
-        </div>
-      )}
-      {market && (
-        <p className="mt-3 text-xs text-gray-500">
-          Min notional {market.minNotional} {quoteAsset} · tick {market.tickSize} ·
-          step {market.stepSize}
-        </p>
-      )}
-    </Card>
+          </div>
+        )}
+        {market && (
+          <div className="text-[9px] text-white/35 leading-relaxed border-t border-white/5 pt-2 mt-2">
+            Min quote: {market.minNotional} {quoteAsset} · tick {market.tickSize} · step {market.stepSize}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -326,7 +381,6 @@ function Balances({ live }: { live: boolean }) {
   const q = useQuery({
     queryKey: ['wallet-overview'],
     queryFn: () => userApi.walletOverview(),
-    // Balances are pushed via balance.updated; poll only when disconnected.
     refetchInterval: live ? false : 8000,
   });
   const balances = q.data?.data.balances ?? [];
@@ -334,14 +388,15 @@ function Balances({ live }: { live: boolean }) {
   const usdt = balances.find((b) => b.asset.toUpperCase() === 'USDT');
 
   return (
-    <Card>
-      <h2 className="mb-2 text-sm font-semibold">Balances</h2>
-      {q.isError && <Alert>{errorMessage(q.error)}</Alert>}
-      <div className="space-y-1 text-sm">
+    <div className="relative rounded-2xl border border-white/5 bg-white/[0.01] p-5">
+      <h2 className="text-xs font-bold uppercase tracking-wider text-white mb-3">Ledger Balances</h2>
+      {q.isError && <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-xs text-red-300">{errorMessage(q.error)}</div>}
+      
+      <div className="space-y-2.5 text-xs">
         <BalanceRow asset="INR" available={inr?.available} locked={inr?.locked} />
         <BalanceRow asset="USDT" available={usdt?.available} locked={usdt?.locked} />
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -355,11 +410,11 @@ function BalanceRow({
   locked?: string;
 }) {
   return (
-    <div className="flex items-center justify-between">
-      <span className="text-gray-500">{asset}</span>
-      <span className="font-mono">
+    <div className="flex items-center justify-between border-b border-white/5 pb-2 last:border-0 last:pb-0">
+      <span className="text-white/45 font-semibold">{asset}</span>
+      <span className="font-mono text-ink">
         {available ?? '0'}{' '}
-        <span className="text-xs text-gray-400">(locked {locked ?? '0'})</span>
+        <span className="text-[10px] text-white/30">(locked {locked ?? '0'})</span>
       </span>
     </div>
   );
@@ -370,7 +425,6 @@ function OpenOrders({ symbol, live }: { symbol: string; live: boolean }) {
   const q = useQuery({
     queryKey: ['open-orders', symbol],
     queryFn: () => userApi.openOrders(symbol),
-    // order.updated pushes keep this live; poll only as a fallback.
     refetchInterval: live ? false : 5000,
   });
   const cancel = useMutation({
@@ -384,40 +438,41 @@ function OpenOrders({ symbol, live }: { symbol: string; live: boolean }) {
   const orders = q.data?.data.items ?? [];
 
   return (
-    <Card>
-      <h2 className="mb-2 text-sm font-semibold">Open orders</h2>
-      {q.isError && <Alert>{errorMessage(q.error)}</Alert>}
+    <div className="relative rounded-2xl border border-white/5 bg-white/[0.01] p-6 space-y-4">
+      <h2 className="text-sm font-bold text-white tracking-tight border-b border-white/5 pb-2">Active Open Orders</h2>
+      {q.isError && <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-xs text-red-300">{errorMessage(q.error)}</div>}
       {cancel.isError && (
-        <div className="mb-2">
-          <Alert>{errorMessage(cancel.error)}</Alert>
+        <div className="mb-2 rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-xs text-red-300">
+          {errorMessage(cancel.error)}
         </div>
       )}
+      
       {orders.length === 0 ? (
-        <p className="text-sm text-gray-500">No open orders.</p>
+        <p className="text-xs text-white/40 py-6 text-center">No active resting orders.</p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="text-xs text-gray-500">
-              <tr>
-                <th className="py-1">Market</th>
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-white/5 text-white/45 uppercase tracking-wider font-semibold text-[10px]">
+                <th className="py-2.5">Market</th>
                 <th>Side</th>
                 <th>Type</th>
                 <th className="text-right">Price</th>
                 <th className="text-right">Qty / Filled</th>
                 <th>Status</th>
-                <th></th>
+                <th className="text-right">Action</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-white/5">
               {orders.map((o: Order) => (
-                <tr key={o.id} className="border-t border-gray-100">
-                  <td className="py-2">{o.marketSymbol}</td>
-                  <td className={o.side === 'BUY' ? 'text-green-600' : 'text-red-600'}>
+                <tr key={o.id} className="hover:bg-white/[0.01]">
+                  <td className="py-3 font-semibold text-white">{o.marketSymbol}</td>
+                  <td className={`font-semibold ${o.side === 'BUY' ? 'text-up' : 'text-down'}`}>
                     {o.side}
                   </td>
                   <td>{o.type}</td>
-                  <td className="text-right font-mono">{o.price ?? '—'}</td>
-                  <td className="text-right font-mono">
+                  <td className="text-right font-mono font-medium text-gold">{o.price ?? '—'}</td>
+                  <td className="text-right font-mono text-white/80">
                     {o.quantity ?? o.quoteBudget ?? '—'} / {o.filledQuantity}
                   </td>
                   <td>
@@ -427,7 +482,7 @@ function OpenOrders({ symbol, live }: { symbol: string; live: boolean }) {
                     <button
                       onClick={() => cancel.mutate(o.id)}
                       disabled={cancel.isPending}
-                      className="text-xs text-red-600 hover:underline disabled:opacity-50"
+                      className="text-xs text-down font-bold hover:underline disabled:opacity-50"
                     >
                       Cancel
                     </button>
@@ -438,7 +493,7 @@ function OpenOrders({ symbol, live }: { symbol: string; live: boolean }) {
           </table>
         </div>
       )}
-    </Card>
+    </div>
   );
 }
 
@@ -446,39 +501,44 @@ function RecentTrades({ symbol, live }: { symbol: string; live: boolean }) {
   const q = useQuery({
     queryKey: ['trades', symbol],
     queryFn: () => userApi.tradeHistory(symbol, 20),
-    // trade.executed invalidates this query; poll only as a fallback.
     refetchInterval: live ? false : 4000,
   });
   const trades = q.data?.data.items ?? [];
 
   return (
-    <Card>
-      <h2 className="mb-2 text-sm font-semibold">Your recent trades</h2>
-      {q.isError && <Alert>{errorMessage(q.error)}</Alert>}
-      {trades.length === 0 ? (
-        <p className="text-sm text-gray-500">No trades yet.</p>
-      ) : (
-        <div className="space-y-0.5">
-          <div className="grid grid-cols-3 text-xs font-medium text-gray-500">
-            <span>Price</span>
-            <span className="text-right">Qty</span>
-            <span className="text-right">Side</span>
-          </div>
-          {trades.map((t) => (
-            <div key={t.id} className="grid grid-cols-3 text-xs">
-              <span className="font-mono">{t.price}</span>
-              <span className="text-right font-mono">{t.quantity}</span>
-              <span
-                className={`text-right ${
-                  t.side === 'BUY' ? 'text-green-600' : 'text-red-600'
-                }`}
-              >
-                {t.side}
-              </span>
+    <div className="relative rounded-2xl border border-gold/15 bg-white/[0.03] p-5 shadow-gold-soft backdrop-blur-2xl">
+      <div className="pointer-events-none absolute -inset-px rounded-2xl bg-gradient-to-b from-gold/10 to-transparent opacity-50" />
+      
+      <div className="relative z-10 space-y-3">
+        <h2 className="text-xs font-bold uppercase tracking-wider text-gold">My Recent Trades</h2>
+        {q.isError && <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-xs text-red-300">{errorMessage(q.error)}</div>}
+        
+        {trades.length === 0 ? (
+          <p className="text-xs text-white/40 py-6 text-center">No trades logged yet.</p>
+        ) : (
+          <div className="space-y-1.5">
+            <div className="grid grid-cols-3 text-[10px] font-bold uppercase tracking-wider text-white/40 border-b border-white/5 pb-2">
+              <span>Price</span>
+              <span className="text-right">Qty</span>
+              <span className="text-right">Side</span>
             </div>
-          ))}
-        </div>
-      )}
-    </Card>
+            
+            {trades.map((t) => (
+              <div key={t.id} className="grid grid-cols-3 text-xs hover:bg-white/[0.02] px-1 py-0.5 rounded transition">
+                <span className="font-mono font-medium text-white">{t.price}</span>
+                <span className="text-right font-mono text-white/70">{t.quantity}</span>
+                <span
+                  className={`text-right font-bold text-[10px] ${
+                    t.side === 'BUY' ? 'text-up' : 'text-down'
+                  }`}
+                >
+                  {t.side}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
