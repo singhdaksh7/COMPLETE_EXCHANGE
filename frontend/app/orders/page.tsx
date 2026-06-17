@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { userApi } from '@/lib/user-api';
 import { errorMessage } from '@/lib/api';
 import { useGuard } from '@/components/guards';
-import { UserNav } from '@/components/nav';
+import { UserShell } from '@/components/user-shell';
 import { Card, Alert, StatusBadge } from '@/components/ui';
 import type { Order, Trade } from '@/lib/types';
 
@@ -44,40 +44,48 @@ export default function OrdersPage() {
   const trades = tradesQ.data?.data.items ?? [];
 
   return (
-    <>
-      <UserNav />
-      <main className="mx-auto max-w-4xl px-4 pb-16">
-        <h1 className="mb-4 text-xl font-semibold">Orders</h1>
+    <UserShell className="max-w-[1400px] space-y-6">
+        
+        {/* Header */}
+        <div className="mb-8 flex justify-between items-center border-b border-white/5 pb-4">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-gold via-gold-glow to-gold bg-clip-text text-transparent">Order Logs Desk</h1>
+            <p className="text-xs text-white/50 mt-1">Audit active market orders, cancellations, and completed transaction history.</p>
+          </div>
+        </div>
 
-        <Card className="mb-6">
-          <h2 className="mb-2 text-sm font-semibold">Open orders</h2>
-          {openQ.isError && <Alert>{errorMessage(openQ.error)}</Alert>}
-          {cancel.isError && (
-            <div className="mb-2">
-              <Alert>{errorMessage(cancel.error)}</Alert>
-            </div>
-          )}
+        {cancel.isError && (
+          <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-4 text-xs text-red-300">
+            {errorMessage(cancel.error)}
+          </div>
+        )}
+
+        {/* Open Orders */}
+        <div className="relative rounded-2xl border border-white/5 bg-white/[0.01] p-6">
+          <h2 className="text-sm font-bold text-white tracking-tight mb-4 border-b border-white/5 pb-2">Open Orders Queue</h2>
+          {openQ.isError && <p className="text-xs text-down py-2">{errorMessage(openQ.error)}</p>}
           <OrderTable
             orders={openOrders}
-            emptyText="No open orders."
+            emptyText="No active open orders found."
             onCancel={(id) => cancel.mutate(id)}
             cancelling={cancel.isPending}
           />
-        </Card>
+        </div>
 
-        <Card className="mb-6">
-          <h2 className="mb-2 text-sm font-semibold">Order history</h2>
-          {historyQ.isError && <Alert>{errorMessage(historyQ.error)}</Alert>}
-          <OrderTable orders={history} emptyText="No past orders." />
-        </Card>
+        {/* Order History */}
+        <div className="relative rounded-2xl border border-white/5 bg-white/[0.01] p-6">
+          <h2 className="text-sm font-bold text-white tracking-tight mb-4 border-b border-white/5 pb-2">Order Execution Ledger</h2>
+          {historyQ.isError && <p className="text-xs text-down py-2">{errorMessage(historyQ.error)}</p>}
+          <OrderTable orders={history} emptyText="No past execution history." />
+        </div>
 
-        <Card>
-          <h2 className="mb-2 text-sm font-semibold">Trade history</h2>
-          {tradesQ.isError && <Alert>{errorMessage(tradesQ.error)}</Alert>}
+        {/* Trade History */}
+        <div className="relative rounded-2xl border border-white/5 bg-white/[0.01] p-6">
+          <h2 className="text-sm font-bold text-white tracking-tight mb-4 border-b border-white/5 pb-2">Trade Matching Ledger</h2>
+          {tradesQ.isError && <p className="text-xs text-down py-2">{errorMessage(tradesQ.error)}</p>}
           <TradeTable trades={trades} />
-        </Card>
-      </main>
-    </>
+        </div>
+      </UserShell>
   );
 }
 
@@ -93,14 +101,14 @@ function OrderTable({
   cancelling?: boolean;
 }) {
   if (orders.length === 0)
-    return <p className="text-sm text-gray-500">{emptyText}</p>;
+    return <p className="text-xs text-white/45 py-4">{emptyText}</p>;
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-left text-sm">
-        <thead className="text-xs text-gray-500">
+      <table className="w-full text-left text-xs">
+        <thead className="text-[10px] font-bold text-white/45 uppercase tracking-wider border-b border-white/5">
           <tr>
-            <th className="py-1">Market</th>
+            <th className="py-2">Market</th>
             <th>Side</th>
             <th>Type</th>
             <th className="text-right">Price</th>
@@ -110,22 +118,22 @@ function OrderTable({
             {onCancel && <th></th>}
           </tr>
         </thead>
-        <tbody>
+        <tbody className="divide-y divide-white/5">
           {orders.map((o) => (
-            <tr key={o.id} className="border-t border-gray-100">
-              <td className="py-2">{o.marketSymbol}</td>
-              <td className={o.side === 'BUY' ? 'text-green-600' : 'text-red-600'}>
+            <tr key={o.id} className="hover:bg-white/[0.01] transition-colors">
+              <td className="py-3 font-semibold text-white">{o.marketSymbol}</td>
+              <td className={`font-bold ${o.side === 'BUY' ? 'text-up' : 'text-down'}`}>
                 {o.side}
               </td>
-              <td>{o.type}</td>
-              <td className="text-right font-mono">{o.price ?? '—'}</td>
-              <td className="text-right font-mono">
+              <td className="text-white/60">{o.type}</td>
+              <td className="text-right font-mono text-gold">{o.price ?? '—'}</td>
+              <td className="text-right font-mono text-gold">
                 {o.quantity ?? o.quoteBudget ?? '—'} / {o.filledQuantity}
               </td>
               <td>
                 <StatusBadge status={o.status} />
               </td>
-              <td className="text-xs text-gray-500">
+              <td className="font-mono text-[10px] text-white/40">
                 {new Date(o.createdAt).toLocaleString()}
               </td>
               {onCancel && (
@@ -134,7 +142,7 @@ function OrderTable({
                     <button
                       onClick={() => onCancel(o.id)}
                       disabled={cancelling}
-                      className="text-xs text-red-600 hover:underline disabled:opacity-50"
+                      className="text-xs font-bold text-down hover:brightness-110 transition disabled:opacity-50"
                     >
                       Cancel
                     </button>
@@ -151,14 +159,14 @@ function OrderTable({
 
 function TradeTable({ trades }: { trades: Trade[] }) {
   if (trades.length === 0)
-    return <p className="text-sm text-gray-500">No trades yet.</p>;
+    return <p className="text-xs text-white/45 py-4">No matching trades recorded.</p>;
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-left text-sm">
-        <thead className="text-xs text-gray-500">
+      <table className="w-full text-left text-xs">
+        <thead className="text-[10px] font-bold text-white/45 uppercase tracking-wider border-b border-white/5">
           <tr>
-            <th className="py-1">Market</th>
+            <th className="py-2">Market</th>
             <th>Side</th>
             <th>Role</th>
             <th className="text-right">Price</th>
@@ -168,21 +176,21 @@ function TradeTable({ trades }: { trades: Trade[] }) {
             <th>Time</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody className="divide-y divide-white/5">
           {trades.map((t) => (
-            <tr key={t.id} className="border-t border-gray-100">
-              <td className="py-2">{t.marketSymbol}</td>
-              <td className={t.side === 'BUY' ? 'text-green-600' : 'text-red-600'}>
+            <tr key={t.id} className="hover:bg-white/[0.01] transition-colors">
+              <td className="py-3 font-semibold text-white">{t.marketSymbol}</td>
+              <td className={`font-bold ${t.side === 'BUY' ? 'text-up' : 'text-down'}`}>
                 {t.side}
               </td>
-              <td className="text-gray-500">{t.role ?? '—'}</td>
-              <td className="text-right font-mono">{t.price}</td>
-              <td className="text-right font-mono">{t.quantity}</td>
-              <td className="text-right font-mono">{t.quoteAmount}</td>
-              <td className="text-right font-mono">
+              <td className="text-white/60">{t.role ?? '—'}</td>
+              <td className="text-right font-mono text-gold">{t.price}</td>
+              <td className="text-right font-mono text-gold">{t.quantity}</td>
+              <td className="text-right font-mono text-gold">{t.quoteAmount}</td>
+              <td className="text-right font-mono text-white/60">
                 {t.fee ? `${t.fee} ${t.feeAsset ?? ''}` : '—'}
               </td>
-              <td className="text-xs text-gray-500">
+              <td className="font-mono text-[10px] text-white/40">
                 {new Date(t.executedAt).toLocaleString()}
               </td>
             </tr>

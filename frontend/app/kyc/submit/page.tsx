@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { userApi } from '@/lib/user-api';
 import { errorMessage } from '@/lib/api';
 import { useGuard } from '@/components/guards';
-import { UserNav } from '@/components/nav';
+import { UserShell } from '@/components/user-shell';
 import type { SubmitKycInput, KycSessionMeta } from '@/lib/types';
 
 const STEPS = [
@@ -16,15 +16,6 @@ const STEPS = [
   { number: 4, label: 'Liveness' },
   { number: 5, label: 'Review' },
 ];
-
-function BackdropGlow() {
-  return (
-    <>
-      <div className="absolute -left-32 top-1/4 h-[400px] w-[400px] rounded-full bg-gold/5 blur-[120px] pointer-events-none" />
-      <div className="absolute -right-20 bottom-0 h-[400px] w-[400px] rounded-full bg-gold-glow/[0.04] blur-[130px] pointer-events-none" />
-    </>
-  );
-}
 
 function SecurityIllustration() {
   return (
@@ -158,16 +149,7 @@ export default function SubmitKycPage() {
 
   if (isPending || isApproved) {
     return (
-      <div className="relative min-h-screen bg-noir font-sans text-white pb-20">
-        <style dangerouslySetInnerHTML={{ __html: `
-          header { background-color: #111114 !important; border-bottom: 1px solid rgba(245,194,66,0.15) !important; }
-          header span, header nav a { color: #eaecef !important; }
-          header nav a:hover { color: #F5C242 !important; }
-          header button { color: #f6465d !important; }
-        `}} />
-        <UserNav />
-        <BackdropGlow />
-        <main className="relative z-10 mx-auto max-w-2xl px-5 py-16">
+      <UserShell className="max-w-2xl py-16">
           <div className="relative rounded-2xl border border-gold/20 bg-white/[0.04] p-8 shadow-gold-soft backdrop-blur-2xl text-center">
             <div className="pointer-events-none absolute -inset-px rounded-2xl bg-gradient-to-b from-gold/15 to-transparent opacity-60" />
             <div className="relative z-10">
@@ -224,8 +206,7 @@ export default function SubmitKycPage() {
               </div>
             </div>
           </div>
-        </main>
-      </div>
+        </UserShell>
     );
   }
 
@@ -279,17 +260,7 @@ export default function SubmitKycPage() {
   };
 
   return (
-    <div className="relative min-h-screen bg-noir font-sans text-white pb-20">
-      <style dangerouslySetInnerHTML={{ __html: `
-        header { background-color: #111114 !important; border-bottom: 1px solid rgba(245,194,66,0.15) !important; }
-        header span, header nav a { color: #eaecef !important; }
-        header nav a:hover { color: #F5C242 !important; }
-        header button { color: #f6465d !important; }
-      `}} />
-      <UserNav />
-      <BackdropGlow />
-
-      <main className="relative z-10 mx-auto max-w-6xl px-5 pt-8">
+    <UserShell className="max-w-[1400px]">
         
         {/* Header Hero Area */}
         <div className="mb-10 text-center lg:text-left">
@@ -815,7 +786,6 @@ export default function SubmitKycPage() {
           </div>
         </div>
 
-      </main>
-    </div>
+      </UserShell>
   );
 }

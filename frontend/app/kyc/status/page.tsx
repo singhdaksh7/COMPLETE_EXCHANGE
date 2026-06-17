@@ -5,17 +5,8 @@ import { useRouter } from 'next/navigation';
 import { userApi } from '@/lib/user-api';
 import { errorMessage } from '@/lib/api';
 import { useGuard } from '@/components/guards';
-import { UserNav } from '@/components/nav';
+import { UserShell } from '@/components/user-shell';
 import { StatusBadge } from '@/components/ui';
-
-function BackdropGlow() {
-  return (
-    <>
-      <div className="absolute -left-32 top-1/4 h-[400px] w-[400px] rounded-full bg-gold/5 blur-[120px] pointer-events-none" />
-      <div className="absolute -right-20 bottom-0 h-[400px] w-[400px] rounded-full bg-gold-glow/[0.04] blur-[130px] pointer-events-none" />
-    </>
-  );
-}
 
 function StatusRing({ status }: { status: string }) {
   let percentage = 0;
@@ -123,17 +114,7 @@ export default function KycStatusPage() {
   };
 
   return (
-    <div className="relative min-h-screen bg-noir font-sans text-white pb-20">
-      <style dangerouslySetInnerHTML={{ __html: `
-        header { background-color: #111114 !important; border-bottom: 1px solid rgba(245,194,66,0.15) !important; }
-        header span, header nav a { color: #eaecef !important; }
-        header nav a:hover { color: #F5C242 !important; }
-        header button { color: #f6465d !important; }
-      `}} />
-      <UserNav />
-      <BackdropGlow />
-
-      <main className="relative z-10 mx-auto max-w-5xl px-5 pt-8">
+    <UserShell className="max-w-[1400px]">
         
         {/* Header Section */}
         <div className="mb-10 flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-white/5 pb-6">
@@ -331,7 +312,6 @@ export default function KycStatusPage() {
             </div>
           </div>
         )}
-      </main>
-    </div>
+      </UserShell>
   );
 }

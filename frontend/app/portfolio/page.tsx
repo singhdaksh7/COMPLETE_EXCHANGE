@@ -4,18 +4,9 @@ import { useQuery } from '@tanstack/react-query';
 import { userApi } from '@/lib/user-api';
 import { errorMessage } from '@/lib/api';
 import { useGuard } from '@/components/guards';
-import { UserNav } from '@/components/nav';
+import { UserShell } from '@/components/user-shell';
 import { StatusBadge } from '@/components/ui';
 import type { LedgerEntry } from '@/lib/types';
-
-function BackdropGlow() {
-  return (
-    <>
-      <div className="absolute -left-32 top-1/4 h-[350px] w-[350px] rounded-full bg-gold/5 blur-[120px] pointer-events-none" />
-      <div className="absolute -right-20 bottom-0 h-[350px] w-[350px] rounded-full bg-gold-glow/[0.04] blur-[130px] pointer-events-none" />
-    </>
-  );
-}
 
 export default function PortfolioPage() {
   const ready = useGuard('user');
@@ -50,17 +41,7 @@ export default function PortfolioPage() {
   );
 
   return (
-    <div className="relative min-h-screen bg-noir font-sans text-white pb-20">
-      <style dangerouslySetInnerHTML={{ __html: `
-        header { background-color: #111114 !important; border-bottom: 1px solid rgba(245,194,66,0.15) !important; }
-        header span, header nav a { color: #eaecef !important; }
-        header nav a:hover { color: #F5C242 !important; }
-        header button { color: #f6465d !important; }
-      `}} />
-      <UserNav />
-      <BackdropGlow />
-
-      <main className="relative z-10 mx-auto max-w-4xl px-5 pt-8">
+    <UserShell className="max-w-[1400px]">
         
         {/* Header */}
         <div className="mb-8 flex justify-between items-center border-b border-white/5 pb-4">
@@ -154,7 +135,6 @@ export default function PortfolioPage() {
           )}
 
         </div>
-      </main>
-    </div>
+      </UserShell>
   );
 }
