@@ -6,8 +6,17 @@ import { adminApi } from '@/lib/admin-api';
 import { errorMessage } from '@/lib/api';
 import { useGuard } from '@/components/guards';
 import { AdminNav } from '@/components/nav';
-import { Card, Button, Alert, StatusBadge, Row } from '@/components/ui';
+import { StatusBadge } from '@/components/ui';
 import type { AdminKycQueueItem } from '@/lib/types';
+
+function BackdropGlow() {
+  return (
+    <>
+      <div className="absolute -left-32 top-1/4 h-[400px] w-[400px] rounded-full bg-gold/5 blur-[120px] pointer-events-none" />
+      <div className="absolute -right-20 bottom-0 h-[400px] w-[400px] rounded-full bg-gold-glow/[0.04] blur-[130px] pointer-events-none" />
+    </>
+  );
+}
 
 export default function AdminKycPage() {
   const ready = useGuard('admin');
@@ -23,37 +32,56 @@ export default function AdminKycPage() {
   const data = q.data?.data;
 
   return (
-    <>
+    <div className="relative min-h-screen bg-noir font-sans text-white pb-20">
+      <style dangerouslySetInnerHTML={{ __html: `
+        header { background-color: #111114 !important; border-bottom: 1px solid rgba(245,194,66,0.15) !important; }
+        header span, header nav a { color: #eaecef !important; }
+        header nav a:hover { color: #F5C242 !important; }
+        header button { color: #f6465d !important; }
+      `}} />
       <AdminNav />
-      <main className="mx-auto max-w-6xl px-4 pb-16 pt-8">
-        <div className="mb-6 flex justify-between items-center">
+      <BackdropGlow />
+
+      <main className="relative z-10 mx-auto max-w-6xl px-5 pt-8">
+        
+        {/* Desk Header */}
+        <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-white/5 pb-6">
           <div>
-            <h1 className="text-2xl font-bold text-ink">KYC Manual Review Desk</h1>
-            <p className="text-xs text-muted mt-1">
-              Verify provider signals, risk ratings, and review document scans.
+            <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-gold via-gold-glow to-gold bg-clip-text text-transparent">
+              Compliance Review Command Center
+            </h1>
+            <p className="mt-1 text-sm text-white/50">
+              Audit automated provider risk scores, PII matching, and manual overrides.
             </p>
           </div>
-          <Button onClick={() => q.refetch()} variant="secondary">Refresh Queue</Button>
+          <button 
+            onClick={() => q.refetch()}
+            className="rounded-lg bg-gradient-to-r from-gold to-gold-glow px-5 py-2.5 text-xs font-bold text-noir shadow-gold-glow hover:brightness-105 transition"
+          >
+            Refresh Queue
+          </button>
         </div>
 
-        {q.isLoading && <p className="text-sm text-gray-500">Loading queue...</p>}
-        {q.isError && <div className="mb-4"><Alert>{errorMessage(q.error)}</Alert></div>}
+        {q.isLoading && <p className="text-sm text-white/40">Loading review queue...</p>}
+        {q.isError && <div className="mb-4 rounded-lg bg-red-500/10 border border-red-500/20 p-4 text-sm text-red-300">{errorMessage(q.error)}</div>}
 
         {data && (
-          <Card className="overflow-hidden border-line">
+          <div className="relative rounded-2xl border border-gold/15 bg-white/[0.03] shadow-gold-soft backdrop-blur-2xl overflow-hidden">
+            <div className="pointer-events-none absolute -inset-px rounded-2xl bg-gradient-to-b from-gold/10 to-transparent opacity-50" />
+            
             {data.items.length === 0 ? (
-              <p className="text-sm text-gray-500 py-6 text-center">No KYC submissions pending review.</p>
+              <p className="text-sm text-white/40 py-12 text-center relative z-10">Verification queue is completely clear.</p>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto relative z-10">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-line text-left text-muted font-medium bg-panel-2/30">
-                      <th className="py-3 px-4 font-semibold">User Details</th>
-                      <th className="py-3 px-4 font-semibold">Overall Status</th>
-                      <th className="py-3 px-4 font-semibold">Provider</th>
-                      <th className="py-3 px-4 font-semibold">Liveness</th>
-                      <th className="py-3 px-4 font-semibold">Risk Score</th>
-                      <th className="py-3 px-4 font-semibold text-right">Actions</th>
+                    <tr className="border-b border-white/5 text-left text-white/45 font-semibold bg-white/[0.01]">
+                      <th className="py-4 px-5">Applicant Details</th>
+                      <th className="py-4 px-5">Overall Status</th>
+                      <th className="py-4 px-5">Provider</th>
+                      <th className="py-4 px-5">Biometric status</th>
+                      <th className="py-4 px-5">Risk score</th>
+                      <th className="py-4 px-5 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -65,25 +93,30 @@ export default function AdminKycPage() {
               </div>
             )}
 
-            <div className="mt-6 flex gap-2 justify-between items-center border-t border-line pt-4 px-4 pb-2">
-              <span className="text-xs text-muted">Page Navigation</span>
+            {/* Pagination desk footer */}
+            <div className="mt-4 flex gap-2 justify-between items-center border-t border-white/5 py-4 px-5 relative z-10">
+              <span className="text-xs text-white/35">Desk Queue Navigation</span>
               <div className="flex gap-2">
-                <Button onClick={() => setCursor(undefined)} disabled={!cursor} variant="secondary">
+                <button 
+                  onClick={() => setCursor(undefined)} 
+                  disabled={!cursor}
+                  className="rounded-lg border border-white/[0.12] bg-white/[0.03] px-4 py-2 text-xs font-bold text-white/80 hover:border-gold/40 hover:bg-white/[0.06] transition disabled:opacity-40"
+                >
                   First Page
-                </Button>
-                <Button
+                </button>
+                <button
                   onClick={() => data.nextCursor && setCursor(data.nextCursor)}
                   disabled={!data.nextCursor}
-                  variant="secondary"
+                  className="rounded-lg border border-white/[0.12] bg-white/[0.03] px-4 py-2 text-xs font-bold text-white/80 hover:border-gold/40 hover:bg-white/[0.06] transition disabled:opacity-40"
                 >
                   Next Page
-                </Button>
+                </button>
               </div>
             </div>
-          </Card>
+          </div>
         )}
       </main>
-    </>
+    </div>
   );
 }
 
@@ -106,122 +139,137 @@ function QueueRow({ item }: { item: AdminKycQueueItem }) {
 
   return (
     <>
-      {/* Row Summary */}
       <tr 
-        className={`border-b border-line/50 hover:bg-panel-2/20 transition cursor-pointer ${isExpanded ? 'bg-panel-2/10' : ''}`}
+        className={`border-b border-white/5 hover:bg-white/[0.02] transition cursor-pointer ${isExpanded ? 'bg-white/[0.02]' : ''}`}
         onClick={() => setIsExpanded(!isExpanded)}
       >
-        <td className="py-4 px-4">
-          <div className="font-semibold text-ink">{item.fullName ?? 'Unnamed User'}</div>
-          <div className="text-xs text-muted mt-0.5">{item.email}</div>
-          <div className="text-[10px] text-muted-2 mt-1">Submitted: {new Date(item.submittedAt).toLocaleString()}</div>
+        <td className="py-4 px-5">
+          <div className="font-semibold text-white">{item.fullName ?? 'Anonymous Profile'}</div>
+          <div className="text-[11px] text-white/40 mt-0.5">{item.email}</div>
+          <div className="text-[9px] text-white/30 mt-1">Submitted: {new Date(item.submittedAt).toLocaleString()}</div>
         </td>
-        <td className="py-4 px-4">
+        <td className="py-4 px-5">
           <StatusBadge status={item.status} />
         </td>
-        <td className="py-4 px-4 text-ink font-medium">
+        <td className="py-4 px-5 text-white/80 font-medium">
           {item.provider ?? '—'}
         </td>
-        <td className="py-4 px-4">
-          <StatusBadge status={item.livenessStatus ?? 'PENDING'} />
+        <td className="py-4 px-5">
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+            item.livenessStatus === 'PASS' 
+              ? 'bg-up/10 text-up' 
+              : item.livenessStatus === 'FAIL' 
+              ? 'bg-down/10 text-down' 
+              : 'bg-white/5 text-white/35'
+          }`}>
+            {item.livenessStatus ?? 'PENDING'}
+          </span>
         </td>
-        <td className="py-4 px-4 font-mono font-bold">
+        <td className="py-4 px-5 font-mono font-bold">
           {item.riskScore !== undefined && item.riskScore !== null ? (
             <span className={item.riskScore > 50 ? 'text-down' : item.riskScore > 25 ? 'text-brand' : 'text-up'}>
               {item.riskScore}%
             </span>
           ) : (
-            <span className="text-muted">—</span>
+            <span className="text-white/20">—</span>
           )}
         </td>
-        <td className="py-4 px-4 text-right">
-          <Button 
-            variant="ghost" 
+        <td className="py-4 px-5 text-right">
+          <button 
             onClick={(e) => {
               e.stopPropagation();
               setIsExpanded(!isExpanded);
             }}
+            className="text-xs text-gold font-bold hover:underline"
           >
-            {isExpanded ? 'Collapse ▲' : 'Expand Details ▼'}
-          </Button>
+            {isExpanded ? 'Collapse' : 'Audit Details'}
+          </button>
         </td>
       </tr>
 
-      {/* Row Expanded Details */}
       {isExpanded && (
-        <tr className="bg-panel-2/5 border-b border-line">
-          <td colSpan={6} className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-panel rounded-xl border border-line p-5 shadow-soft">
+        <tr className="bg-white/[0.01]">
+          <td colSpan={6} className="p-5">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 rounded-xl border border-white/5 bg-noir-2/95 p-5 shadow-gold-soft">
               
               {/* Left Column: Diagnostics */}
-              <div className="space-y-4">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-gold border-b border-line pb-1.5">Verification Signals</h4>
+              <div className="space-y-3">
+                <h4 className="text-[10px] font-bold uppercase tracking-wider text-gold border-b border-white/5 pb-2">Verification Diagnostics</h4>
                 <div className="space-y-2 text-xs">
-                  <Row label="Verification Provider" value={item.provider ?? 'UNAVAILABLE'} />
-                  <Row label="Liveness Status" value={<StatusBadge status={item.livenessStatus ?? 'PENDING'} />} />
-                  <Row label="Document Authenticity" value={<StatusBadge status={item.documentStatus ?? 'PENDING'} />} />
+                  <div className="flex justify-between"><span className="text-white/40">Provider</span><span className="font-semibold text-white">{item.provider ?? 'UNAVAILABLE'}</span></div>
+                  <div className="flex justify-between">
+                    <span className="text-white/40">Biometric Liveness</span>
+                    <span className={`font-semibold ${item.livenessStatus === 'PASS' ? 'text-up' : 'text-down'}`}>
+                      {item.livenessStatus ?? 'PENDING'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-white/40">Document Scan check</span>
+                    <span className={`font-semibold ${item.documentStatus === 'PASS' ? 'text-up' : 'text-down'}`}>
+                      {item.documentStatus ?? 'PENDING'}
+                    </span>
+                  </div>
                   {item.riskScore !== undefined && item.riskScore !== null && (
-                    <Row label="Risk Score" value={
+                    <div className="flex justify-between">
+                      <span className="text-white/40">Risk Assessment Index</span>
                       <span className={`font-semibold ${item.riskScore > 50 ? 'text-down' : 'text-up'}`}>
                         {item.riskScore}%
                       </span>
-                    } />
+                    </div>
                   )}
                 </div>
               </div>
 
               {/* Middle Column: Credentials */}
-              <div className="space-y-4">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-gold border-b border-line pb-1.5">Masked PII Credentials</h4>
+              <div className="space-y-3">
+                <h4 className="text-[10px] font-bold uppercase tracking-wider text-gold border-b border-white/5 pb-2">Vaulted Identifiers</h4>
                 <div className="space-y-2 text-xs">
-                  <Row label="Masked PAN Card" value={<code className="bg-panel-2 px-1.5 py-0.5 rounded text-ink">{item.panMasked ?? '—'}</code>} />
-                  <Row label="Masked Aadhaar Token" value={<code className="bg-panel-2 px-1.5 py-0.5 rounded text-ink">{item.aadhaarMasked ?? '—'}</code>} />
-                  <Row label="User Registration ID" value={<code className="text-muted-2 break-all">{item.userId}</code>} />
+                  <div className="flex justify-between"><span className="text-white/40">Masked PAN</span><code className="font-mono text-white bg-white/5 px-1.5 py-0.5 rounded text-[10px]">{item.panMasked ?? '—'}</code></div>
+                  <div className="flex justify-between"><span className="text-white/40">Masked Aadhaar</span><code className="font-mono text-white bg-white/5 px-1.5 py-0.5 rounded text-[10px]">{item.aadhaarMasked ?? '—'}</code></div>
+                  <div className="flex justify-between"><span className="text-white/40">Registration ID</span><code className="font-mono text-white/45 text-[9px] break-all truncate max-w-[120px]">{item.userId}</code></div>
                 </div>
               </div>
 
               {/* Right Column: Decision Form */}
-              <div className="space-y-4">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-gold border-b border-line pb-1.5">Manual Review Action</h4>
+              <div className="space-y-3">
+                <h4 className="text-[10px] font-bold uppercase tracking-wider text-gold border-b border-white/5 pb-2">Manual Audit Action</h4>
                 <div className="space-y-3">
                   <div className="flex items-center gap-3">
-                    <span className="text-xs font-medium text-muted">Tier to Assign</span>
+                    <span className="text-xs font-semibold text-white/50">Tiers Level:</span>
                     <input
                       type="number"
                       min={0}
                       max={5}
                       value={tier}
                       onChange={(e) => setTier(Number(e.target.value))}
-                      className="w-16 rounded-lg border border-line bg-panel-2 px-3 py-1 text-sm text-ink focus:border-brand focus:outline-none"
+                      className="w-16 rounded-lg border border-white/10 bg-noir/80 px-3 py-1 text-sm text-white focus:border-gold/60 focus:outline-none"
                     />
                   </div>
                   
                   <div>
                     <input
-                      placeholder="rejection reason (required to reject)"
+                      placeholder="rejection reasons (required to reject)"
                       value={reason}
                       onChange={(e) => setReason(e.target.value)}
-                      className="w-full rounded-lg border border-line bg-panel-2 px-3 py-1.5 text-xs text-ink placeholder:text-muted-2 focus:border-brand focus:outline-none"
+                      className="w-full rounded-lg border border-white/10 bg-noir/80 px-3 py-1.5 text-xs text-white placeholder:text-white/25 focus:border-gold/60 focus:outline-none"
                     />
                   </div>
 
-                  <div className="flex gap-2 pt-1">
-                    <Button 
-                      onClick={() => m.mutate('APPROVE')} 
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); m.mutate('APPROVE'); }} 
                       disabled={m.isPending}
-                      variant="success"
-                      className="flex-1"
+                      className="flex-1 rounded-lg bg-gradient-to-r from-gold to-gold-glow px-3 py-2 text-xs font-bold text-noir shadow-gold-glow hover:brightness-105 transition"
                     >
                       Approve
-                    </Button>
-                    <Button
-                      onClick={() => m.mutate('REJECT')}
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); m.mutate('REJECT'); }} 
                       disabled={m.isPending || !reason}
-                      variant="danger"
-                      className="flex-1"
+                      className="flex-1 rounded-lg border border-white/[0.12] bg-white/[0.03] px-3 py-2 text-xs font-bold text-white hover:border-gold/40 hover:bg-white/[0.06] transition disabled:opacity-40"
                     >
                       Reject
-                    </Button>
+                    </button>
                   </div>
 
                   {m.isError && (
