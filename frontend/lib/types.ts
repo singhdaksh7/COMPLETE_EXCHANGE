@@ -39,6 +39,20 @@ export interface KycProfile {
   fullName: string | null;
   rejectedReason: string | null;
   reviewedAt: string | null;
+  // Phase 2 provider additions
+  provider?: string | null;
+  livenessStatus?: string | null;
+  documentStatus?: string | null;
+  riskScore?: number | null;
+  panMasked?: string | null;
+  aadhaarMasked?: string | null;
+}
+
+export interface KycSessionMeta {
+  provider: string;
+  providerSessionId: string;
+  redirectUrl: string;
+  expiresIn: number;
 }
 
 export interface KycDocument {
@@ -88,6 +102,13 @@ export interface AdminKycQueueItem {
   status: string;
   tier: number;
   submittedAt: string;
+  // Phase 2 provider additions
+  provider?: string | null;
+  livenessStatus?: string | null;
+  documentStatus?: string | null;
+  riskScore?: number | null;
+  panMasked?: string | null;
+  aadhaarMasked?: string | null;
 }
 
 export interface AdminKycQueue {

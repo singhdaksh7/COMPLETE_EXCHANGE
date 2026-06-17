@@ -110,6 +110,9 @@ export const userApi = {
   submitKyc: (body: SubmitKycInput) =>
     authed<KycProfile>('/kyc', { method: 'POST', body }),
 
+  refreshKyc: () =>
+    authed<KycProfile>('/kyc/refresh', { method: 'POST' }),
+
   listDocuments: () => authed<{ items: KycDocument[] }>('/kyc/documents'),
 
   submitDocument: (body: { docType: string; sha256: string; contentType: string }) =>
