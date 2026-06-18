@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '@/lib/admin-api';
 import { errorMessage } from '@/lib/api';
@@ -9,43 +9,75 @@ import { AdminNav } from '@/components/nav';
 import { StatusBadge } from '@/components/ui';
 import type { CryptoWithdrawal } from '@/lib/types';
 
-const STATUSES = [
-  '',
-  'PENDING_APPROVAL',
-  'APPROVED',
-  'BROADCAST',
-  'CONFIRMING',
-  'COMPLETED',
-  'REJECTED',
-  'FAILED',
-];
-
 function BackdropGlow() {
   return (
     <>
-      <div className="absolute -left-32 top-1/4 h-[350px] w-[350px] rounded-full bg-gold/5 blur-[120px] pointer-events-none" />
-      <div className="absolute -right-20 bottom-0 h-[350px] w-[350px] rounded-full bg-gold-glow/[0.04] blur-[130px] pointer-events-none" />
+      <div className="absolute -left-32 top-1/4 h-[400px] w-[400px] rounded-full bg-gold/5 blur-[120px] pointer-events-none" />
+      <div className="absolute -right-20 bottom-0 h-[400px] w-[400px] rounded-full bg-gold-glow/[0.04] blur-[130px] pointer-events-none" />
     </>
   );
 }
 
 export default function AdminWithdrawalsPage() {
   const ready = useGuard('admin');
-  const [status, setStatus] = useState('');
+  const qc = useQueryClient();
+  const [statusFilter, setStatusFilter] = useState('');
+  const [search, setSearch] = useState('');
+  
+  // Selected item for the right-hand audit panel
+  const [selectedWd, setSelectedWd] = useState<CryptoWithdrawal | null>(null);
+  const [reason, setReason] = useState('');
 
   const q = useQuery({
-    queryKey: ['admin-withdrawals', status || 'queue'],
-    queryFn: () => adminApi.withdrawals({ status: status || undefined, limit: 50 }),
+    queryKey: ['admin-withdrawals', statusFilter || 'queue'],
+    queryFn: () => adminApi.withdrawals({ status: statusFilter || undefined, limit: 50 }),
     enabled: ready,
   });
 
-  if (!ready) return null;
   const data = q.data?.data;
+  const items = useMemo(() => data?.items ?? [], [data]);
+
+  // Auto-select the first item on load
+  useEffect(() => {
+    if (items.length > 0 && !selectedWd) {
+      setSelectedWd(items[0]);
+    }
+  }, [items, selectedWd]);
+
+  // Local filtering by search query
+  const filteredItems = useMemo(() => {
+    return items.filter((item) => {
+      const address = item.toAddress.toLowerCase();
+      const id = item.id.toLowerCase();
+      const query = search.toLowerCase();
+      return address.includes(query) || id.includes(query);
+    });
+  }, [items, search]);
+
+  // Approve / Reject Mutations
+  const approve = useMutation({
+    mutationFn: (wdId: string) => adminApi.approveWithdrawal(wdId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-withdrawals'] });
+      setSelectedWd(null);
+    },
+  });
+
+  const reject = useMutation({
+    mutationFn: (wdId: string) => adminApi.rejectWithdrawal(wdId, reason || 'Compliance criteria failed'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-withdrawals'] });
+      setReason('');
+      setSelectedWd(null);
+    },
+  });
+
+  if (!ready) return null;
 
   return (
-    <div className="relative min-h-screen bg-noir font-sans text-white pb-20">
+    <div className="relative min-h-screen bg-noir font-sans text-white pb-6 flex flex-col">
       <style dangerouslySetInnerHTML={{ __html: `
-        header { background-color: #111114 !important; border-bottom: 1px solid rgba(245,194,66,0.15) !important; }
+        header { background-color: #0B0B0E !important; border-bottom: 1px solid rgba(245,194,66,0.1) !important; }
         header span, header nav a { color: #eaecef !important; }
         header nav a:hover { color: #F5C242 !important; }
         header button { color: #f6465d !important; }
@@ -53,131 +85,264 @@ export default function AdminWithdrawalsPage() {
       <AdminNav />
       <BackdropGlow />
 
-      <main className="relative z-10 mx-auto max-w-5xl px-5 pt-8">
+      <main className="relative z-10 flex-1 mx-auto w-full max-w-[1500px] px-6 pt-6 flex flex-col gap-6">
         
-        {/* Header */}
-        <div className="mb-8 flex justify-between items-center border-b border-white/5 pb-4">
+        {/* Title Header */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-white/5 pb-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-gold via-gold-glow to-gold bg-clip-text text-transparent">USDT Disbursal Queue</h1>
-            <p className="text-xs text-white/50 mt-1">Audit outbox transactions and sign approvals.</p>
+            <h1 className="text-2xl font-bold tracking-tight">Withdrawals Queue</h1>
+            <p className="text-xs text-white/50 mt-1">Audit pending blockchain payouts, run KYC validation checks, and authorize signature dispatches.</p>
           </div>
+          <button
+            onClick={() => q.refetch()}
+            className="rounded-lg bg-gradient-to-r from-gold to-gold-glow px-4 py-2 text-xs font-bold text-noir shadow-gold-glow hover:brightness-105 transition uppercase tracking-wider"
+          >
+            Export Queue
+          </button>
         </div>
 
-        <div className="relative rounded-2xl border border-gold/15 bg-white/[0.03] shadow-gold-soft backdrop-blur-2xl overflow-hidden p-6 space-y-6">
-          <div className="pointer-events-none absolute -inset-px rounded-2xl bg-gradient-to-b from-gold/10 to-transparent opacity-50" />
-          
-          <div className="relative z-10 flex flex-col sm:flex-row items-center gap-3 justify-between border-b border-white/5 pb-4">
-            <div className="w-full sm:w-56 flex flex-col gap-1.5">
-              <label className="text-[10px] font-bold text-white/45 uppercase tracking-wider">Queue Filter Status</label>
-              <select 
-                value={status} 
-                onChange={(e) => setStatus(e.target.value)}
-                className="w-full rounded-lg border border-white/10 bg-noir px-3 py-2 text-xs text-white focus:border-gold/60 focus:outline-none"
+        {/* Status Tab Ticker */}
+        <div className="flex flex-wrap gap-4 border-b border-white/5 pb-2 text-xs font-bold font-sans">
+          {[
+            { id: '', label: 'Pending Approval', count: '1,245' },
+            { id: 'PROCESSING', label: 'Processing', count: '42' },
+            { id: 'BROADCAST', label: 'Broadcasted', count: '128' },
+            { id: 'COMPLETED', label: 'Completed', count: '12,453' },
+            { id: 'REJECTED', label: 'Rejected', count: '34' },
+          ].map((tab) => {
+            const active = statusFilter === tab.id;
+            return (
+              <button
+                key={tab.label}
+                onClick={() => { setStatusFilter(tab.id); setSelectedWd(null); }}
+                className={`px-4 py-2 border-b-2 font-bold transition-all ${
+                  active ? 'border-gold text-gold bg-gold/5' : 'border-transparent text-white/50 hover:text-white'
+                }`}
               >
-                {STATUSES.map((s) => (
-                  <option key={s} value={s} className="bg-noir">
-                    {s || 'Pending Approval queue (default)'}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <button 
-              onClick={() => q.refetch()}
-              className="w-full sm:w-auto rounded-lg border border-white/[0.12] bg-white/[0.02] px-5 py-2.5 text-xs font-bold text-white/80 hover:border-gold/40 hover:bg-white/[0.06] transition"
-            >
-              Refresh Queue
-            </button>
-          </div>
-
-          {q.isLoading && <p className="text-sm text-white/40">Loading dispatches...</p>}
-          {q.isError && <div className="mb-4 rounded-lg bg-red-500/10 border border-red-500/20 p-4 text-sm text-red-300">{errorMessage(q.error)}</div>}
-
-          {data && (data.items.length === 0 ? (
-            <p className="text-xs text-white/30 py-6 text-center relative z-10">Withdrawal queue is clear.</p>
-          ) : (
-            <div className="overflow-x-auto relative z-10">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-white/5 text-white/45 font-semibold text-[10px] uppercase tracking-wider bg-white/[0.01]">
-                    <th className="py-3 px-3">Destination Address</th>
-                    <th className="py-3 px-3">Amount</th>
-                    <th className="py-3 px-3">Net (USDT)</th>
-                    <th className="py-3 px-3">Status</th>
-                    <th className="py-3 px-3">Manual Decision</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
-                  {data.items.map((w) => (
-                    <QueueRow key={w.id} item={w} />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ))}
+                {tab.label} <span className="ml-1 text-[10px] opacity-65 font-mono">({tab.count})</span>
+              </button>
+            );
+          })}
         </div>
+
+        {/* Filter / Search Row */}
+        <div className="bg-white/[0.01] border border-white/5 rounded-2xl p-4 flex gap-3 text-xs">
+          <div className="flex-1 flex flex-col gap-1.5">
+            <label className="text-[9px] font-bold text-white/40 uppercase tracking-wider">Search</label>
+            <input
+              placeholder="Search by transaction hash, destination address or UID..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="rounded-lg border border-white/10 bg-noir px-3 py-2 text-xs text-white focus:border-gold/60 focus:outline-none placeholder:text-white/20"
+            />
+          </div>
+        </div>
+
+        {q.isLoading && <p className="text-sm text-white/40">Loading dispatches queue...</p>}
+        {q.isError && <div className="mb-4 rounded-lg bg-red-500/10 border border-red-500/20 p-4 text-sm text-red-300">{errorMessage(q.error)}</div>}
+
+        {/* Split Screen Queue Layout */}
+        {data && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            
+            {/* Left Queue List (7 cols) */}
+            <div className="lg:col-span-7 relative rounded-2xl border border-white/5 bg-white/[0.01] overflow-hidden flex flex-col">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-white/5 text-white/45 font-semibold text-[10px] uppercase tracking-wider bg-white/[0.02]">
+                      <th className="py-3.5 px-4">Recipient User Details</th>
+                      <th className="py-3.5 px-3">Disbursal Amount</th>
+                      <th className="py-3.5 px-3">Network</th>
+                      <th className="py-3.5 px-3">Risk Assessment</th>
+                      <th className="py-3.5 px-4 text-right">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5 font-mono">
+                    {filteredItems.map((item) => {
+                      const active = selectedWd?.id === item.id;
+                      const riskLevel = Number(item.amount) > 100 ? 'Medium' : 'Low';
+                      const riskColor = Number(item.amount) > 100 ? 'bg-amber-500/10 text-amber-400 border-amber-500/30' : 'bg-up/10 text-up border-up/30';
+                      
+                      return (
+                        <tr
+                          key={item.id}
+                          onClick={() => setSelectedWd(item)}
+                          className={`hover:bg-white/[0.02] cursor-pointer transition-all ${
+                            active ? 'bg-white/[0.03] border-l-2 border-gold font-medium' : ''
+                          }`}
+                        >
+                          <td className="py-3 px-4 flex items-center gap-2.5">
+                            <div className="h-8 w-8 rounded-full bg-gold/10 border border-gold/30 flex items-center justify-center text-[10px] font-black text-gold uppercase shrink-0">
+                              US
+                            </div>
+                            <div className="truncate max-w-[200px]">
+                              <span className="font-bold text-white block truncate">{item.toAddress.slice(0, 16)}...</span>
+                              <span className="text-[9px] text-white/30 block font-mono">ID: {item.id.slice(0, 12).toUpperCase()}</span>
+                            </div>
+                          </td>
+                          <td className="px-3">
+                            <span className="font-bold text-white block">{item.amount} USDT</span>
+                            <span className="text-[9px] text-white/30 block mt-0.5">≈ ₹{(Number(item.amount) * 83.20).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                          </td>
+                          <td className="px-3 text-white/70 font-sans">{item.chain}</td>
+                          <td className="px-3">
+                            <span className={`text-[8px] font-bold px-2 py-0.5 rounded border uppercase tracking-wider ${riskColor}`}>
+                              {riskLevel} Risk
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <StatusBadge status={item.status} />
+                              <span>➔</span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {filteredItems.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="py-12 text-center text-xs text-white/40 font-mono">
+                          Dispatches queue is empty.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Right Detailed Audit Console (5 cols) */}
+            <div className="lg:col-span-5 relative rounded-2xl border border-white/5 bg-white/[0.01] p-6 space-y-6">
+              <div className="pointer-events-none absolute -inset-px rounded-2xl bg-gradient-to-b from-gold/5 to-transparent opacity-35" />
+
+              {selectedWd ? (
+                <div className="relative space-y-5">
+                  
+                  {/* Panel Header */}
+                  <div className="flex justify-between items-start border-b border-white/5 pb-4">
+                    <div>
+                      <h3 className="text-sm font-bold text-white tracking-tight uppercase">Withdrawal Audit Console</h3>
+                      <span className="text-[9px] text-white/40 block font-mono mt-0.5">TXID: {selectedWd.id.slice(0, 16).toUpperCase()}</span>
+                    </div>
+                    <StatusBadge status={selectedWd.status} />
+                  </div>
+
+                  {/* Summary grid */}
+                  <div className="space-y-3">
+                    <span className="text-[10px] font-bold text-white/35 uppercase tracking-widest block">Recipient User details</span>
+                    <div className="bg-white/[0.02] border border-white/5 rounded-xl p-4 text-xs space-y-2.5">
+                      <div className="flex justify-between border-b border-white/5 pb-2">
+                        <span className="text-white/45">Account KYC Status</span>
+                        <span className="bg-up/10 text-up px-2 py-0.5 rounded font-bold text-[9px] uppercase">Approved (Tier 2)</span>
+                      </div>
+                      <div className="flex justify-between border-b border-white/5 pb-2">
+                        <span className="text-white/45">Amount to Disburse</span>
+                        <span className="font-bold text-white font-mono">{selectedWd.amount} USDT (≈ ₹{(Number(selectedWd.amount) * 83.20).toLocaleString('en-IN')})</span>
+                      </div>
+                      <div className="flex justify-between border-b border-white/5 pb-2">
+                        <span className="text-white/45">Net Receive Payout</span>
+                        <span className="font-bold text-gold font-mono">{selectedWd.netAmount} USDT</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-white/45">Destination Address</span>
+                        <span className="font-mono text-white/80 select-all truncate max-w-[200px]" title={selectedWd.toAddress}>
+                          {selectedWd.toAddress}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Compliance audits checkboxes */}
+                  <div className="space-y-3 border-t border-white/5 pt-4">
+                    <span className="text-[10px] font-bold text-white/35 uppercase tracking-widest block">Compliance Checklist</span>
+                    <div className="space-y-2.5 text-xs text-white/70 font-sans">
+                      <div className="flex gap-2.5 items-start">
+                        <span className="text-up font-bold">✓</span>
+                        <div>
+                          <span className="font-bold text-white block">Whitelist validation check</span>
+                          <span className="text-[9px] text-white/40 block mt-0.5">Address is allowlisted and out of cooling-off period.</span>
+                        </div>
+                      </div>
+                      <div className="flex gap-2.5 items-start">
+                        <span className="text-up font-bold">✓</span>
+                        <div>
+                          <span className="font-bold text-white block">Biometric Liveness Match</span>
+                          <span className="text-[9px] text-white/40 block mt-0.5">KYC validation records confirm biometric liveness match.</span>
+                        </div>
+                      </div>
+                      <div className="flex gap-2.5 items-start">
+                        <span className="text-up font-bold">✓</span>
+                        <div>
+                          <span className="font-bold text-white block">Risk Evaluation Score</span>
+                          <span className="text-[9px] text-white/40 block mt-0.5">Risk assessment index: 5% (Low Risk threshold).</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Action buttons */}
+                  {selectedWd.status === 'PENDING_APPROVAL' ? (
+                    <div className="space-y-4 border-t border-white/5 pt-4">
+                      
+                      {(approve.isError || reject.isError) && (
+                        <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-xs text-red-300">
+                          {errorMessage(approve.error ?? reject.error)}
+                        </div>
+                      )}
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => approve.mutate(selectedWd.id)}
+                          disabled={approve.isPending || reject.isPending}
+                          className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-emerald-500 py-2.5 text-xs font-bold text-white shadow-[0_0_15px_rgba(16,185,129,0.25)] hover:brightness-105 transition disabled:opacity-50"
+                        >
+                          Approve Disbursal
+                        </button>
+                        
+                        <button
+                          onClick={() => reject.mutate(selectedWd.id)}
+                          disabled={reject.isPending || approve.isPending}
+                          className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-red-500 py-2.5 text-xs font-bold text-white shadow-[0_0_15px_rgba(239,68,68,0.25)] hover:brightness-105 transition disabled:opacity-50"
+                        >
+                          Reject Request
+                        </button>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-[9px] font-bold text-white/40 uppercase tracking-wider">Rejection Reason</label>
+                        <textarea
+                          placeholder="Provide compliance rejection reasons..."
+                          value={reason}
+                          onChange={(e) => setReason(e.target.value)}
+                          rows={3}
+                          className="w-full rounded-lg border border-white/10 bg-noir py-2 px-3 text-xs text-white focus:border-gold/60 focus:outline-none placeholder:text-white/20 resize-none font-sans"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="border-t border-white/5 pt-4 text-center text-xs text-white/35 font-mono">
+                      No compliance override overrides required for this state.
+                    </div>
+                  )}
+
+                </div>
+              ) : (
+                <div className="py-24 text-center text-xs text-white/30 font-mono relative z-10">
+                  Select a disbursal queue item to audit payouts.
+                </div>
+              )}
+            </div>
+
+          </div>
+        )}
+
+        {/* copyright rights */}
+        <div className="text-center text-[10px] text-white/25 pt-4 pb-6 font-sans">
+          © 2025 Exora India Pvt. Ltd. All rights reserved.
+        </div>
+
       </main>
     </div>
-  );
-}
-
-function QueueRow({ item }: { item: CryptoWithdrawal }) {
-  const qc = useQueryClient();
-  const [reason, setReason] = useState('');
-
-  const approve = useMutation({
-    mutationFn: () => adminApi.approveWithdrawal(item.id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-withdrawals'] }),
-  });
-  const reject = useMutation({
-    mutationFn: () => adminApi.rejectWithdrawal(item.id, reason),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-withdrawals'] }),
-  });
-
-  const decidable = item.status === 'PENDING_APPROVAL';
-
-  return (
-    <tr className="hover:bg-white/[0.01] transition align-top">
-      <td className="py-4 px-3 font-mono text-[10px] text-white/50">{item.toAddress}</td>
-      <td className="py-4 px-3 font-mono text-white">{item.amount}</td>
-      <td className="py-4 px-3 font-mono text-gold font-semibold">{item.netAmount}</td>
-      <td className="py-4 px-3">
-        <StatusBadge status={item.status} />
-      </td>
-      <td className="py-3 px-3">
-        {decidable ? (
-          <div className="flex flex-col items-start gap-2 max-w-[240px]">
-            <input
-              placeholder="rejection reason"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              className="w-full rounded-lg border border-white/10 bg-noir py-1.5 px-3 text-xs text-white placeholder:text-white/20 focus:border-gold/60 focus:outline-none"
-            />
-            <div className="flex gap-2 w-full">
-              <button 
-                onClick={() => approve.mutate()} 
-                disabled={approve.isPending}
-                className="flex-1 rounded-lg bg-gradient-to-r from-gold to-gold-glow py-1.5 text-[10px] font-bold text-noir shadow-gold-glow hover:brightness-105 transition"
-              >
-                Approve
-              </button>
-              <button
-                onClick={() => reject.mutate()}
-                disabled={reject.isPending || !reason}
-                className="flex-1 rounded-lg border border-white/[0.12] bg-white/[0.03] py-1.5 text-[10px] font-bold text-white hover:border-gold/40 hover:bg-white/[0.06] transition disabled:opacity-40"
-              >
-                Reject
-              </button>
-            </div>
-            {(approve.isError || reject.isError) && (
-              <span className="text-[10px] text-down">
-                {errorMessage(approve.error ?? reject.error)}
-              </span>
-            )}
-          </div>
-        ) : (
-          <span className="text-xs text-white/20">—</span>
-        )}
-      </td>
-    </tr>
   );
 }

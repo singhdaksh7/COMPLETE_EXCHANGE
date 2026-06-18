@@ -335,7 +335,7 @@ export interface Trade {
 }
 
 // ---- public market data (charts) ----
-export type CandleInterval = '1m' | '5m' | '15m' | '1h' | '1d';
+export type CandleInterval = '1m' | '5m' | '15m' | '1h' | '4h' | '1d';
 
 /** A single public tape print — no user/fee data (mirrors trade.executed). */
 export interface PublicTrade {
