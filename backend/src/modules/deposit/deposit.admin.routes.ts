@@ -12,15 +12,16 @@ import {
 
 /**
  * Admin INR deposit routes, mounted at /admin/v1/inr/deposits.
- * Monitoring is behind adminAuthorize('inr.deposit.view'); manual approve/reject
- * decisions require the stronger 'inr.approve' permission.
+ * Monitoring is behind adminAuthorize('inr.view') — a seeded permission held by
+ * FINANCE and (implicitly) SUPER_ADMIN; manual approve/reject decisions require
+ * the stronger 'inr.approve' permission.
  */
 export const adminDepositRouter = Router();
 
 adminDepositRouter.get(
   '/',
   adminAuthenticate,
-  adminAuthorize('inr.deposit.view'),
+  adminAuthorize('inr.view'),
   validate({ query: adminDepositQuerySchema }),
   asyncHandler(adminDepositController.list),
 );

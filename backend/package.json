@@ -26,6 +26,8 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:seed-candles": "node dist/scripts/seed-candles.js",
     "admin:reset-local": "tsx scripts/reset-local-admin.ts",
+    "admin:reset-staging": "node dist/scripts/reset-staging-admin.js",
+    "kyc:approve-staging": "node dist/scripts/approve-staging-kyc.js",
     "test": "vitest run",
     "test:watch": "vitest"
   },

@@ -75,6 +75,7 @@ export interface InrDepositIntentDto {
 /** User/admin-facing deposit view. */
 export interface InrDepositDto {
   id: string;
+  userId: string;
   type: string;
   amount: DecimalString;
   fee: DecimalString;
@@ -87,6 +88,7 @@ export interface InrDepositDto {
   method: string | null;
   proofKey: string | null;
   reviewedBy: string | null;
+  reviewedAt: Date | null;
   rejectionReason: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -104,6 +106,7 @@ export interface WebhookResult {
 export function toInrDepositDto(txn: InrTransaction): InrDepositDto {
   return {
     id: txn.id,
+    userId: txn.userId,
     type: txn.type,
     amount: txn.amount.toFixed(),
     fee: txn.fee.toFixed(),
@@ -116,6 +119,7 @@ export function toInrDepositDto(txn: InrTransaction): InrDepositDto {
     method: txn.method,
     proofKey: txn.proofKey,
     reviewedBy: txn.reviewedBy,
+    reviewedAt: txn.reviewedAt,
     rejectionReason: txn.rejectionReason,
     createdAt: txn.createdAt,
     updatedAt: txn.updatedAt,

@@ -174,6 +174,7 @@ export interface InrDepositIntent {
 
 export interface InrDeposit {
   id: string;
+  userId: string;
   type: string;
   amount: string;
   fee: string;
@@ -186,6 +187,7 @@ export interface InrDeposit {
   method: string | null;
   proofKey: string | null;
   reviewedBy: string | null;
+  reviewedAt: string | null;
   rejectionReason: string | null;
   createdAt: string;
   updatedAt: string;

@@ -106,8 +106,21 @@ export default function AdminDashboardPage() {
         {/* Dashboard statistics contents */}
         {me && (
           <div className="space-y-6">
-            
-            {/* 6 Metrics Grid */}
+
+            {/* Demo-data notice: the analytics on this dashboard are static
+                placeholders, NOT live figures. Real, live admin data lives on
+                the Deposits queue and KYC pages. */}
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-200 flex flex-wrap items-center justify-between gap-2">
+              <span>
+                <strong>⚠️ Sample data —</strong> the metrics, charts, alerts and activity below are
+                static placeholders, not live values.
+              </span>
+              <a href="/admin/deposits" className="font-bold text-amber-100 underline hover:text-white">
+                Go to live INR Deposits →
+              </a>
+            </div>
+
+            {/* 6 Metrics Grid (SAMPLE/PLACEHOLDER VALUES — not live) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
               {metrics.map((item, i) => (
                 <div key={i} className="relative rounded-xl border border-white/5 bg-white/[0.01] p-4 flex flex-col justify-between min-h-[100px] overflow-hidden">

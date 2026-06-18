@@ -13,7 +13,8 @@ const STATUSES = ['', 'INITIATED', 'PENDING', 'SUCCESS', 'FAILED', 'REVERSED'];
 export default function AdminDepositsPage() {
   const ready = useGuard('admin');
   const qc = useQueryClient();
-  const [status, setStatus] = useState('');
+  // Land on the actionable manual queue by default; switch to "All" to audit.
+  const [status, setStatus] = useState('PENDING');
   const [actionError, setActionError] = useState<string | null>(null);
 
   const q = useQuery({
@@ -86,11 +87,13 @@ export default function AdminDepositsPage() {
               <thead>
                 <tr className="border-b text-left text-gray-500">
                   <th className="py-2 pr-2 font-medium">Ref / Order</th>
+                  <th className="pr-2 font-medium">User</th>
                   <th className="pr-2 font-medium">Amount</th>
                   <th className="pr-2 font-medium">UTR</th>
                   <th className="pr-2 font-medium">Method</th>
                   <th className="pr-2 font-medium">Status</th>
                   <th className="pr-2 font-medium">Created</th>
+                  <th className="pr-2 font-medium">Reviewed</th>
                   <th className="font-medium">Actions</th>
                 </tr>
               </thead>
@@ -103,6 +106,7 @@ export default function AdminDepositsPage() {
                       <td className="py-2 pr-2 font-mono text-xs">
                         {d.providerOrderId ?? d.id.slice(0, 8)}
                       </td>
+                      <td className="pr-2 font-mono text-xs">{d.userId.slice(0, 8)}</td>
                       <td className="pr-2">₹{d.amount}</td>
                       <td className="pr-2 font-mono text-xs">{d.utr ?? '—'}</td>
                       <td className="pr-2">{d.method ?? (isManual ? '—' : 'Gateway')}</td>
@@ -111,6 +115,9 @@ export default function AdminDepositsPage() {
                       </td>
                       <td className="pr-2 text-gray-500">
                         {new Date(d.createdAt).toLocaleString()}
+                      </td>
+                      <td className="pr-2 text-gray-500">
+                        {d.reviewedAt ? new Date(d.reviewedAt).toLocaleString() : '—'}
                       </td>
                       <td>
                         {isManual && isPending ? (
