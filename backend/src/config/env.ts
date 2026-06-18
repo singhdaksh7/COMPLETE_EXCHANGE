@@ -183,6 +183,10 @@ const envSchema = z
   // TronGrid API key — required only in 'live' mode (resolver enforces).
   TRONGRID_API_KEY: z.string().optional(),
   TRONGRID_API_BASE: z.string().url().default('https://api.trongrid.io'),
+
+  // ---- CRYPTO DEPOSIT SCANNER (BSC / BEP20 USDT) ----
+  BSC_PROVIDER: z.enum(['mock', 'live']).default('mock'),
+  BSC_TESTNET_RPC_URL: z.string().url().default('https://data-seed-prebsc-1-s1.bnbchain.org:8545'),
   // How far behind the chain head we scan (avoid the unstable tip). Detection
   // happens here; crediting waits for min-confirmations depth.
   SCAN_SAFETY_LAG: z.coerce.number().int().min(0).default(1),

@@ -3,8 +3,8 @@ import { logger } from './lib/logger';
 import { connectDatabase, disconnectDatabase } from './lib/prisma';
 import { connectRedis, disconnectRedis } from './lib/redis';
 import { onShutdown, setupProcessGuards } from './lib/lifecycle';
-import { getTronProvider } from './modules/scanner/providers';
-import { startTronScannerWorker } from './modules/scanner/scanner.worker';
+import { getTronProvider, getBscProvider } from './modules/scanner/providers';
+import { startTronScannerWorker, startBscScannerWorker } from './modules/scanner/scanner.worker';
 
 /**
  * Chain scanner entrypoint (ARCHITECTURE.md §8).
@@ -43,10 +43,10 @@ async function bootstrap(): Promise<void> {
     );
     process.exit(1);
   }
-  if (chain !== 'TRON') {
+  if (chain === 'ETHEREUM') {
     logger.fatal(
       { chain },
-      'Only the TRON scanner is implemented; EVM chains are a future module',
+      'Only TRON and BSC scanners are implemented; ETHEREUM is a future module',
     );
     process.exit(1);
   }
@@ -54,13 +54,15 @@ async function bootstrap(): Promise<void> {
   await connectDatabase();
   await connectRedis();
 
+  const provider = chain === 'TRON' ? getTronProvider() : getBscProvider();
+
   logger.info(
-    { chain, pollMs: config.scanner.pollMs, provider: getTronProvider().mode },
+    { chain, pollMs: config.scanner.pollMs, provider: provider.mode },
     'Chain scanner started',
   );
 
   // The cursor is persisted in Postgres, so this resumes exactly on restart.
-  const worker = startTronScannerWorker();
+  const worker = chain === 'TRON' ? startTronScannerWorker() : startBscScannerWorker();
 
   onShutdown(async () => {
     await worker.stop();

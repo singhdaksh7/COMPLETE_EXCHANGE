@@ -100,6 +100,8 @@ export const config = {
     tronProvider: env.TRON_PROVIDER,
     tronGridApiKey: env.TRONGRID_API_KEY,
     tronGridApiBase: env.TRONGRID_API_BASE,
+    bscProvider: env.BSC_PROVIDER,
+    bscTestnetRpcUrl: env.BSC_TESTNET_RPC_URL,
     safetyLag: env.SCAN_SAFETY_LAG,
     reorgBuffer: env.SCAN_REORG_BUFFER,
     startBlock: env.SCAN_START_BLOCK,

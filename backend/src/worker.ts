@@ -3,7 +3,7 @@ import { logger } from './lib/logger';
 import { connectDatabase, disconnectDatabase } from './lib/prisma';
 import { connectRedis, disconnectRedis } from './lib/redis';
 import { onShutdown, setupProcessGuards } from './lib/lifecycle';
-import { startTronScannerWorker } from './modules/scanner/scanner.worker';
+import { startTronScannerWorker, startBscScannerWorker } from './modules/scanner/scanner.worker';
 import { startWithdrawalWorker } from './modules/withdrawal/withdrawal.worker';
 
 /**
@@ -30,11 +30,17 @@ const HEARTBEAT_MS = 60_000;
 async function registerWorkers(): Promise<ClosableWorker[]> {
   const workers: ClosableWorker[] = [];
 
-  // TRON TRC20 deposit scanner. Off by default (the dedicated scanner process
+  // deposit scanners. Off by default (the dedicated scanner process
   // runs it); SCAN_RUN_IN_WORKER=true consolidates it onto the worker scaffold.
   if (config.scanner.runInWorker) {
-    const scanner = startTronScannerWorker();
-    workers.push({ name: scanner.name, close: () => scanner.stop() });
+    if (config.chains.scanned.includes('TRON')) {
+      const scanner = startTronScannerWorker();
+      workers.push({ name: scanner.name, close: () => scanner.stop() });
+    }
+    if (config.chains.scanned.includes('BSC')) {
+      const scanner = startBscScannerWorker();
+      workers.push({ name: scanner.name, close: () => scanner.stop() });
+    }
   }
 
   // Crypto withdrawal executor: broadcasts APPROVED withdrawals (mock signer)

@@ -9,10 +9,6 @@ import {
   ScannerAction,
 } from './scanner.types';
 import type { ConfirmResult } from './scanner.types';
-import type { TronProvider } from './providers';
-
-const CHAIN = 'TRON';
-const ASSET = 'USDT';
 
 /**
  * Confirmation + crediting service (ARCHITECTURE.md §8.3–8.4).
@@ -28,9 +24,14 @@ const ASSET = 'USDT';
  * double-credit.
  */
 export const confirmationService = {
-  async runConfirmations(deps: { provider: TronProvider }): Promise<ConfirmResult> {
-    const head = await deps.provider.getLatestBlock();
-    const candidates = await scannerRepository.listCreditableCandidates(CHAIN);
+  async runConfirmations(deps: {
+    chain?: string;
+    provider: any;
+  }): Promise<ConfirmResult> {
+    const chain = (deps.chain ?? 'TRON').toUpperCase();
+    const { provider } = deps;
+    const head = await provider.getLatestBlock();
+    const candidates = await scannerRepository.listCreditableCandidates(chain);
 
     let promoted = 0;
     let credited = 0;
@@ -69,7 +70,7 @@ export const confirmationService = {
     }
 
     return {
-      chain: CHAIN,
+      chain,
       headBlock: head.number.toString(),
       promoted,
       credited,
@@ -110,14 +111,14 @@ export const confirmationService = {
           {
             kind: 'SWEEP_CLEARING',
             userId: null,
-            asset: ASSET,
+            asset: deposit.asset,
             direction: 'DEBIT',
             amount,
           },
           {
             kind: 'USER_AVAILABLE',
             userId: deposit.userId,
-            asset: ASSET,
+            asset: deposit.asset,
             direction: 'CREDIT',
             amount,
           },

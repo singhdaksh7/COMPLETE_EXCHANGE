@@ -163,6 +163,26 @@ export const scannerRepository = {
     });
   },
 
+  async getPendingDepositBlocks(
+    chain: string,
+    fromBlock: bigint,
+    toBlock: bigint,
+  ): Promise<bigint[]> {
+    const rows = await prisma.cryptoDeposit.findMany({
+      where: {
+        chain,
+        status: { in: ['DETECTED', 'CONFIRMING', 'CONFIRMED'] },
+        blockNumber: { gte: fromBlock, lte: toBlock },
+      },
+      select: {
+        blockNumber: true,
+      },
+    });
+    return rows
+      .map((r) => r.blockNumber)
+      .filter((b): b is bigint => b !== null);
+  },
+
   // ------------------------------------------------------------------
   // Confirmation + crediting
   // ------------------------------------------------------------------

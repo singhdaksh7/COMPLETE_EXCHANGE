@@ -21,7 +21,8 @@ function ctx(req: Request): ScannerContext {
 export const adminScannerController = {
   async health(req: Request, res: Response): Promise<void> {
     if (!req.admin) throw new UnauthorizedError();
-    const data = await scannerService.getHealth(ctx(req));
+    const { chain } = req.query as { chain?: string };
+    const data = await scannerService.getHealth(ctx(req), chain ?? 'TRON');
     sendSuccess(res, data);
   },
 
