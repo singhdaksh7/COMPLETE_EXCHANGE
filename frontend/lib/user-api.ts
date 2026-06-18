@@ -6,6 +6,7 @@ import type {
   CandleInterval,
   Conversion,
   ConversionSide,
+  CreateManualDepositInput,
   CryptoWithdrawal,
   DepositAddress,
   InrDeposit,
@@ -143,6 +144,14 @@ export const userApi = {
     authed<InrDepositIntent>('/inr/deposits', {
       method: 'POST',
       body: { amount },
+      headers: { 'Idempotency-Key': idemKey() },
+    }),
+
+  // ---- INR deposit (manual: amount + UTR, admin-approved) ----
+  createManualInrDeposit: (input: CreateManualDepositInput) =>
+    authed<InrDeposit>('/inr/deposits/manual', {
+      method: 'POST',
+      body: input,
       headers: { 'Idempotency-Key': idemKey() },
     }),
 

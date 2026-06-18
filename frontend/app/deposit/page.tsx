@@ -18,6 +18,7 @@ export default function DepositPage() {
   const [activeTab, setActiveTab] = useState<TabMode>('INR');
   const [inrMethod, setInrMethod] = useState<InrMethod>('UPI');
   const [amount, setAmount] = useState('500');
+  const [utr, setUtr] = useState('');
 
   // Crypto wizard states
   const [selectedAssetCode, setSelectedAssetCode] = useState('USDT');
@@ -46,9 +47,15 @@ export default function DepositPage() {
   });
 
   // Create gateway order
-  const create = useMutation({
-    mutationFn: () => userApi.createInrDeposit(amount),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['inr-deposits'] }),
+  // Submit a manual INR deposit (amount + UTR). Lands PENDING until an admin
+  // verifies the payment and approves the credit.
+  const submitManual = useMutation({
+    mutationFn: () =>
+      userApi.createManualInrDeposit({ amount, utr: utr.trim(), method: inrMethod }),
+    onSuccess: () => {
+      setUtr('');
+      qc.invalidateQueries({ queryKey: ['inr-deposits'] });
+    },
   });
 
   // Generate crypto deposit address
@@ -62,7 +69,7 @@ export default function DepositPage() {
 
   if (!ready) return null;
 
-  const intent = create.data?.data;
+  const submitted = submitManual.data?.data;
   const assets = overview.data?.data.assets ?? [];
   const selectedAsset = assets.find((a) => a.asset.toUpperCase() === selectedAssetCode.toUpperCase());
   const selectedChain = selectedAsset?.networks.find((n) => n.chain.toUpperCase() === selectedChainCode.toUpperCase());
@@ -333,36 +340,43 @@ export default function DepositPage() {
                   </div>
                 )}
 
-                {/* Razorpay Gateway Order Form */}
+                {/* Manual Deposit Confirmation Form */}
                 <div className="border-t border-white/5 pt-5">
-                  <h3 className="text-xs font-bold text-gold uppercase tracking-wider mb-3">
-                    Initiate Instant Gateway Order
+                  <h3 className="text-xs font-bold text-gold uppercase tracking-wider mb-1">
+                    Confirm Your Payment
                   </h3>
+                  <p className="text-[10px] text-white/45 mb-3">
+                    After paying via {inrMethod === 'QR' ? 'QR' : inrMethod}, enter the exact
+                    amount and the UTR / reference number from your bank. Your balance is
+                    credited once an admin verifies the payment.
+                  </p>
 
-                  {create.isError && (
-                    isKycRequired(create.error) ? (
+                  {submitManual.isError && (
+                    isKycRequired(submitManual.error) ? (
                       <KycRequiredNotice action="deposit INR" />
                     ) : (
-                      <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-4 text-xs text-red-300">
-                        {errorMessage(create.error)}
+                      <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-4 text-xs text-red-300 mb-4">
+                        {errorMessage(submitManual.error)}
                       </div>
                     )
                   )}
 
-                  {intent && (
+                  {submitted && (
                     <div className="rounded-lg bg-up/10 border border-up/20 p-4 text-xs text-up mb-4">
-                      Order successfully initialized! Complete sandbox steps inside the Razorpay gateway overlay.
+                      Deposit request submitted! Reference{' '}
+                      <span className="font-mono">{submitted.utr}</span> is now{' '}
+                      <strong>pending admin verification</strong>.
                     </div>
                   )}
 
                   <form
-                    className="flex flex-col sm:flex-row items-end gap-3"
+                    className="space-y-3"
                     onSubmit={(e) => {
                       e.preventDefault();
-                      create.mutate();
+                      submitManual.mutate();
                     }}
                   >
-                    <div className="flex-1 w-full flex flex-col gap-1.5">
+                    <div className="flex flex-col gap-1.5">
                       <label className="text-[9px] font-bold text-white/45 uppercase tracking-widest">Amount (INR)</label>
                       <input
                         value={amount}
@@ -372,35 +386,23 @@ export default function DepositPage() {
                         className="w-full rounded-lg border border-white/10 bg-noir/80 py-3 px-4 text-sm text-white focus:border-gold/60 focus:outline-none font-mono"
                       />
                     </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[9px] font-bold text-white/45 uppercase tracking-widest">UTR / Reference Number</label>
+                      <input
+                        value={utr}
+                        onChange={(e) => setUtr(e.target.value)}
+                        placeholder="e.g. 401234567890"
+                        className="w-full rounded-lg border border-white/10 bg-noir/80 py-3 px-4 text-sm text-white focus:border-gold/60 focus:outline-none font-mono"
+                      />
+                    </div>
                     <button
                       type="submit"
-                      disabled={create.isPending}
-                      className="w-full sm:w-auto rounded-lg bg-gradient-to-r from-gold to-gold-glow px-6 py-3.5 text-xs font-bold text-noir shadow-gold-glow hover:brightness-105 transition disabled:opacity-50 tracking-wider uppercase shrink-0"
+                      disabled={submitManual.isPending || !amount.trim() || utr.trim().length < 6}
+                      className="w-full rounded-lg bg-gradient-to-r from-gold to-gold-glow px-6 py-3.5 text-xs font-bold text-noir shadow-gold-glow hover:brightness-105 transition disabled:opacity-50 tracking-wider uppercase"
                     >
-                      {create.isPending ? 'Generating...' : 'Create Order'}
+                      {submitManual.isPending ? 'Submitting...' : 'Submit Deposit Request'}
                     </button>
                   </form>
-
-                  {intent && (
-                    <div className="mt-4 rounded-xl border border-white/5 bg-noir-2/80 p-4 text-xs space-y-2.5">
-                      <div className="flex justify-between border-b border-white/5 pb-2">
-                        <span className="text-white/45">Gateway Provider</span>
-                        <span className="font-semibold text-white">{intent.provider}</span>
-                      </div>
-                      <div className="flex justify-between border-b border-white/5 pb-2">
-                        <span className="text-white/45">Merchant Order ID</span>
-                        <span className="font-mono text-white truncate max-w-[180px]">{intent.providerOrderId}</span>
-                      </div>
-                      <div className="flex justify-between border-b border-white/5 pb-2">
-                        <span className="text-white/45">Invoice Amount</span>
-                        <span className="font-bold text-gold font-mono">₹{intent.amount}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-white/45">Status</span>
-                        <StatusBadge status={intent.status} />
-                      </div>
-                    </div>
-                  )}
                 </div>
 
               </div>
@@ -477,7 +479,7 @@ export default function DepositPage() {
             <div className="flex justify-between items-center border-b border-white/5 pb-3">
               <div>
                 <h3 className="text-sm font-bold text-white tracking-tight">Deposit History</h3>
-                <p className="text-[10px] text-white/40 mt-0.5">Real-time status of your gateway deposit requests.</p>
+                <p className="text-[10px] text-white/40 mt-0.5">Status of your INR deposit requests.</p>
               </div>
               <button
                 onClick={() => history.refetch()}
@@ -521,16 +523,20 @@ export default function DepositPage() {
                             hour12: true,
                           })}
                         </td>
-                        <td className="px-3 font-semibold text-white/80">{inrMethod}</td>
+                        <td className="px-3 font-semibold text-white/80">{d.method ?? 'Gateway'}</td>
                         <td className="px-3 font-mono text-[10px] text-white/40">
-                          {d.providerOrderId ?? d.id.slice(0, 12)}
+                          {d.utr ?? d.providerOrderId ?? d.id.slice(0, 12)}
                         </td>
                         <td className="px-3 font-mono text-gold font-semibold">₹{d.amount}</td>
                         <td className="px-3">
                           <StatusBadge status={d.status} />
                         </td>
                         <td className="px-3 text-right text-white/50 text-[10px]">
-                          {d.status === 'COMPLETED' ? 'Credited to wallet' : d.status === 'PENDING' ? 'Processing gateway' : 'Payment failed'}
+                          {d.status === 'SUCCESS'
+                            ? 'Credited to wallet'
+                            : d.status === 'PENDING'
+                              ? 'Pending verification'
+                              : (d.rejectionReason ?? 'Rejected')}
                         </td>
                       </tr>
                     ))}

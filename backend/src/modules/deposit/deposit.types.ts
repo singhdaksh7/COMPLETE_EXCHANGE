@@ -21,7 +21,18 @@ export const DepositAction = {
   WEBHOOK_RECEIVED: 'inr.deposit.webhook_received',
   WEBHOOK_INVALID_SIGNATURE: 'inr.deposit.webhook_invalid_signature',
   ADMIN_LIST: 'inr.deposit.admin_list',
+  // Manual INR deposit lifecycle
+  MANUAL_SUBMITTED: 'inr.deposit.manual_submitted',
+  MANUAL_APPROVED: 'inr.deposit.manual_approved',
+  MANUAL_REJECTED: 'inr.deposit.manual_rejected',
 } as const;
+
+/** Provider tag for manually-submitted (non-gateway) INR deposits. */
+export const MANUAL_PROVIDER = 'MANUAL';
+
+/** Manual deposit payment methods accepted from the user. */
+export const MANUAL_METHODS = ['UPI', 'IMPS', 'NEFT', 'QR', 'BANK'] as const;
+export type ManualDepositMethod = (typeof MANUAL_METHODS)[number];
 
 /** Razorpay webhook events we act on. */
 export const RazorpayEvent = {
@@ -32,6 +43,17 @@ export const RazorpayEvent = {
 
 export interface CreateDepositInput {
   amount: DecimalString; // rupees, scale 2, > 0
+}
+
+export interface CreateManualDepositInput {
+  amount: DecimalString; // rupees, scale 2, > 0
+  utr: string; // bank/UPI reference (unique per provider)
+  method: ManualDepositMethod;
+  proofKey?: string; // optional object-storage key for a proof screenshot
+}
+
+export interface ManualDecisionInput {
+  reason?: string; // required for reject, recorded as rejectionReason
 }
 
 export interface VerifyPaymentInput {
@@ -61,6 +83,11 @@ export interface InrDepositDto {
   providerOrderId: string | null;
   providerPaymentId: string | null;
   ledgerTxnId: string | null;
+  utr: string | null;
+  method: string | null;
+  proofKey: string | null;
+  reviewedBy: string | null;
+  rejectionReason: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -85,6 +112,11 @@ export function toInrDepositDto(txn: InrTransaction): InrDepositDto {
     providerOrderId: txn.providerOrderId,
     providerPaymentId: txn.providerPaymentId,
     ledgerTxnId: txn.ledgerTxnId,
+    utr: txn.utr,
+    method: txn.method,
+    proofKey: txn.proofKey,
+    reviewedBy: txn.reviewedBy,
+    rejectionReason: txn.rejectionReason,
     createdAt: txn.createdAt,
     updatedAt: txn.updatedAt,
   };

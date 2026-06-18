@@ -29,4 +29,25 @@ export const adminDepositController = {
     );
     sendSuccess(res, result);
   },
+
+  // POST /inr/deposits/:id/approve — credit the user's INR balance (idempotent).
+  async approve(req: Request, res: Response): Promise<void> {
+    if (!req.admin) throw new UnauthorizedError();
+    const deposit = await depositService.approveManualDeposit(
+      req.params.id,
+      ctx(req),
+    );
+    sendSuccess(res, deposit);
+  },
+
+  // POST /inr/deposits/:id/reject — mark FAILED with a reason. No credit.
+  async reject(req: Request, res: Response): Promise<void> {
+    if (!req.admin) throw new UnauthorizedError();
+    const deposit = await depositService.rejectManualDeposit(
+      req.params.id,
+      { reason: req.body.reason },
+      ctx(req),
+    );
+    sendSuccess(res, deposit);
+  },
 };

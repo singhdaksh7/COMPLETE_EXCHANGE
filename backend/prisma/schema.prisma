@@ -95,6 +95,7 @@ enum AccountKind {
   HOT_WALLET
   COLD_WALLET
   GATEWAY_CLEARING
+  MANUAL_BANK_CLEARING // funds received in the exchange bank, pending manual credit
   SWEEP_CLEARING
   LIQUIDITY
   SYSTEM
@@ -940,16 +941,28 @@ model InrTransaction {
   providerPaymentId String?      @map("provider_payment_id")
   bankRef           String?      @map("bank_ref")
   ledgerTxnId       String?      @map("ledger_txn_id") @db.Uuid
+  // Manual INR deposit fields (provider = 'MANUAL'): user-submitted bank/UPI
+  // reference and admin review trail. Crediting still flows exclusively through
+  // the double-entry ledger on admin approval.
+  utr               String?      @map("utr") // bank/UPI reference, manual deposits
+  method            String?      @map("method") // 'UPI' | 'IMPS' | 'NEFT' | 'QR' | 'BANK'
+  proofKey          String?      @map("proof_key") // object-storage key for the proof screenshot (optional)
+  reviewedBy        String?      @map("reviewed_by") @db.Uuid // admin who approved/rejected
+  reviewedAt        DateTime?    @map("reviewed_at")
+  rejectionReason   String?      @map("rejection_reason")
   metadata          Json?
   createdAt         DateTime     @default(now()) @map("created_at")
   updatedAt         DateTime     @updatedAt @map("updated_at")
 
   user      User               @relation(fields: [userId], references: [id])
   ledgerTxn LedgerTransaction? @relation(fields: [ledgerTxnId], references: [id])
+  reviewer  Admin?             @relation("InrDepositReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
 
   @@unique([provider, providerPaymentId]) // idempotent settlement
+  @@unique([provider, utr]) // duplicate-UTR guard; NULL utr (Razorpay) rows never collide (NULLs distinct)
   @@index([userId, type])
   @@index([status])
+  @@index([status, createdAt]) // pending-queue dashboard
   @@index([provider, providerOrderId]) // webhook -> txn reconcile
   @@map("inr_transactions")
 }
@@ -1200,6 +1213,7 @@ model Admin {
   approvedWithdrawals2 CryptoWithdrawal[] @relation("WithdrawApprover2")
   grantedRoles         UserRole[]         @relation("RoleGranter")
   updatedFlags         SystemFlag[]       @relation("FlagUpdater")
+  reviewedInrDeposits  InrTransaction[]   @relation("InrDepositReviewer")
 
   @@map("admins")
 }

@@ -182,8 +182,22 @@ export interface InrDeposit {
   providerOrderId: string | null;
   providerPaymentId: string | null;
   ledgerTxnId: string | null;
+  utr: string | null;
+  method: string | null;
+  proofKey: string | null;
+  reviewedBy: string | null;
+  rejectionReason: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export type ManualDepositMethod = 'UPI' | 'IMPS' | 'NEFT' | 'QR' | 'BANK';
+
+export interface CreateManualDepositInput {
+  amount: string;
+  utr: string;
+  method: ManualDepositMethod;
+  proofKey?: string;
 }
 
 // ---- conversion ----

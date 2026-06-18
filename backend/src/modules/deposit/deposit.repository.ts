@@ -5,6 +5,7 @@ import {
   type PaymentWebhookEvent,
 } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
+import { ConflictError } from '../../lib/errors';
 
 /**
  * Repository layer: the ONLY place that talks to Prisma for INR deposits and
@@ -47,6 +48,98 @@ export const depositRepository = {
 
   findDepositById(id: string): Promise<InrTransaction | null> {
     return prisma.inrTransaction.findUnique({ where: { id } });
+  },
+
+  /**
+   * Create a manual (non-gateway) INR deposit claim in PENDING state. No money
+   * moves — an admin must approve before the ledger credits the user. The unique
+   * (provider, utr) index is the duplicate-submission guard: a re-used UTR hits a
+   * P2002 violation, surfaced here as a typed DUPLICATE_UTR conflict.
+   */
+  async createManualDeposit(data: {
+    id: string;
+    userId: string;
+    amount: Prisma.Decimal;
+    provider: string;
+    utr: string;
+    method: string;
+    proofKey?: string;
+  }): Promise<InrTransaction> {
+    try {
+      return await prisma.inrTransaction.create({
+        data: {
+          id: data.id,
+          userId: data.userId,
+          type: 'DEPOSIT',
+          amount: data.amount,
+          status: 'PENDING',
+          provider: data.provider,
+          utr: data.utr,
+          method: data.method,
+          proofKey: data.proofKey,
+        },
+      });
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new ConflictError(
+          'This UTR/reference has already been submitted',
+          'DUPLICATE_UTR',
+        );
+      }
+      throw err;
+    }
+  },
+
+  /** Admin lookup by id (no user scoping) for the review/decision path. */
+  adminFindDepositById(id: string): Promise<InrTransaction | null> {
+    return prisma.inrTransaction.findUnique({ where: { id } });
+  },
+
+  /**
+   * Flip a manual deposit PENDING → SUCCESS and bind the crediting ledger txn +
+   * reviewing admin. Conditional on status='PENDING' so a concurrent double
+   * approve (or an approve racing a reject) updates zero rows instead of
+   * re-crediting. Returns the fresh row, or null when the guard matched nothing.
+   */
+  async markManualApproved(
+    id: string,
+    data: { reviewedBy: string; ledgerTxnId: string },
+  ): Promise<{ updated: boolean; row: InrTransaction | null }> {
+    const result = await prisma.inrTransaction.updateMany({
+      where: { id, status: 'PENDING' },
+      data: {
+        status: 'SUCCESS',
+        reviewedBy: data.reviewedBy,
+        reviewedAt: new Date(),
+        ledgerTxnId: data.ledgerTxnId,
+      },
+    });
+    const row = await prisma.inrTransaction.findUnique({ where: { id } });
+    return { updated: result.count === 1, row };
+  },
+
+  /**
+   * Reject a manual deposit PENDING → FAILED with a reason. Conditional on
+   * status='PENDING' so a credited deposit can never be flipped to FAILED.
+   */
+  async markManualRejected(
+    id: string,
+    data: { reviewedBy: string; reason?: string },
+  ): Promise<{ updated: boolean; row: InrTransaction | null }> {
+    const result = await prisma.inrTransaction.updateMany({
+      where: { id, status: 'PENDING' },
+      data: {
+        status: 'FAILED',
+        reviewedBy: data.reviewedBy,
+        reviewedAt: new Date(),
+        rejectionReason: data.reason,
+      },
+    });
+    const row = await prisma.inrTransaction.findUnique({ where: { id } });
+    return { updated: result.count === 1, row };
   },
 
   /** Resolve a deposit by its gateway order id (webhook → txn reconcile). */

@@ -31,6 +31,22 @@ export const depositController = {
     sendSuccess(res, intent, 201);
   },
 
+  // POST /inr/deposits/manual — submit a manual INR deposit (amount + UTR).
+  async createManual(req: Request, res: Response): Promise<void> {
+    const user = requireUser(req);
+    const deposit = await depositService.createManualDeposit(
+      user.id,
+      {
+        amount: req.body.amount,
+        utr: req.body.utr,
+        method: req.body.method,
+        proofKey: req.body.proofKey,
+      },
+      ctx(req),
+    );
+    sendSuccess(res, deposit, 201);
+  },
+
   // POST /inr/deposits/verify — verify the checkout payment signature.
   async verify(req: Request, res: Response): Promise<void> {
     const user = requireUser(req);

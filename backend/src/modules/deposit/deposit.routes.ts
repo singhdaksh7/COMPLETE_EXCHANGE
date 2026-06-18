@@ -6,6 +6,7 @@ import { idempotency } from '../../middleware/idempotency';
 import { depositController } from './deposit.controller';
 import {
   createDepositSchema,
+  createManualDepositSchema,
   depositIdParamSchema,
   depositQuerySchema,
   verifyPaymentSchema,
@@ -30,6 +31,17 @@ depositRouter.post(
   validate({ body: createDepositSchema }),
   idempotency(),
   asyncHandler(depositController.create),
+);
+
+// Manual INR deposit submission (amount + UTR). Idempotency middleware guards a
+// double-tap of the same request; the DB-level unique (provider, utr) guards a
+// genuinely duplicate UTR across separate requests.
+depositRouter.post(
+  '/manual',
+  authenticate,
+  validate({ body: createManualDepositSchema }),
+  idempotency(),
+  asyncHandler(depositController.createManual),
 );
 
 depositRouter.post(

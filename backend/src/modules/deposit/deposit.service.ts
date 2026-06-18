@@ -4,6 +4,7 @@ import { config } from '../../config';
 import {
   AppError,
   BadRequestError,
+  ConflictError,
   ForbiddenError,
   NotFoundError,
 } from '../../lib/errors';
@@ -14,15 +15,18 @@ import { getRazorpayProvider } from './providers';
 import { RAZORPAY_PROVIDER_ID } from './providers/razorpay.provider';
 import {
   DepositAction,
+  MANUAL_PROVIDER,
   RazorpayEvent,
   rupeesToPaise,
   toInrDepositDto,
 } from './deposit.types';
 import type {
   CreateDepositInput,
+  CreateManualDepositInput,
   DepositContext,
   InrDepositDto,
   InrDepositIntentDto,
+  ManualDecisionInput,
   VerifyPaymentInput,
   WebhookResult,
 } from './deposit.types';
@@ -30,6 +34,8 @@ import type {
 const INR = 'INR';
 // Ledger txn kind for a gateway-funded INR credit.
 const DEPOSIT_CREDIT_KIND = 'INR_DEPOSIT';
+// Ledger txn kind for an admin-approved manual INR credit.
+const DEPOSIT_CREDIT_MANUAL_KIND = 'INR_DEPOSIT_MANUAL';
 const REFERENCE_TYPE = 'inr_transaction';
 
 /** Normalized payment entity extracted from a Razorpay webhook payload. */
@@ -447,6 +453,243 @@ export const depositService = {
   }): Promise<{ items: InrDepositDto[]; nextCursor: string | null }> {
     const rows = await depositRepository.listUserDeposits(input);
     return page(rows, input.limit);
+  },
+
+  // ------------------------------------------------------------------
+  // M1. Manual INR deposit — user submits amount + UTR (+ optional proof).
+  //     Lands PENDING; no money moves until an admin approves. Razorpay is not
+  //     involved. The unique (provider, utr) index blocks duplicate UTRs.
+  // ------------------------------------------------------------------
+  async createManualDeposit(
+    userId: string,
+    input: CreateManualDepositInput,
+    ctx: DepositContext = {},
+  ): Promise<InrDepositDto> {
+    const user = await depositRepository.findUserKyc(userId);
+    if (!user) throw new NotFoundError('User not found');
+    if (user.status !== 'ACTIVE') {
+      throw new ForbiddenError('Account is not active', 'ACCOUNT_INACTIVE');
+    }
+    // INR rails are KYC-gated (parity with the gateway deposit path).
+    if (user.kycStatus !== 'APPROVED' || user.kycTier < 1) {
+      throw new ForbiddenError(
+        'KYC approval is required to deposit INR',
+        'KYC_REQUIRED',
+      );
+    }
+
+    const amount = new Prisma.Decimal(input.amount);
+    const min = new Prisma.Decimal(config.razorpay.depositMin);
+    const max = new Prisma.Decimal(config.razorpay.depositMax);
+    if (amount.lt(min)) {
+      throw new AppError(
+        `Deposit is below the minimum of ${min.toFixed(2)} INR`,
+        422,
+        'AMOUNT_BELOW_MINIMUM',
+      );
+    }
+    if (amount.gt(max)) {
+      throw new AppError(
+        `Deposit exceeds the maximum of ${max.toFixed(2)} INR`,
+        422,
+        'LIMIT_EXCEEDED',
+      );
+    }
+    // Reject sub-paise precision up front (same invariant as the gateway path).
+    rupeesToPaise(input.amount);
+
+    const deposit = await depositRepository.createManualDeposit({
+      id: randomUUID(),
+      userId,
+      amount,
+      provider: MANUAL_PROVIDER,
+      utr: input.utr,
+      method: input.method,
+      proofKey: input.proofKey,
+    });
+
+    await recordAudit({
+      actorType: 'USER',
+      actorId: userId,
+      action: DepositAction.MANUAL_SUBMITTED,
+      entityType: REFERENCE_TYPE,
+      entityId: deposit.id,
+      ip: ctx.ip,
+      userAgent: ctx.userAgent,
+      requestId: ctx.requestId,
+      metadata: {
+        provider: MANUAL_PROVIDER,
+        method: input.method,
+        amount: amount.toFixed(2),
+        utr: input.utr,
+      },
+    });
+
+    return toInrDepositDto(deposit);
+  },
+
+  // ------------------------------------------------------------------
+  // M2. Admin approve — credit the user's INR balance EXCLUSIVELY through the
+  //     double-entry ledger. Idempotent via three guards:
+  //       (a) status === SUCCESS short-circuit,
+  //       (b) ledgerService.post de-dupes on (referenceType, referenceId),
+  //       (c) conditional updateMany WHERE status = PENDING.
+  // ------------------------------------------------------------------
+  async approveManualDeposit(
+    depositId: string,
+    ctx: DepositContext = {},
+  ): Promise<InrDepositDto> {
+    if (!ctx.actorId) throw new ForbiddenError('Admin context required');
+    const deposit = await depositRepository.adminFindDepositById(depositId);
+    if (
+      !deposit ||
+      deposit.type !== 'DEPOSIT' ||
+      deposit.provider !== MANUAL_PROVIDER
+    ) {
+      throw new NotFoundError('Manual deposit not found');
+    }
+    // (a) Already credited → idempotent no-op.
+    if (deposit.status === 'SUCCESS') return toInrDepositDto(deposit);
+    if (deposit.status !== 'PENDING') {
+      throw new ConflictError(
+        `Manual deposit cannot be approved from status ${deposit.status}`,
+        'INVALID_STATE',
+      );
+    }
+
+    const amount = deposit.amount.toFixed(2);
+    // (b) Double-entry posting: manual bank clearing → user available INR.
+    const posted = await ledgerService.post(
+      {
+        kind: DEPOSIT_CREDIT_MANUAL_KIND,
+        referenceType: REFERENCE_TYPE,
+        referenceId: deposit.id,
+        metadata: {
+          provider: MANUAL_PROVIDER,
+          utr: deposit.utr,
+          method: deposit.method,
+          approvedBy: ctx.actorId,
+        },
+        lines: [
+          {
+            kind: 'MANUAL_BANK_CLEARING',
+            userId: null,
+            asset: INR,
+            direction: 'DEBIT',
+            amount,
+          },
+          {
+            kind: 'USER_AVAILABLE',
+            userId: deposit.userId,
+            asset: INR,
+            direction: 'CREDIT',
+            amount,
+          },
+        ],
+      },
+      { userId: deposit.userId, requestId: ctx.requestId, ip: ctx.ip },
+    );
+
+    // (c) Flip PENDING → SUCCESS, bind ledger txn + reviewing admin.
+    const { updated, row } = await depositRepository.markManualApproved(
+      deposit.id,
+      { reviewedBy: ctx.actorId, ledgerTxnId: posted.id },
+    );
+    if (!row) throw new NotFoundError('Manual deposit not found');
+
+    // Only the approval that actually flipped the row writes the trail, so a
+    // lost race doesn't double-log (the ledger posting is already idempotent).
+    if (updated) {
+      await recordAudit({
+        actorType: 'ADMIN',
+        actorId: ctx.actorId,
+        action: DepositAction.MANUAL_APPROVED,
+        entityType: REFERENCE_TYPE,
+        entityId: deposit.id,
+        ip: ctx.ip,
+        userAgent: ctx.userAgent,
+        requestId: ctx.requestId,
+        metadata: { amount, ledgerTxnId: posted.id, utr: deposit.utr },
+      });
+      await depositRepository.writeAdminLog({
+        adminId: ctx.actorId,
+        action: DepositAction.MANUAL_APPROVED,
+        targetType: REFERENCE_TYPE,
+        targetId: deposit.id,
+        ip: ctx.ip,
+        requestId: ctx.requestId,
+        beforeState: { status: 'PENDING' },
+        afterState: { status: 'SUCCESS', ledgerTxnId: posted.id },
+      });
+    }
+
+    return toInrDepositDto(row);
+  },
+
+  // ------------------------------------------------------------------
+  // M3. Admin reject — mark FAILED with a reason. No ledger posting ever.
+  // ------------------------------------------------------------------
+  async rejectManualDeposit(
+    depositId: string,
+    input: ManualDecisionInput,
+    ctx: DepositContext = {},
+  ): Promise<InrDepositDto> {
+    if (!ctx.actorId) throw new ForbiddenError('Admin context required');
+    const deposit = await depositRepository.adminFindDepositById(depositId);
+    if (
+      !deposit ||
+      deposit.type !== 'DEPOSIT' ||
+      deposit.provider !== MANUAL_PROVIDER
+    ) {
+      throw new NotFoundError('Manual deposit not found');
+    }
+    if (deposit.status === 'SUCCESS') {
+      throw new ConflictError(
+        'A credited deposit cannot be rejected',
+        'ALREADY_CREDITED',
+      );
+    }
+    // Already rejected → idempotent no-op.
+    if (deposit.status === 'FAILED') return toInrDepositDto(deposit);
+    if (deposit.status !== 'PENDING') {
+      throw new ConflictError(
+        `Manual deposit cannot be rejected from status ${deposit.status}`,
+        'INVALID_STATE',
+      );
+    }
+
+    const { updated, row } = await depositRepository.markManualRejected(
+      deposit.id,
+      { reviewedBy: ctx.actorId, reason: input.reason },
+    );
+    if (!row) throw new NotFoundError('Manual deposit not found');
+
+    if (updated) {
+      await recordAudit({
+        actorType: 'ADMIN',
+        actorId: ctx.actorId,
+        action: DepositAction.MANUAL_REJECTED,
+        entityType: REFERENCE_TYPE,
+        entityId: deposit.id,
+        ip: ctx.ip,
+        userAgent: ctx.userAgent,
+        requestId: ctx.requestId,
+        metadata: { reason: input.reason ?? null, utr: deposit.utr },
+      });
+      await depositRepository.writeAdminLog({
+        adminId: ctx.actorId,
+        action: DepositAction.MANUAL_REJECTED,
+        targetType: REFERENCE_TYPE,
+        targetId: deposit.id,
+        reason: input.reason,
+        ip: ctx.ip,
+        requestId: ctx.requestId,
+        beforeState: { status: 'PENDING' },
+        afterState: { status: 'FAILED', rejectionReason: input.reason ?? null },
+      });
+    }
+
+    return toInrDepositDto(row);
   },
 
   // ------------------------------------------------------------------

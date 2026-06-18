@@ -110,12 +110,20 @@ export const adminApi = {
     body: { decision: 'APPROVE' | 'REJECT'; tier?: number; reason?: string },
   ) => adminApiFetch<KycProfile>(`/kyc/${userId}/decision`, 'POST', { body }),
 
-  // ---- INR deposit monitoring ----
+  // ---- INR deposit monitoring + manual approval ----
   deposits: (params: { status?: string; cursor?: string; limit?: number } = {}) =>
     adminApiFetch<Page<InrDeposit>>(
       `/inr/deposits${buildQuery({ limit: 20, ...params })}`,
       'GET',
     ),
+
+  approveDeposit: (id: string) =>
+    adminApiFetch<InrDeposit>(`/inr/deposits/${id}/approve`, 'POST'),
+
+  rejectDeposit: (id: string, reason: string) =>
+    adminApiFetch<InrDeposit>(`/inr/deposits/${id}/reject`, 'POST', {
+      body: { reason },
+    }),
 
   // ---- withdrawal queue + decisions ----
   withdrawals: (params: { status?: string; cursor?: string; limit?: number } = {}) =>
