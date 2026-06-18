@@ -96,6 +96,32 @@ export interface AdminMeData {
   permissions: string[];
 }
 
+// --- Admin management (Stage 3.4B) ---
+export interface AdminListItem {
+  id: string;
+  email: string;
+  status: string;
+  totpEnabled: boolean;
+  roles: string[];
+  ipAllowlist: string[];
+  ipRestricted: boolean;
+  createdAt: string;
+}
+
+export interface AdminRoleOption {
+  id: string;
+  name: string;
+  scope: string;
+  description: string | null;
+  isSystem: boolean;
+}
+
+export interface CreatedAdmin {
+  admin: PublicAdmin;
+  role: string;
+  initialPassword: string;
+}
+
 export interface AdminKycQueueItem {
   userId: string;
   email: string;

@@ -6,13 +6,18 @@ import { adminAuthenticate } from '../../middleware/admin-authenticate';
 import { adminAuthorize } from '../../middleware/admin-authorize';
 import { adminRbacController } from './admin-rbac.controller';
 import {
+  adminIdParamSchema,
   adminLoginSchema,
   adminRoleParamSchema,
+  adminStatusSchema,
+  createAdminSchema,
   createPermissionSchema,
   createRoleSchema,
+  ipAllowlistSchema,
   permissionIdParamSchema,
   roleIdParamSchema,
   rolePermissionParamSchema,
+  totpConfirmSchema,
   updatePermissionSchema,
   updateRoleSchema,
 } from './admin-rbac.validators';
@@ -30,6 +35,60 @@ adminRbacRouter.get(
   '/auth/me',
   adminAuthenticate,
   asyncHandler(adminRbacController.me),
+);
+
+// --- Self TOTP (re-)enrollment: any authenticated admin -------------------
+adminRbacRouter.post(
+  '/auth/totp/enroll',
+  adminAuthenticate,
+  asyncHandler(adminRbacController.enrollTotp),
+);
+
+adminRbacRouter.post(
+  '/auth/totp/confirm',
+  adminAuthenticate,
+  validate({ body: totpConfirmSchema }),
+  asyncHandler(adminRbacController.confirmTotp),
+);
+
+// --- Admin management: list (admin.view) + mutations (admin.manage) --------
+adminRbacRouter.get(
+  '/admins',
+  adminAuthenticate,
+  adminAuthorize('admin.view'),
+  asyncHandler(adminRbacController.listAdmins),
+);
+
+adminRbacRouter.post(
+  '/admins',
+  adminAuthenticate,
+  adminAuthorize('admin.manage'),
+  validate({ body: createAdminSchema }),
+  asyncHandler(adminRbacController.createAdmin),
+);
+
+adminRbacRouter.patch(
+  '/admins/:adminId/status',
+  adminAuthenticate,
+  adminAuthorize('admin.manage'),
+  validate({ params: adminIdParamSchema, body: adminStatusSchema }),
+  asyncHandler(adminRbacController.setAdminStatus),
+);
+
+adminRbacRouter.post(
+  '/admins/:adminId/totp/reset',
+  adminAuthenticate,
+  adminAuthorize('admin.manage'),
+  validate({ params: adminIdParamSchema }),
+  asyncHandler(adminRbacController.resetAdminTotp),
+);
+
+adminRbacRouter.put(
+  '/admins/:adminId/ip-allowlist',
+  adminAuthenticate,
+  adminAuthorize('admin.manage'),
+  validate({ params: adminIdParamSchema, body: ipAllowlistSchema }),
+  asyncHandler(adminRbacController.setIpAllowlist),
 );
 
 adminRbacRouter.get(

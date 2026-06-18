@@ -1,5 +1,11 @@
 import { hash, verify } from '@node-rs/argon2';
-import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import {
+  createHash,
+  createHmac,
+  randomBytes,
+  randomUUID,
+  timingSafeEqual,
+} from 'node:crypto';
 import type { Admin } from '@prisma/client';
 import {
   signAdminAccessToken,
@@ -12,22 +18,32 @@ import {
 } from '../../lib/redis';
 import { config } from '../../config';
 import {
+  BadRequestError,
   ConflictError,
   ForbiddenError,
   NotFoundError,
   UnauthorizedError,
 } from '../../lib/errors';
+import { isIpAllowed, isValidIpv4OrCidr } from '../../lib/ip-allowlist';
 import { adminRbacRepository } from './admin-rbac.repository';
 import type {
   AdminContext,
+  AdminListItem,
   AdminLoginInput,
   AdminProfile,
   AdminTokenPair,
+  CreatedAdmin,
   PermissionDto,
   PublicAdmin,
   RoleDto,
+  TotpEnrollment,
 } from './admin-rbac.types';
-import { toPermissionDto, toPublicAdmin, toRoleDto } from './admin-rbac.types';
+import {
+  toAdminListItem,
+  toPermissionDto,
+  toPublicAdmin,
+  toRoleDto,
+} from './admin-rbac.types';
 
 const ADMIN_RBAC_KEY = (adminId: string): string => `admin:rbac:perms:${adminId}`;
 const SUPER_ADMIN = 'SUPER_ADMIN';
@@ -77,6 +93,40 @@ function totp(secret: Buffer, timestamp = Date.now()): string {
     ((digest[offset + 2] & 0xff) << 8) |
     (digest[offset + 3] & 0xff);
   return String(code % 1_000_000).padStart(6, '0');
+}
+
+const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+
+/** RFC 4648 base32 (no padding) — the form authenticator apps expect. */
+function base32Encode(buf: Buffer): string {
+  let bits = '';
+  for (const byte of buf) bits += byte.toString(2).padStart(8, '0');
+  let out = '';
+  for (let i = 0; i + 5 <= bits.length; i += 5) {
+    out += BASE32_ALPHABET[Number.parseInt(bits.slice(i, i + 5), 2)];
+  }
+  const rem = bits.length % 5;
+  if (rem !== 0) {
+    out += BASE32_ALPHABET[Number.parseInt(bits.slice(-rem).padEnd(5, '0'), 2)];
+  }
+  return out;
+}
+
+/** Fresh base32 TOTP secret (160 bits). */
+function newTotpSecret(): string {
+  return base32Encode(randomBytes(20));
+}
+
+/** A strong, opaque initial password for a staging sub-admin. Never logged. */
+function newInitialPassword(): string {
+  // ~24 url-safe chars of entropy; mixed case + digits via base64url.
+  return randomBytes(18).toString('base64url');
+}
+
+function otpauthUri(email: string, secret: string): string {
+  const label = encodeURIComponent(`CEX Admin:${email}`);
+  const issuer = encodeURIComponent('CEX Admin');
+  return `otpauth://totp/${label}?secret=${secret}&issuer=${issuer}&algorithm=SHA1&digits=6&period=30`;
 }
 
 function verifyTotp(secretEnc: Buffer, code: string): boolean {
@@ -148,6 +198,21 @@ export const adminRbacService = {
     }
     if (admin.totpEnabled && !verifyTotp(Buffer.from(admin.totpSecretEnc), input.totp)) {
       throw new UnauthorizedError('Invalid TOTP code', 'INVALID_TOTP');
+    }
+    // Per-admin IP allowlist: when configured, only listed IPs may authenticate.
+    if (!isIpAllowed(input.ip, admin.ipAllowlist)) {
+      await adminRbacRepository.writeAdminLog({
+        adminId: admin.id,
+        action: 'admin.login_blocked_ip',
+        targetType: 'admin',
+        targetId: admin.id,
+        ip: input.ip,
+        requestId: input.requestId,
+      });
+      throw new ForbiddenError(
+        'Admin login is not permitted from this IP address',
+        'IP_NOT_ALLOWED',
+      );
     }
     const tokens = await this.issueSession(admin, input);
     await adminRbacRepository.writeAdminLog({
@@ -459,6 +524,198 @@ export const adminRbacService = {
       targetId: roleId,
       beforeState: { permissionId, permission: permission.code },
     });
+  },
+
+  // ==========================================================================
+  // Admin management (Stage 3.4B) — list, create sub-admin, status, TOTP, IPs.
+  // Every mutation is recorded in admin_logs via audit().
+  // ==========================================================================
+
+  listAdmins(): Promise<AdminListItem[]> {
+    return adminRbacRepository
+      .listAdminsWithRoles()
+      .then((admins) => admins.map(toAdminListItem));
+  },
+
+  /**
+   * Create a sub-admin with exactly one (non-SUPER_ADMIN) role and a strong,
+   * random initial password returned ONCE in the response (never logged). The
+   * account starts with TOTP disabled so the sub-admin can log in and enroll.
+   */
+  async createAdmin(
+    input: { email: string; roleId: string; status?: string },
+    ctx: AdminContext,
+  ): Promise<CreatedAdmin> {
+    const role = await adminRbacRepository.findRoleById(input.roleId);
+    if (!role || role.scope !== 'ADMIN') throw new NotFoundError('Role not found');
+    if (role.name === SUPER_ADMIN) {
+      throw new ForbiddenError(
+        'Sub-admins cannot be created as SUPER_ADMIN; grant that role explicitly afterwards',
+        'SUPER_ADMIN_NOT_ALLOWED',
+      );
+    }
+    const existing = await adminRbacRepository.findAdminByEmail(input.email);
+    if (existing) {
+      throw new ConflictError('An admin with this email already exists', 'ADMIN_EXISTS');
+    }
+
+    const initialPassword = newInitialPassword();
+    const passwordHash = await hash(initialPassword);
+    const status = input.status === 'SUSPENDED' ? 'SUSPENDED' : 'ACTIVE';
+    const admin = await adminRbacRepository.createAdmin({
+      email: input.email,
+      passwordHash,
+      status,
+    });
+    await adminRbacRepository.assignRoleToAdmin(admin.id, role.id);
+
+    await audit(ctx, {
+      action: 'admin.create',
+      targetType: 'admin',
+      targetId: admin.id,
+      afterState: { email: admin.email, role: role.name, status },
+    });
+
+    return { admin: toPublicAdmin(admin), role: role.name, initialPassword };
+  },
+
+  /** Suspend or re-activate an admin. Suspending kills live sessions + cache. */
+  async updateAdminStatus(
+    adminId: string,
+    status: string,
+    ctx: AdminContext,
+  ): Promise<PublicAdmin> {
+    const normalized = status === 'SUSPENDED' ? 'SUSPENDED' : 'ACTIVE';
+    const target = await adminRbacRepository.findAdminById(adminId);
+    if (!target) throw new NotFoundError('Admin not found');
+    if (ctx.adminId === adminId) {
+      throw new BadRequestError('You cannot change your own status');
+    }
+    if (normalized === 'SUSPENDED') {
+      const supers = await adminRbacRepository.adminsWithRole(SUPER_ADMIN);
+      const isSuper = supers.some((a) => a.adminId === adminId);
+      if (isSuper) {
+        const activeSupers =
+          await adminRbacRepository.countActiveAdminsWithRole(SUPER_ADMIN);
+        if (activeSupers <= 1) {
+          throw new ForbiddenError(
+            'Cannot suspend the last active SUPER_ADMIN',
+            'LAST_SUPER_ADMIN',
+          );
+        }
+      }
+    }
+
+    const before = target.status;
+    const updated = await adminRbacRepository.updateAdminStatus(adminId, normalized);
+    if (normalized === 'SUSPENDED') {
+      // Immediately invalidate existing sessions + cached permissions.
+      await adminRbacRepository.revokeAllAdminSessions(adminId);
+      await this.invalidateAdminPermissions(adminId);
+    }
+
+    await audit(ctx, {
+      action: normalized === 'SUSPENDED' ? 'admin.suspend' : 'admin.activate',
+      targetType: 'admin',
+      targetId: adminId,
+      beforeState: { status: before },
+      afterState: { status: normalized },
+    });
+    return toPublicAdmin(updated);
+  },
+
+  /** SUPER_ADMIN resets an admin's TOTP: clears the secret, disables TOTP, and
+   *  revokes sessions so the admin must log in and re-enroll. */
+  async resetAdminTotp(adminId: string, ctx: AdminContext): Promise<PublicAdmin> {
+    const target = await adminRbacRepository.findAdminById(adminId);
+    if (!target) throw new NotFoundError('Admin not found');
+    const updated = await adminRbacRepository.setAdminTotp(adminId, {
+      secretEnc: Buffer.alloc(0),
+      enabled: false,
+    });
+    await adminRbacRepository.revokeAllAdminSessions(adminId);
+    await audit(ctx, {
+      action: 'admin.totp_reset',
+      targetType: 'admin',
+      targetId: adminId,
+    });
+    return toPublicAdmin(updated);
+  },
+
+  /** Replace an admin's IP allowlist (validated IPv4 / CIDR; empty = no limit). */
+  async setIpAllowlist(
+    adminId: string,
+    ips: string[],
+    ctx: AdminContext,
+  ): Promise<{ id: string; ipAllowlist: string[]; ipRestricted: boolean }> {
+    const target = await adminRbacRepository.findAdminById(adminId);
+    if (!target) throw new NotFoundError('Admin not found');
+    const cleaned = [...new Set(ips.map((s) => s.trim()).filter(Boolean))];
+    for (const entry of cleaned) {
+      if (!isValidIpv4OrCidr(entry)) {
+        throw new BadRequestError(`Invalid IPv4 address or CIDR: ${entry}`);
+      }
+    }
+    // Anti-lockout: setting YOUR OWN allowlist must keep your current IP allowed.
+    if (ctx.adminId === adminId && cleaned.length > 0 && !isIpAllowed(ctx.ip, cleaned)) {
+      throw new BadRequestError(
+        'Your own allowlist must include your current IP address',
+      );
+    }
+    const updated = await adminRbacRepository.setAdminIpAllowlist(adminId, cleaned);
+    await audit(ctx, {
+      action: 'admin.ip_allowlist_update',
+      targetType: 'admin',
+      targetId: adminId,
+      beforeState: { ipAllowlist: target.ipAllowlist },
+      afterState: { ipAllowlist: cleaned },
+    });
+    return {
+      id: updated.id,
+      ipAllowlist: updated.ipAllowlist,
+      ipRestricted: updated.ipAllowlist.length > 0,
+    };
+  },
+
+  /** Self-service: begin TOTP (re-)enrollment. Stores a fresh secret but leaves
+   *  TOTP disabled until confirmed with a valid code. */
+  async enrollTotp(adminId: string, ctx: AdminContext): Promise<TotpEnrollment> {
+    const admin = await adminRbacRepository.findAdminById(adminId);
+    if (!admin) throw new UnauthorizedError('Admin not found');
+    const secret = newTotpSecret();
+    await adminRbacRepository.setAdminTotp(adminId, {
+      secretEnc: Buffer.from(secret, 'utf8'),
+      enabled: false,
+    });
+    await audit({ ...ctx, adminId }, {
+      action: 'admin.totp_enroll_start',
+      targetType: 'admin',
+      targetId: adminId,
+    });
+    return { secret, otpauthUri: otpauthUri(admin.email, secret) };
+  },
+
+  /** Self-service: confirm enrollment by proving a current code, enabling TOTP. */
+  async confirmTotp(
+    adminId: string,
+    code: string,
+    ctx: AdminContext,
+  ): Promise<PublicAdmin> {
+    const admin = await adminRbacRepository.findAdminById(adminId);
+    if (!admin) throw new UnauthorizedError('Admin not found');
+    if (!verifyTotp(Buffer.from(admin.totpSecretEnc), code)) {
+      throw new UnauthorizedError('Invalid TOTP code', 'INVALID_TOTP');
+    }
+    const updated = await adminRbacRepository.setAdminTotp(adminId, {
+      secretEnc: Buffer.from(admin.totpSecretEnc),
+      enabled: true,
+    });
+    await audit({ ...ctx, adminId }, {
+      action: 'admin.totp_enabled',
+      targetType: 'admin',
+      targetId: adminId,
+    });
+    return toPublicAdmin(updated);
   },
 };
 

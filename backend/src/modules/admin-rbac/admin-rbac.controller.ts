@@ -98,6 +98,61 @@ export const adminRbacController = {
     sendSuccess(res, { removed: true });
   },
 
+  // --- Admin management (Stage 3.4B) ---------------------------------------
+
+  async listAdmins(_req: Request, res: Response): Promise<void> {
+    const items = await adminRbacService.listAdmins();
+    sendSuccess(res, { items });
+  },
+
+  async createAdmin(req: Request, res: Response): Promise<void> {
+    const created = await adminRbacService.createAdmin(
+      { email: req.body.email, roleId: req.body.roleId, status: req.body.status },
+      ctx(req),
+    );
+    // initialPassword is returned ONCE here and never logged.
+    sendSuccess(res, created, 201);
+  },
+
+  async setAdminStatus(req: Request, res: Response): Promise<void> {
+    const admin = await adminRbacService.updateAdminStatus(
+      req.params.adminId,
+      req.body.status,
+      ctx(req),
+    );
+    sendSuccess(res, { admin });
+  },
+
+  async resetAdminTotp(req: Request, res: Response): Promise<void> {
+    const admin = await adminRbacService.resetAdminTotp(req.params.adminId, ctx(req));
+    sendSuccess(res, { admin });
+  },
+
+  async setIpAllowlist(req: Request, res: Response): Promise<void> {
+    const result = await adminRbacService.setIpAllowlist(
+      req.params.adminId,
+      req.body.ips,
+      ctx(req),
+    );
+    sendSuccess(res, result);
+  },
+
+  async enrollTotp(req: Request, res: Response): Promise<void> {
+    if (!req.admin) throw new UnauthorizedError();
+    const enrollment = await adminRbacService.enrollTotp(req.admin.id, ctx(req));
+    sendSuccess(res, enrollment);
+  },
+
+  async confirmTotp(req: Request, res: Response): Promise<void> {
+    if (!req.admin) throw new UnauthorizedError();
+    const admin = await adminRbacService.confirmTotp(
+      req.admin.id,
+      req.body.code,
+      ctx(req),
+    );
+    sendSuccess(res, { admin });
+  },
+
   async grantPermissionToRole(req: Request, res: Response): Promise<void> {
     await adminRbacService.grantPermissionToRole(
       req.params.roleId,

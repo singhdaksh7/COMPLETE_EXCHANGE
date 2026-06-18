@@ -1,4 +1,4 @@
-import type { Admin, Permission, Role } from '@prisma/client';
+import type { Admin, AdminRole, Permission, Role } from '@prisma/client';
 
 export interface AdminContext {
   adminId?: string;
@@ -46,6 +46,47 @@ export interface PermissionDto {
   id: string;
   code: string;
   description: string | null;
+}
+
+/** Admin row for the management list UI. */
+export interface AdminListItem {
+  id: string;
+  email: string;
+  status: string;
+  totpEnabled: boolean;
+  roles: string[];
+  ipAllowlist: string[];
+  ipRestricted: boolean;
+  createdAt: Date;
+}
+
+/** Result of creating a sub-admin: the one-time initial password is returned
+ *  in the response body ONCE and is never logged. */
+export interface CreatedAdmin {
+  admin: PublicAdmin;
+  role: string;
+  initialPassword: string;
+}
+
+/** Secret material for a self TOTP (re-)enrollment. */
+export interface TotpEnrollment {
+  secret: string; // base32 secret to enter into the authenticator app
+  otpauthUri: string; // otpauth://… URI for QR rendering
+}
+
+export function toAdminListItem(
+  admin: Admin & { roles: (AdminRole & { role: Role })[] },
+): AdminListItem {
+  return {
+    id: admin.id,
+    email: admin.email,
+    status: admin.status,
+    totpEnabled: admin.totpEnabled,
+    roles: admin.roles.map((r) => r.role.name),
+    ipAllowlist: admin.ipAllowlist,
+    ipRestricted: admin.ipAllowlist.length > 0,
+    createdAt: admin.createdAt,
+  };
 }
 
 export function toPublicAdmin(admin: Admin): PublicAdmin {

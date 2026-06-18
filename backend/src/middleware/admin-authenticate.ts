@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { verifyAdminAccessToken } from '../lib/jwt';
-import { UnauthorizedError } from '../lib/errors';
+import { ForbiddenError, UnauthorizedError } from '../lib/errors';
+import { isIpAllowed } from '../lib/ip-allowlist';
 import { adminRbacService } from '../modules/admin-rbac/admin-rbac.service';
 
 export async function adminAuthenticate(
@@ -19,6 +20,14 @@ export async function adminAuthenticate(
       payload.sub,
       payload.sid,
     );
+    // Per-admin IP allowlist: enforced on EVERY request, not just login, so a
+    // token issued earlier cannot be replayed from a now-disallowed IP.
+    if (!isIpAllowed(req.ip, admin.ipAllowlist)) {
+      throw new ForbiddenError(
+        'Admin access is not permitted from this IP address',
+        'IP_NOT_ALLOWED',
+      );
+    }
     req.admin = {
       id: admin.id,
       sessionId: payload.sid,

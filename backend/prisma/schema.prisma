@@ -1203,6 +1203,9 @@ model Admin {
   totpSecretEnc Bytes    @map("totp_secret_enc")
   totpEnabled   Boolean  @default(true) @map("totp_enabled")
   status        String   @default("ACTIVE")
+  // Per-admin IPv4 allowlist (exact IPs or CIDRs). Empty = no IP restriction.
+  // Enforced at login and on every admin API request.
+  ipAllowlist   String[] @default([]) @map("ip_allowlist")
   createdAt     DateTime @default(now()) @map("created_at")
 
   roles                AdminRole[]

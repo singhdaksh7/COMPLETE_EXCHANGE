@@ -56,4 +56,34 @@ export const rolePermissionParamSchema = z
   .strict();
 export const adminRoleParamSchema = z.object({ adminId: uuid, roleId: uuid }).strict();
 
+// --- Admin management (Stage 3.4B) -----------------------------------------
+
+export const createAdminSchema = z
+  .object({
+    email: z.string().email().toLowerCase().trim(),
+    roleId: uuid,
+    status: z.enum(['ACTIVE', 'SUSPENDED']).optional(),
+  })
+  .strict();
+
+export const adminStatusSchema = z
+  .object({ status: z.enum(['ACTIVE', 'SUSPENDED']) })
+  .strict();
+
+export const ipAllowlistSchema = z
+  .object({
+    // Each entry is an IPv4 address or IPv4 CIDR; deeper validation in the
+    // service rejects malformed entries. Cap the list to a sane size.
+    ips: z.array(z.string().trim().min(1).max(43)).max(50),
+  })
+  .strict();
+
+export const totpConfirmSchema = z
+  .object({ code: z.string().regex(/^[0-9]{6}$/, 'Invalid TOTP code') })
+  .strict();
+
 export type AdminLoginDto = z.infer<typeof adminLoginSchema>;
+export type CreateAdminDto = z.infer<typeof createAdminSchema>;
+export type AdminStatusDto = z.infer<typeof adminStatusSchema>;
+export type IpAllowlistDto = z.infer<typeof ipAllowlistSchema>;
+export type TotpConfirmDto = z.infer<typeof totpConfirmSchema>;

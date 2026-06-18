@@ -2,13 +2,17 @@ import { ApiError, type Envelope } from './api';
 import { tokenStore } from './auth';
 import type {
   AdminKycQueue,
+  AdminListItem,
   AdminLoginData,
   AdminMeData,
+  AdminRoleOption,
   Conversion,
+  CreatedAdmin,
   CryptoWithdrawal,
   InrDeposit,
   KycProfile,
   Page,
+  PublicAdmin,
   ScannerHealth,
 } from './types';
 
@@ -40,7 +44,7 @@ const ADMIN_API_BASE =
  */
 async function adminApiFetch<T>(
   path: string,
-  method: 'GET' | 'POST',
+  method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
   opts: { body?: unknown; auth?: boolean } = {},
 ): Promise<Envelope<T>> {
   const { body, auth = true } = opts;
@@ -149,4 +153,41 @@ export const adminApi = {
 
   // ---- scanner health ----
   scannerHealth: () => adminApiFetch<ScannerHealth>('/scanner/health', 'GET'),
+
+  // ---- admin management (Stage 3.4B) ----
+  listAdmins: () =>
+    adminApiFetch<{ items: AdminListItem[] }>('/admins', 'GET'),
+
+  listRoles: () =>
+    adminApiFetch<{ items: AdminRoleOption[] }>('/roles', 'GET'),
+
+  createAdmin: (body: { email: string; roleId: string; status?: string }) =>
+    adminApiFetch<CreatedAdmin>('/admins', 'POST', { body }),
+
+  assignRole: (adminId: string, roleId: string) =>
+    adminApiFetch<{ assigned: boolean }>(
+      `/admins/${adminId}/roles/${roleId}`,
+      'POST',
+    ),
+
+  removeRole: (adminId: string, roleId: string) =>
+    adminApiFetch<{ removed: boolean }>(
+      `/admins/${adminId}/roles/${roleId}`,
+      'DELETE',
+    ),
+
+  setAdminStatus: (adminId: string, status: 'ACTIVE' | 'SUSPENDED') =>
+    adminApiFetch<{ admin: PublicAdmin }>(`/admins/${adminId}/status`, 'PATCH', {
+      body: { status },
+    }),
+
+  resetAdminTotp: (adminId: string) =>
+    adminApiFetch<{ admin: PublicAdmin }>(`/admins/${adminId}/totp/reset`, 'POST'),
+
+  setIpAllowlist: (adminId: string, ips: string[]) =>
+    adminApiFetch<{ id: string; ipAllowlist: string[]; ipRestricted: boolean }>(
+      `/admins/${adminId}/ip-allowlist`,
+      'PUT',
+      { body: { ips } },
+    ),
 };

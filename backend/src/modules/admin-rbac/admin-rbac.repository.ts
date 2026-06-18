@@ -17,6 +17,58 @@ export const adminRbacRepository = {
     });
   },
 
+  // --- Admin management (Stage 3.4B) ---------------------------------------
+
+  /** List every admin with their role names, ordered newest first. */
+  listAdminsWithRoles() {
+    return prisma.admin.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: { roles: { include: { role: true } } },
+    });
+  },
+
+  createAdmin(data: {
+    email: string;
+    passwordHash: string;
+    status: string;
+    ipAllowlist?: string[];
+  }) {
+    return prisma.admin.create({
+      data: {
+        email: data.email,
+        passwordHash: data.passwordHash,
+        // Sub-admins start with TOTP disabled so they can log in and self-enroll.
+        totpSecretEnc: Buffer.alloc(0),
+        totpEnabled: false,
+        status: data.status,
+        ipAllowlist: data.ipAllowlist ?? [],
+      },
+    });
+  },
+
+  updateAdminStatus(id: string, status: string) {
+    return prisma.admin.update({ where: { id }, data: { status } });
+  },
+
+  setAdminTotp(id: string, data: { secretEnc: Buffer; enabled: boolean }) {
+    return prisma.admin.update({
+      where: { id },
+      data: { totpSecretEnc: data.secretEnc, totpEnabled: data.enabled },
+    });
+  },
+
+  setAdminIpAllowlist(id: string, ipAllowlist: string[]) {
+    return prisma.admin.update({ where: { id }, data: { ipAllowlist } });
+  },
+
+  /** Revoke every live session for an admin (used on suspend / TOTP reset). */
+  revokeAllAdminSessions(adminId: string) {
+    return prisma.adminSession.updateMany({
+      where: { adminId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+  },
+
   createAdminSession(data: {
     id: string;
     adminId: string;

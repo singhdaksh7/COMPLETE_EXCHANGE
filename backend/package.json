@@ -28,6 +28,7 @@
     "admin:reset-local": "tsx scripts/reset-local-admin.ts",
     "admin:reset-staging": "node dist/scripts/reset-staging-admin.js",
     "kyc:approve-staging": "node dist/scripts/approve-staging-kyc.js",
+    "rbac:ensure-staging": "node dist/scripts/ensure-admin-rbac.js",
     "test": "vitest run",
     "test:watch": "vitest"
   },
