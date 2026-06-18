@@ -87,6 +87,62 @@ services:
     ports:
       - "4000:4000"
 
+  # Admin API — a SEPARATE process from the public API (ARCHITECTURE.md §4 hard
+  # rule, §12). Same image, DIFFERENT entrypoint: it runs dist/admin-server.js
+  # and serves ONLY the /admin/v1 surface (admin auth, RBAC, TOTP, INR review).
+  #
+  # IMPORTANT (staging/prod): the admin deployment MUST start this exact command
+  # — `node dist/admin-server.js`. The default image CMD is `node dist/server.js`
+  # (the public API, which serves only /api/v1), so an admin service that does
+  # not override the command runs the public app and every /admin/v1/* request
+  # 404s with "Route not found: POST /admin/v1/auth/login". CloudFront must route
+  # /admin/v1/* to THIS origin.
+  admin:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cex_admin
+    restart: unless-stopped
+    command: ["node", "dist/admin-server.js"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      # admin-server.js listens on ADMIN_PORT; the admin app mounts its router at
+      # ADMIN_API_PREFIX, so the full login route is /admin/v1/auth/login.
+      ADMIN_PORT: 4001
+      ADMIN_API_PREFIX: /admin/v1
+      CORS_ORIGINS: http://localhost:3000
+      BODY_LIMIT: 100kb
+      LOG_LEVEL: info
+      LOG_PRETTY: "false"
+      DATABASE_URL: postgresql://cex:cex_password@postgres:5432/cex?schema=public
+      REDIS_URL: redis://redis:6379
+      # Admin JWTs are signed with the SAME secrets as the public API (distinct
+      # audience/purpose), so the admin process needs these too.
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?JWT_ACCESS_SECRET must be set}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET must be set}
+      JWT_ACCESS_TTL: 15m
+      JWT_REFRESH_TTL: 30d
+      RATE_LIMIT_WINDOW_MS: 60000
+      RATE_LIMIT_MAX: 120
+      AUTH_RATE_LIMIT_MAX: 10
+      LOGIN_LOCKOUT_MAX_ATTEMPTS: 5
+      LOGIN_LOCKOUT_WINDOW_MS: 900000
+    ports:
+      - "4001:4001"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4001/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
 volumes:
   postgres_data:
   redis_data:
