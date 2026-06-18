@@ -24,6 +24,7 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed-candles": "tsx scripts/seed-candles.ts",
     "admin:reset-local": "tsx scripts/reset-local-admin.ts",
     "test": "vitest run",
     "test:watch": "vitest"

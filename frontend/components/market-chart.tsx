@@ -101,22 +101,34 @@ export function MarketChart({ symbol, live }: { symbol: string; live: boolean })
       )}
 
       {/* Chart container */}
-      <div className="relative z-10 w-full min-h-[300px]">
-        {candlesQ.isLoading && (
-          <div className="absolute inset-0 bg-noir/20 backdrop-blur-[1px] flex items-center justify-center z-20 font-sans text-xs text-white/40">
-            <div className="flex flex-col items-center gap-2">
-              <span className="animate-spin text-lg">⏳</span>
-              <span>Loading market chart...</span>
-            </div>
+      <div className="relative z-10 w-full h-[300px] bg-[#0B0B0E] border border-white/5 rounded-xl overflow-hidden">
+        {candlesQ.isLoading ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center font-sans text-xs text-white/40">
+            <span className="animate-spin text-lg mb-2">⏳</span>
+            <span>Loading market chart...</span>
           </div>
-        )}
-
-        <CandlestickChart candles={candles} />
-
-        {candlesQ.isSuccess && candles.length === 0 && (
-          <p className="absolute inset-0 flex items-center justify-center text-xs text-white/30 font-sans bg-noir/5">
-            No trades recorded — chart will populate as orders execute.
-          </p>
+        ) : candlesQ.isError ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center font-sans p-6 text-center">
+            <svg className="w-16 h-16 text-red-500/20 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <h4 className="text-sm font-bold text-white mb-1 tracking-tight">Failed to load chart</h4>
+            <p className="text-xs text-white/40 max-w-xs leading-normal">
+              {errorMessage(candlesQ.error) || 'Please check your connection.'}
+            </p>
+          </div>
+        ) : candles.length === 0 ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center font-sans p-6 text-center">
+            <svg className="w-16 h-16 text-gold/15 mb-4 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.2} d="M7 12l3-3 3 3 4-4M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            </svg>
+            <h4 className="text-sm font-bold text-white mb-1 tracking-tight">No candle data yet</h4>
+            <p className="text-xs text-white/40 max-w-xs leading-normal">
+              Candles will appear after market trades are created.
+            </p>
+          </div>
+        ) : (
+          <CandlestickChart candles={candles} />
         )}
       </div>
     </div>
