@@ -12,6 +12,29 @@ import {
 import { prisma } from '../../lib/prisma';
 
 const NON_COUNTING_STATUSES: WithdrawalStatus[] = ['REJECTED', 'FAILED', 'CANCELLED'];
+const ACTIVE_QUEUE_STATUSES: WithdrawalStatus[] = [
+  'REQUESTED',
+  'RISK_CHECK',
+  'PENDING_APPROVAL',
+  'APPROVED',
+  'QUEUED',
+];
+
+export type AdminWithdrawalRow = Prisma.CryptoWithdrawalGetPayload<{
+  include: {
+    user: {
+      select: {
+        email: true;
+        status: true;
+        kycStatus: true;
+        kycTier: true;
+        withdrawalsBlocked: true;
+        riskLevel: true;
+        riskNote: true;
+      };
+    };
+  };
+}>;
 
 /**
  * Repository layer: the ONLY place that talks to Prisma for crypto withdrawals
@@ -32,6 +55,7 @@ export const withdrawalRepository = {
         kycStatus: true,
         kycTier: true,
         withdrawalsBlocked: true,
+        riskLevel: true,
       },
     });
   },
@@ -108,6 +132,7 @@ export const withdrawalRepository = {
     amount: Prisma.Decimal;
     fee: Prisma.Decimal;
     netAmount: Prisma.Decimal;
+    riskFlags?: Prisma.InputJsonValue;
   }): Promise<CryptoWithdrawal> {
     return prisma.cryptoWithdrawal.create({
       data: {
@@ -118,6 +143,7 @@ export const withdrawalRepository = {
         amount: data.amount,
         fee: data.fee,
         netAmount: data.netAmount,
+        riskFlags: data.riskFlags,
         status: 'REQUESTED',
       },
     });
@@ -164,10 +190,30 @@ export const withdrawalRepository = {
   },
 
   // ---- status transitions (guarded for idempotency) ----
-  approve(id: string, adminId: string): Promise<Prisma.BatchPayload> {
+  firstApprove(id: string, adminId: string): Promise<Prisma.BatchPayload> {
     return prisma.cryptoWithdrawal.updateMany({
-      where: { id, status: 'PENDING_APPROVAL' },
+      where: { id, status: 'PENDING_APPROVAL', approvedBy: null },
+      data: { approvedBy: adminId },
+    });
+  },
+
+  approveSmall(id: string, adminId: string): Promise<Prisma.BatchPayload> {
+    return prisma.cryptoWithdrawal.updateMany({
+      where: { id, status: 'PENDING_APPROVAL', approvedBy: null },
       data: { status: 'APPROVED', approvedBy: adminId },
+    });
+  },
+
+  secondApprove(id: string, firstAdminId: string, secondAdminId: string): Promise<Prisma.BatchPayload> {
+    return prisma.cryptoWithdrawal.updateMany({
+      where: {
+        id,
+        status: 'PENDING_APPROVAL',
+        approvedBy: firstAdminId,
+        approvedBy2: null,
+        NOT: { approvedBy: secondAdminId },
+      },
+      data: { status: 'APPROVED', approvedBy2: secondAdminId },
     });
   },
 
@@ -256,24 +302,72 @@ export const withdrawalRepository = {
 
   adminListQueue(input: {
     status?: WithdrawalStatus;
+    asset?: string;
     userId?: string;
+    email?: string;
+    fromDate?: Date;
+    toDate?: Date;
     cursor?: string;
     limit: number;
-  }): Promise<CryptoWithdrawal[]> {
+  }): Promise<AdminWithdrawalRow[]> {
     const where: Prisma.CryptoWithdrawalWhereInput = input.status
       ? { status: input.status }
-      : {
-          status: {
-            in: ['REQUESTED', 'RISK_CHECK', 'PENDING_APPROVAL', 'APPROVED', 'QUEUED'],
-          },
-        };
+      : { status: { in: ACTIVE_QUEUE_STATUSES } };
+    const requestedAt: Prisma.DateTimeFilter = {};
+    if (input.fromDate) requestedAt.gte = input.fromDate;
+    if (input.toDate) requestedAt.lte = input.toDate;
+    if (Object.keys(requestedAt).length > 0) where.requestedAt = requestedAt;
+    if (input.asset) where.asset = input.asset;
     if (input.userId) where.userId = input.userId;
+    if (input.email) where.user = { email: { contains: input.email } };
     if (input.cursor) where.id = { lt: input.cursor };
     return prisma.cryptoWithdrawal.findMany({
       where,
       orderBy: { id: 'desc' },
       take: input.limit + 1,
+      include: {
+        user: {
+          select: {
+            email: true,
+            status: true,
+            kycStatus: true,
+            kycTier: true,
+            withdrawalsBlocked: true,
+            riskLevel: true,
+            riskNote: true,
+          },
+        },
+      },
     });
+  },
+
+  withdrawalStats() {
+    return Promise.all([
+      prisma.cryptoWithdrawal.aggregate({
+        where: { status: { in: ACTIVE_QUEUE_STATUSES } },
+        _sum: { amount: true },
+      }),
+      prisma.cryptoWithdrawal.aggregate({
+        where: { status: 'COMPLETED' },
+        _sum: { amount: true },
+      }),
+      prisma.cryptoWithdrawal.count({
+        where: { status: { in: ['FAILED', 'REJECTED'] } },
+      }),
+      prisma.cryptoWithdrawal.groupBy({
+        by: ['asset'],
+        where: { status: { in: ACTIVE_QUEUE_STATUSES } },
+        _sum: { amount: true },
+      }),
+    ]).then(([pending, completed, failedRejected, byAsset]) => ({
+      pendingTotal: pending._sum.amount ?? new Prisma.Decimal(0),
+      completedTotal: completed._sum.amount ?? new Prisma.Decimal(0),
+      failedRejectedCount: failedRejected,
+      pendingByAsset: byAsset.map((row) => ({
+        asset: row.asset,
+        amount: row._sum.amount ?? new Prisma.Decimal(0),
+      })),
+    }));
   },
 
   // ------------------------------------------------------------------

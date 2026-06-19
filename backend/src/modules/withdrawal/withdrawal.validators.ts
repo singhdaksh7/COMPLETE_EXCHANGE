@@ -69,7 +69,11 @@ export const withdrawalQuerySchema = z
 export const adminQueueQuerySchema = z
   .object({
     status: withdrawalStatus.optional(),
+    asset: z.string().trim().min(1).max(20).transform((v) => v.toUpperCase()).optional(),
     userId: z.string().uuid().optional(),
+    email: z.string().trim().min(1).max(254).optional(),
+    fromDate: z.coerce.date().optional(),
+    toDate: z.coerce.date().optional(),
     cursor: z.string().optional(),
     limit: z.coerce.number().int().min(1).max(100).default(50),
   })

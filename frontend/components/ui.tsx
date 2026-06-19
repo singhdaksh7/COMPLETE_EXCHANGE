@@ -129,6 +129,7 @@ export function StatusBadge({ status }: { status: string }) {
     CONFIRMED: green,
     INITIATED: yellow,
     PENDING_APPROVAL: yellow,
+    PROCESSING: blue,
     CONFIRMING: yellow,
     DETECTED: blue,
     BROADCAST: blue,
@@ -141,6 +142,7 @@ export function StatusBadge({ status }: { status: string }) {
     FAILED: red,
     ORPHANED: red,
     CANCELLED: gray,
+    CANCELED: gray,
     EXPIRED: gray,
     REVERSED: gray,
   };

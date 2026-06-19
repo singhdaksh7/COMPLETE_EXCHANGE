@@ -15,7 +15,9 @@ vi.mock('../../src/modules/withdrawal/withdrawal.repository', () => ({
     findById: vi.fn(),
     setHold: vi.fn(),
     markRequestFailed: vi.fn(),
-    approve: vi.fn(),
+    firstApprove: vi.fn(),
+    approveSmall: vi.fn(),
+    secondApprove: vi.fn(),
     reject: vi.fn(),
     claimForBroadcast: vi.fn(),
     pickActiveHotWallet: vi.fn(),
@@ -75,7 +77,7 @@ function withdrawal(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   repo.getWithdrawalFreeze.mockResolvedValue({ key: 'withdrawals_frozen', value: { enabled: false } } as never);
-  repo.findUserKyc.mockResolvedValue({ id: USER_ID, status: 'ACTIVE', kycStatus: 'APPROVED', kycTier: 1, withdrawalsBlocked: false } as never);
+  repo.findUserKyc.mockResolvedValue({ id: USER_ID, status: 'ACTIVE', kycStatus: 'APPROVED', kycTier: 1, withdrawalsBlocked: false, riskLevel: 'LOW' } as never);
   repo.getSupportedToken.mockResolvedValue({ asset: 'USDT', chain: 'TRON', contractAddr: 'TUSDT', decimals: 6, minConfirmations: 20, isActive: true } as never);
   repo.findActiveAddress.mockResolvedValue({ whitelistedAt: new Date(Date.now() - 1000) } as never);
   repo.getTierLimit.mockResolvedValue(null);
@@ -91,14 +93,14 @@ describe('requestWithdrawal', () => {
   });
 
   it('requires approved KYC', async () => {
-    repo.findUserKyc.mockResolvedValue({ id: USER_ID, status: 'ACTIVE', kycStatus: 'PENDING', kycTier: 0, withdrawalsBlocked: false } as never);
+    repo.findUserKyc.mockResolvedValue({ id: USER_ID, status: 'ACTIVE', kycStatus: 'PENDING', kycTier: 0, withdrawalsBlocked: false, riskLevel: 'LOW' } as never);
     await expect(
       withdrawalService.requestWithdrawal(USER_ID, { toAddress: TO, amount: '10' }),
     ).rejects.toMatchObject({ errorCode: 'KYC_REQUIRED' });
   });
 
   it('blocks user-level withdrawal requests when risk-blocked', async () => {
-    repo.findUserKyc.mockResolvedValue({ id: USER_ID, status: 'ACTIVE', kycStatus: 'APPROVED', kycTier: 1, withdrawalsBlocked: true } as never);
+    repo.findUserKyc.mockResolvedValue({ id: USER_ID, status: 'ACTIVE', kycStatus: 'APPROVED', kycTier: 1, withdrawalsBlocked: true, riskLevel: 'LOW' } as never);
     await expect(
       withdrawalService.requestWithdrawal(USER_ID, { toAddress: TO, amount: '10' }),
     ).rejects.toMatchObject({ errorCode: 'WITHDRAWALS_BLOCKED' });
@@ -112,10 +114,10 @@ describe('requestWithdrawal', () => {
     ).rejects.toMatchObject({ errorCode: 'ADDRESS_NOT_ALLOWLISTED' });
   });
 
-  it('rejects an amount that does not exceed the fee', async () => {
+  it('rejects an amount below the configured minimum', async () => {
     await expect(
       withdrawalService.requestWithdrawal(USER_ID, { toAddress: TO, amount: '1' }),
-    ).rejects.toMatchObject({ errorCode: 'AMOUNT_TOO_SMALL' });
+    ).rejects.toMatchObject({ errorCode: 'MINIMUM_AMOUNT_NOT_MET' });
   });
 
   it('places a USER_AVAILABLE → USER_LOCKED hold on success', async () => {
@@ -155,11 +157,63 @@ describe('admin approve/reject', () => {
     repo.findById
       .mockResolvedValueOnce(withdrawal({ status: 'PENDING_APPROVAL', holdTxnId: 'h' }))
       .mockResolvedValueOnce(withdrawal({ status: 'APPROVED', holdTxnId: 'h' }));
-    repo.approve.mockResolvedValue({ count: 1 });
+    repo.approveSmall.mockResolvedValue({ count: 1 });
 
     const dto = await withdrawalService.approve('wd-1', { actorId: 'admin-1' });
     expect(dto.status).toBe('APPROVED');
-    expect(repo.approve).toHaveBeenCalledWith('wd-1', 'admin-1');
+    expect(repo.approveSmall).toHaveBeenCalledWith('wd-1', 'admin-1');
+  });
+
+  it('requires a second admin for large withdrawals', async () => {
+    repo.findById
+      .mockResolvedValueOnce(withdrawal({ status: 'PENDING_APPROVAL', amount: new Prisma.Decimal('1000'), holdTxnId: 'h' }))
+      .mockResolvedValueOnce(withdrawal({ status: 'PENDING_APPROVAL', amount: new Prisma.Decimal('1000'), approvedBy: 'admin-1', holdTxnId: 'h' }));
+    repo.firstApprove.mockResolvedValue({ count: 1 });
+
+    const dto = await withdrawalService.approve('wd-1', { actorId: 'admin-1' });
+    expect(dto.status).toBe('PENDING_APPROVAL');
+    expect(repo.firstApprove).toHaveBeenCalledWith('wd-1', 'admin-1');
+  });
+
+  it('blocks the same admin from second approval', async () => {
+    repo.findById.mockResolvedValueOnce(
+      withdrawal({
+        status: 'PENDING_APPROVAL',
+        amount: new Prisma.Decimal('1000'),
+        approvedBy: 'admin-1',
+        holdTxnId: 'h',
+      }),
+    );
+
+    await expect(
+      withdrawalService.approve('wd-1', { actorId: 'admin-1' }),
+    ).rejects.toMatchObject({ errorCode: 'DUAL_CONTROL_SAME_APPROVER' });
+  });
+
+  it('allows a different admin to complete second approval', async () => {
+    repo.findById
+      .mockResolvedValueOnce(
+        withdrawal({
+          status: 'PENDING_APPROVAL',
+          amount: new Prisma.Decimal('1000'),
+          approvedBy: 'admin-1',
+          holdTxnId: 'h',
+        }),
+      )
+      .mockResolvedValueOnce(
+        withdrawal({
+          status: 'APPROVED',
+          amount: new Prisma.Decimal('1000'),
+          approvedBy: 'admin-1',
+          approvedBy2: 'admin-2',
+          holdTxnId: 'h',
+        }),
+      );
+    repo.secondApprove.mockResolvedValue({ count: 1 });
+
+    const dto = await withdrawalService.approve('wd-1', { actorId: 'admin-2' });
+    expect(dto.status).toBe('APPROVED');
+    expect(repo.secondApprove).toHaveBeenCalledWith('wd-1', 'admin-1', 'admin-2');
   });
 
   it('reject releases the hold (USER_LOCKED → USER_AVAILABLE)', async () => {

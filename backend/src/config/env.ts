@@ -254,6 +254,14 @@ export const envSchema = z
     .string()
     .regex(/^\d+(\.\d{1,6})?$/)
     .default('1'),
+  WITHDRAWAL_MIN_USDT: z
+    .string()
+    .regex(/^\d+(\.\d{1,6})?$/)
+    .default('10'),
+  WITHDRAWAL_DUAL_APPROVAL_THRESHOLD: z
+    .string()
+    .regex(/^\d+(\.\d{1,6})?$/)
+    .default('1000'),
   // Cooling-off before a newly-added withdrawal address can be used (ms).
   // Default 0 makes addresses usable immediately (dev/test); production sets >0.
   // RECOMMENDED for staging/production: 86400000 (24h) to match the documented

@@ -117,6 +117,8 @@ export const config = {
   withdrawal: {
     signer: env.WITHDRAWAL_SIGNER,
     feeUsdt: env.WITHDRAWAL_FEE_USDT,
+    minUsdt: env.WITHDRAWAL_MIN_USDT,
+    dualApprovalThreshold: env.WITHDRAWAL_DUAL_APPROVAL_THRESHOLD,
     addressCooldownMs: env.WITHDRAWAL_ADDRESS_COOLDOWN_MS,
   },
 

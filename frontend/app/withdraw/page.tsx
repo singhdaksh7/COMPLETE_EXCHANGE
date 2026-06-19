@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { userApi } from '@/lib/user-api';
-import { errorMessage, isKycRequired } from '@/lib/api';
+import { errorMessage, isKycRequired, withdrawalErrorMessage } from '@/lib/api';
 import { useGuard } from '@/components/guards';
 import { UserShell } from '@/components/user-shell';
 import { StatusBadge } from '@/components/ui';
@@ -11,6 +11,8 @@ import { CopyButton, ExplorerLink, KycRequiredNotice } from '@/components/wallet
 import type { CryptoWithdrawal } from '@/lib/types';
 
 type TabMode = 'WITHDRAW' | 'WHITELIST' | 'HISTORY';
+const WITHDRAWAL_MIN_USDT = 10;
+const WITHDRAWAL_FEE_USDT = 1;
 
 export default function WithdrawPage() {
   const ready = useGuard('user');
@@ -43,6 +45,12 @@ export default function WithdrawPage() {
     enabled: ready,
   });
 
+  const wallet = useQuery({
+    queryKey: ['wallet-overview'],
+    queryFn: () => userApi.walletOverview(),
+    enabled: ready,
+  });
+
   const addAddr = useMutation({
     mutationFn: () =>
       userApi.addWithdrawalAddress({
@@ -72,6 +80,8 @@ export default function WithdrawPage() {
 
   const allow = addresses.data?.data.items ?? [];
   const wdHistory = history.data?.data.items ?? [];
+  const usdtWallet = wallet.data?.data.balances.find((b) => b.asset.toUpperCase() === 'USDT');
+  const usdtAvailable = usdtWallet?.available ?? '0';
 
   // Filter Whitelist Addresses
   const filteredAddresses = allow.filter((a) => {
@@ -134,14 +144,14 @@ export default function WithdrawPage() {
                   <KycRequiredNotice action="withdraw" />
                 ) : (
                   <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-4 text-xs text-red-300">
-                    {errorMessage(request.error)}
+                    {withdrawalErrorMessage(request.error)}
                   </div>
                 )
               )}
 
               {request.isSuccess && (
                 <div className="rounded-lg bg-up/10 border border-up/20 p-4 text-xs text-up font-semibold">
-                  USDT Disbursed Successfully! Net amount: {request.data?.data.netAmount} USDT
+                  Withdrawal request submitted. Net amount after fee: {request.data?.data.netAmount} USDT
                 </div>
               )}
 
@@ -152,8 +162,7 @@ export default function WithdrawPage() {
                   <div className="flex flex-col gap-1.5">
                     <label className="text-[10px] font-bold text-white/45 uppercase tracking-wider">Select Coin</label>
                     <select className="w-full rounded-lg border border-white/10 bg-noir px-3 py-3 text-xs text-white focus:outline-none">
-                      <option>USDT · Tether USD (Balance: 2,856.24 USDT)</option>
-                      <option>INR · Indian Rupee (Balance: ₹45,230.75)</option>
+                      <option>USDT · Tether USD (Available: {usdtAvailable} USDT)</option>
                     </select>
                   </div>
 
@@ -206,7 +215,7 @@ export default function WithdrawPage() {
                       />
                       <button
                         type="button"
-                        onClick={() => setAmount('2856.24')}
+                        onClick={() => setAmount(usdtAvailable)}
                         className="absolute right-3.5 top-3 text-[10px] font-extrabold text-gold hover:underline"
                       >
                         MAX
@@ -217,16 +226,16 @@ export default function WithdrawPage() {
                     <div className="rounded-xl border border-white/5 bg-noir-2/80 p-4 space-y-2 text-xs">
                       <div className="flex justify-between border-b border-white/5 pb-2">
                         <span className="text-white/45">Minimum Withdrawal</span>
-                        <span className="font-bold text-white font-mono">10.00 USDT</span>
+                        <span className="font-bold text-white font-mono">{WITHDRAWAL_MIN_USDT.toFixed(2)} USDT</span>
                       </div>
                       <div className="flex justify-between border-b border-white/5 pb-2">
                         <span className="text-white/45">Withdrawal Fee</span>
-                        <span className="font-bold text-white font-mono">1.00 USDT</span>
+                        <span className="font-bold text-white font-mono">{WITHDRAWAL_FEE_USDT.toFixed(2)} USDT</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-white/45">You Will Receive</span>
                         <span className="font-bold text-gold font-mono">
-                          {Math.max(0, Number(amount) - 1).toFixed(2)} USDT (≈ ₹{(Math.max(0, Number(amount) - 1) * 83.20).toFixed(2)})
+                          {Math.max(0, Number(amount) - WITHDRAWAL_FEE_USDT).toFixed(2)} USDT
                         </span>
                       </div>
                     </div>
@@ -235,7 +244,7 @@ export default function WithdrawPage() {
                   <button
                     type="button"
                     onClick={() => setWithdrawStep(2)}
-                    disabled={!toAddress || Number(amount) < 10}
+                    disabled={!toAddress || Number(amount) < WITHDRAWAL_MIN_USDT}
                     className="w-full rounded-lg bg-gradient-to-r from-gold to-gold-glow py-3.5 text-xs font-bold text-noir shadow-gold-glow hover:brightness-105 transition uppercase tracking-wider disabled:opacity-50"
                   >
                     Proceed to Verification
@@ -264,10 +273,10 @@ export default function WithdrawPage() {
                   </div>
 
                   {/* Anti-phishing check */}
-                  <div className="rounded-xl border border-white/5 bg-noir-2/80 p-4 text-[10px] text-white/40 space-y-1">
-                    <span className="font-bold text-white block uppercase">🛡️ Anti-Phishing Safe Verification</span>
-                    <p className="leading-normal">Verify security status check parameters before signing disbursement hashes.</p>
-                  </div>
+                <div className="rounded-xl border border-white/5 bg-noir-2/80 p-4 text-[10px] text-white/40 space-y-1">
+                  <span className="font-bold text-white block uppercase">🛡️ Anti-Phishing Safe Verification</span>
+                    <p className="leading-normal">Verify the destination address and amount before submitting this withdrawal request.</p>
+                </div>
 
                   <div className="flex gap-3">
                     <button
@@ -309,11 +318,11 @@ export default function WithdrawPage() {
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between border-b border-white/5 pb-2">
                   <span className="text-white/45">Daily Limit</span>
-                  <span className="font-bold text-white font-mono">₹10,00,000 / ₹10,00,000</span>
+                  <span className="font-bold text-white font-mono">Based on KYC tier</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-white/45">Monthly Limit</span>
-                  <span className="font-bold text-white font-mono">₹50,00,000 / ₹50,00,000</span>
+                  <span className="text-white/45">Available USDT</span>
+                  <span className="font-bold text-white font-mono">{usdtAvailable}</span>
                 </div>
               </div>
             </div>

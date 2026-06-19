@@ -1,6 +1,8 @@
 import {
   Prisma,
   type CryptoWithdrawal,
+  type RiskLevel,
+  type UserStatus,
   type WithdrawalAddress,
   type WithdrawalStatus,
 } from '@prisma/client';
@@ -27,6 +29,7 @@ export const WithdrawalAction = {
   FAILED: 'crypto.withdrawal.failed',
   HOLD_RELEASED: 'crypto.withdrawal.hold_released',
   ADMIN_QUEUE_VIEW: 'crypto.withdrawal.admin_queue_view',
+  FIRST_APPROVED: 'crypto.withdrawal.first_approved',
 } as const;
 
 /** Ledger transaction kinds + reference types (each idempotent independently). */
@@ -73,6 +76,21 @@ export interface CryptoWithdrawalDto {
   completedAt: Date | null;
 }
 
+export interface AdminCryptoWithdrawalDto extends CryptoWithdrawalDto {
+  userEmail: string | null;
+  userStatus: UserStatus | null;
+  userKycStatus: string | null;
+  userKycTier: number | null;
+  withdrawalsBlocked: boolean | null;
+  riskLevel: RiskLevel | null;
+  riskNote: string | null;
+  riskFlags: unknown;
+  approvedBy: string | null;
+  approvedBy2: string | null;
+  firstApprovedAt: Date | null;
+  requiresSecondApproval: boolean;
+}
+
 export function toWithdrawalAddressDto(
   row: WithdrawalAddress,
   now = new Date(),
@@ -107,6 +125,40 @@ export function toCryptoWithdrawalDto(row: CryptoWithdrawal): CryptoWithdrawalDt
     requestedAt: row.requestedAt,
     broadcastAt: row.broadcastAt,
     completedAt: row.completedAt,
+  };
+}
+
+export function toAdminCryptoWithdrawalDto(
+  row: CryptoWithdrawal & {
+    user?: {
+      email: string;
+      status: UserStatus;
+      kycStatus: string;
+      kycTier: number;
+      withdrawalsBlocked: boolean;
+      riskLevel: RiskLevel;
+      riskNote: string | null;
+    };
+  },
+  opts: { dualApprovalThreshold: Prisma.Decimal },
+): AdminCryptoWithdrawalDto {
+  return {
+    ...toCryptoWithdrawalDto(row),
+    userEmail: row.user?.email ?? null,
+    userStatus: row.user?.status ?? null,
+    userKycStatus: row.user?.kycStatus ?? null,
+    userKycTier: row.user?.kycTier ?? null,
+    withdrawalsBlocked: row.user?.withdrawalsBlocked ?? null,
+    riskLevel: row.user?.riskLevel ?? null,
+    riskNote: row.user?.riskNote ?? null,
+    riskFlags: row.riskFlags,
+    approvedBy: row.approvedBy,
+    approvedBy2: row.approvedBy2,
+    firstApprovedAt: row.approvedBy && row.status === 'PENDING_APPROVAL' ? row.updatedAt : null,
+    requiresSecondApproval:
+      row.status === 'PENDING_APPROVAL' &&
+      row.approvedBy !== null &&
+      row.amount.gte(opts.dualApprovalThreshold),
   };
 }
 

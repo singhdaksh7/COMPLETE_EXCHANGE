@@ -88,6 +88,23 @@ export function errorMessage(err: unknown): string {
   return 'Something went wrong';
 }
 
+export function withdrawalErrorMessage(err: unknown): string {
+  if (!(err instanceof ApiError)) return errorMessage(err);
+  const messages: Record<string, string> = {
+    KYC_REQUIRED: 'KYC required',
+    ACCOUNT_INACTIVE: 'Account frozen',
+    WITHDRAWALS_BLOCKED: 'Withdrawals blocked',
+    INSUFFICIENT_BALANCE: 'Insufficient balance',
+    ADDRESS_NOT_ALLOWLISTED: 'Invalid address',
+    ADDRESS_COOLING_OFF: 'Invalid address',
+    VALIDATION_ERROR: 'Invalid address',
+    MINIMUM_AMOUNT_NOT_MET: 'Minimum amount not met',
+    AMOUNT_TOO_SMALL: 'Minimum amount not met',
+    WITHDRAWALS_FROZEN: 'Withdrawals blocked',
+  };
+  return messages[err.code] ?? err.message;
+}
+
 /** True when a request was rejected because the user's KYC is not approved. */
 export function isKycRequired(err: unknown): boolean {
   return err instanceof ApiError && err.code === 'KYC_REQUIRED';

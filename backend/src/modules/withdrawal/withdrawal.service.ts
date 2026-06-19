@@ -16,10 +16,12 @@ import {
   LEDGER,
   WithdrawalAction,
   humanToBase,
+  toAdminCryptoWithdrawalDto,
   toCryptoWithdrawalDto,
   toWithdrawalAddressDto,
 } from './withdrawal.types';
 import type {
+  AdminCryptoWithdrawalDto,
   CryptoWithdrawalDto,
   WithdrawalAddressDto,
   WithdrawalContext,
@@ -29,6 +31,28 @@ import type { WithdrawalSignerProvider } from './providers';
 
 function isFrozen(value: unknown): boolean {
   return Boolean((value as { enabled?: boolean } | null)?.enabled);
+}
+
+const dualApprovalThreshold = () =>
+  new Prisma.Decimal(config.withdrawal.dualApprovalThreshold);
+
+function withdrawalRiskFlags(input: {
+  amount: Prisma.Decimal;
+  threshold: Prisma.Decimal;
+  user: {
+    status: string;
+    withdrawalsBlocked: boolean;
+    riskLevel: string;
+    kycTier: number;
+  };
+}): Prisma.InputJsonObject {
+  return {
+    largeWithdrawal: input.amount.gte(input.threshold),
+    userRiskLevel: input.user.riskLevel,
+    accountStatus: input.user.status,
+    withdrawalsBlocked: input.user.withdrawalsBlocked,
+    kycTier: input.user.kycTier,
+  };
 }
 
 /**
@@ -164,14 +188,22 @@ export const withdrawalService = {
     // Amount, fee, net.
     const amount = new Prisma.Decimal(input.amount);
     const fee = new Prisma.Decimal(config.withdrawal.feeUsdt);
-    if (amount.lte(fee)) {
+    const min = new Prisma.Decimal(config.withdrawal.minUsdt);
+    if (amount.lt(min)) {
+      throw new AppError(
+        `Minimum withdrawal amount is ${min.toFixed()} ${ASSET}`,
+        422,
+        'MINIMUM_AMOUNT_NOT_MET',
+      );
+    }
+    const netAmount = amount.sub(fee);
+    if (netAmount.lte(0)) {
       throw new AppError(
         `Amount must exceed the ${fee.toFixed()} ${ASSET} fee`,
         422,
         'AMOUNT_TOO_SMALL',
       );
     }
-    const netAmount = amount.sub(fee);
 
     // 5. Daily tier limit (USDT).
     const limit = await withdrawalRepository.getTierLimit(user.kycTier);
@@ -194,6 +226,7 @@ export const withdrawalService = {
       amount,
       fee,
       netAmount,
+      riskFlags: withdrawalRiskFlags({ amount, threshold: dualApprovalThreshold(), user }),
     });
 
     // 6. Ledger hold: USER_AVAILABLE → USER_LOCKED (atomic balance check).
@@ -253,9 +286,18 @@ export const withdrawalService = {
   // Admin: queue + approve/reject
   // ==================================================================
   async adminListQueue(
-    input: { status?: WithdrawalStatus; userId?: string; cursor?: string; limit: number },
+    input: {
+      status?: WithdrawalStatus;
+      asset?: string;
+      userId?: string;
+      email?: string;
+      fromDate?: Date;
+      toDate?: Date;
+      cursor?: string;
+      limit: number;
+    },
     ctx: WithdrawalContext = {},
-  ): Promise<{ items: CryptoWithdrawalDto[]; nextCursor: string | null }> {
+  ): Promise<{ items: AdminCryptoWithdrawalDto[]; nextCursor: string | null }> {
     const rows = await withdrawalRepository.adminListQueue(input);
     const hasMore = rows.length > input.limit;
     const slice = hasMore ? rows.slice(0, input.limit) : rows;
@@ -265,7 +307,11 @@ export const withdrawalService = {
       afterState: { count: slice.length },
     });
     return {
-      items: slice.map(toCryptoWithdrawalDto),
+      items: slice.map((row) =>
+        toAdminCryptoWithdrawalDto(row, {
+          dualApprovalThreshold: dualApprovalThreshold(),
+        }),
+      ),
       nextCursor: hasMore ? slice[slice.length - 1].id : null,
     };
   },
@@ -274,25 +320,75 @@ export const withdrawalService = {
     id: string,
     ctx: WithdrawalContext,
   ): Promise<CryptoWithdrawalDto> {
+    if (!ctx.actorId) throw new ForbiddenError('Admin actor is required', 'FORBIDDEN');
     const existing = await withdrawalRepository.findById(id);
     if (!existing) throw new NotFoundError('Withdrawal not found');
-    const res = await withdrawalRepository.approve(id, ctx.actorId ?? '');
-    if (res.count === 0) {
-      // Idempotent: already approved (or beyond) is not an error.
-      if (existing.status !== 'PENDING_APPROVAL' && existing.approvedBy) {
-        return toCryptoWithdrawalDto(existing);
+    const threshold = dualApprovalThreshold();
+    const large = existing.amount.gte(threshold);
+
+    if (existing.status === 'PENDING_APPROVAL' && large && existing.approvedBy) {
+      if (existing.approvedBy === ctx.actorId) {
+        throw new ConflictError(
+          'A different admin must provide the second approval',
+          'DUAL_CONTROL_SAME_APPROVER',
+        );
       }
+      const res = await withdrawalRepository.secondApprove(
+        id,
+        existing.approvedBy,
+        ctx.actorId,
+      );
+      if (res.count === 0) {
+        throw new ConflictError(
+          `Withdrawal cannot be approved from status ${existing.status}`,
+          'WITHDRAWAL_NOT_APPROVABLE',
+        );
+      }
+      const updated = await withdrawalRepository.findById(id);
+      await this.auditAdmin(ctx, {
+        action: WithdrawalAction.APPROVED,
+        targetType: 'crypto_withdrawal',
+        targetId: id,
+        afterState: {
+          status: 'APPROVED',
+          approvedBy: existing.approvedBy,
+          approvedBy2: ctx.actorId,
+          dualControl: true,
+        },
+      });
+      return toCryptoWithdrawalDto(updated as CryptoWithdrawal);
+    }
+
+    if (existing.status !== 'PENDING_APPROVAL') {
+      if (existing.status === 'APPROVED') return toCryptoWithdrawalDto(existing);
       throw new ConflictError(
         `Withdrawal cannot be approved from status ${existing.status}`,
-        'INVALID_STATE',
+        'WITHDRAWAL_NOT_APPROVABLE',
+      );
+    }
+
+    const res = large
+      ? await withdrawalRepository.firstApprove(id, ctx.actorId)
+      : await withdrawalRepository.approveSmall(id, ctx.actorId);
+    if (res.count === 0) {
+      throw new ConflictError(
+        `Withdrawal cannot be approved from status ${existing.status}`,
+        'WITHDRAWAL_NOT_APPROVABLE',
       );
     }
     const updated = await withdrawalRepository.findById(id);
     await this.auditAdmin(ctx, {
-      action: WithdrawalAction.APPROVED,
+      action: large ? WithdrawalAction.FIRST_APPROVED : WithdrawalAction.APPROVED,
       targetType: 'crypto_withdrawal',
       targetId: id,
-      afterState: { status: 'APPROVED' },
+      afterState: large
+        ? {
+            status: 'PENDING_APPROVAL',
+            approvedBy: ctx.actorId,
+            requiredSecondApproval: true,
+            threshold: threshold.toFixed(),
+          }
+        : { status: 'APPROVED', approvedBy: ctx.actorId },
     });
     return toCryptoWithdrawalDto(updated as CryptoWithdrawal);
   },

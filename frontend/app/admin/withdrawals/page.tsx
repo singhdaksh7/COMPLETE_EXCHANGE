@@ -22,15 +22,26 @@ export default function AdminWithdrawalsPage() {
   const ready = useGuard('admin');
   const qc = useQueryClient();
   const [statusFilter, setStatusFilter] = useState('');
+  const [assetFilter, setAssetFilter] = useState('USDT');
   const [search, setSearch] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   
   // Selected item for the right-hand audit panel
   const [selectedWd, setSelectedWd] = useState<CryptoWithdrawal | null>(null);
   const [reason, setReason] = useState('');
 
   const q = useQuery({
-    queryKey: ['admin-withdrawals', statusFilter || 'queue'],
-    queryFn: () => adminApi.withdrawals({ status: statusFilter || undefined, limit: 50 }),
+    queryKey: ['admin-withdrawals', statusFilter || 'queue', assetFilter, search, fromDate, toDate],
+    queryFn: () =>
+      adminApi.withdrawals({
+        status: statusFilter || undefined,
+        asset: assetFilter || undefined,
+        email: search.includes('@') ? search : undefined,
+        fromDate: fromDate || undefined,
+        toDate: toDate || undefined,
+        limit: 50,
+      }),
     enabled: ready,
   });
 
@@ -49,8 +60,9 @@ export default function AdminWithdrawalsPage() {
     return items.filter((item) => {
       const address = item.toAddress.toLowerCase();
       const id = item.id.toLowerCase();
+      const email = (item.userEmail ?? '').toLowerCase();
       const query = search.toLowerCase();
-      return address.includes(query) || id.includes(query);
+      return address.includes(query) || id.includes(query) || email.includes(query);
     });
   }, [items, search]);
 
@@ -91,24 +103,26 @@ export default function AdminWithdrawalsPage() {
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-white/5 pb-4">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Withdrawals Queue</h1>
-            <p className="text-xs text-white/50 mt-1">Audit pending blockchain payouts, run KYC validation checks, and authorize signature dispatches.</p>
+            <p className="text-xs text-white/50 mt-1">Review withdrawal holds, account risk, maker-checker status, and mock signer dispatch state.</p>
           </div>
           <button
             onClick={() => q.refetch()}
             className="rounded-lg bg-gradient-to-r from-gold to-gold-glow px-4 py-2 text-xs font-bold text-noir shadow-gold-glow hover:brightness-105 transition uppercase tracking-wider"
           >
-            Export Queue
+            Refresh Queue
           </button>
         </div>
 
         {/* Status Tab Ticker */}
         <div className="flex flex-wrap gap-4 border-b border-white/5 pb-2 text-xs font-bold font-sans">
           {[
-            { id: '', label: 'Pending Approval', count: '1,245' },
-            { id: 'PROCESSING', label: 'Processing', count: '42' },
-            { id: 'BROADCAST', label: 'Broadcasted', count: '128' },
-            { id: 'COMPLETED', label: 'Completed', count: '12,453' },
-            { id: 'REJECTED', label: 'Rejected', count: '34' },
+            { id: '', label: 'Open Queue' },
+            { id: 'PENDING_APPROVAL', label: 'Pending' },
+            { id: 'APPROVED', label: 'Approved' },
+            { id: 'SIGNING', label: 'Processing' },
+            { id: 'COMPLETED', label: 'Completed' },
+            { id: 'REJECTED', label: 'Rejected' },
+            { id: 'FAILED', label: 'Failed' },
           ].map((tab) => {
             const active = statusFilter === tab.id;
             return (
@@ -119,22 +133,62 @@ export default function AdminWithdrawalsPage() {
                   active ? 'border-gold text-gold bg-gold/5' : 'border-transparent text-white/50 hover:text-white'
                 }`}
               >
-                {tab.label} <span className="ml-1 text-[10px] opacity-65 font-mono">({tab.count})</span>
+                {tab.label}
               </button>
             );
           })}
         </div>
 
         {/* Filter / Search Row */}
-        <div className="bg-white/[0.01] border border-white/5 rounded-2xl p-4 flex gap-3 text-xs">
+        <div className="bg-white/[0.01] border border-white/5 rounded-2xl p-4 grid grid-cols-1 md:grid-cols-5 gap-3 text-xs">
           <div className="flex-1 flex flex-col gap-1.5">
-            <label className="text-[9px] font-bold text-white/40 uppercase tracking-wider">Search</label>
+            <label className="text-[9px] font-bold text-white/40 uppercase tracking-wider">Email / User / Address</label>
             <input
-              placeholder="Search by transaction hash, destination address or UID..."
+              placeholder="Search email, withdrawal id, destination..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="rounded-lg border border-white/10 bg-noir px-3 py-2 text-xs text-white focus:border-gold/60 focus:outline-none placeholder:text-white/20"
             />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[9px] font-bold text-white/40 uppercase tracking-wider">Asset</label>
+            <input
+              value={assetFilter}
+              onChange={(e) => setAssetFilter(e.target.value.toUpperCase())}
+              className="rounded-lg border border-white/10 bg-noir px-3 py-2 text-xs text-white focus:border-gold/60 focus:outline-none"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[9px] font-bold text-white/40 uppercase tracking-wider">From</label>
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="rounded-lg border border-white/10 bg-noir px-3 py-2 text-xs text-white focus:border-gold/60 focus:outline-none"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[9px] font-bold text-white/40 uppercase tracking-wider">To</label>
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="rounded-lg border border-white/10 bg-noir px-3 py-2 text-xs text-white focus:border-gold/60 focus:outline-none"
+            />
+          </div>
+          <div className="flex items-end">
+            <button
+              onClick={() => {
+                setStatusFilter('');
+                setAssetFilter('USDT');
+                setSearch('');
+                setFromDate('');
+                setToDate('');
+              }}
+              className="w-full rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-xs font-bold text-white/70 hover:bg-white/[0.04]"
+            >
+              Clear
+            </button>
           </div>
         </div>
 
@@ -161,8 +215,12 @@ export default function AdminWithdrawalsPage() {
                   <tbody className="divide-y divide-white/5 font-mono">
                     {filteredItems.map((item) => {
                       const active = selectedWd?.id === item.id;
-                      const riskLevel = Number(item.amount) > 100 ? 'Medium' : 'Low';
-                      const riskColor = Number(item.amount) > 100 ? 'bg-amber-500/10 text-amber-400 border-amber-500/30' : 'bg-up/10 text-up border-up/30';
+                      const riskLevel = item.riskLevel ?? (Number(item.amount) > 100 ? 'MEDIUM' : 'LOW');
+                      const riskColor = riskLevel === 'HIGH'
+                        ? 'bg-red-500/10 text-red-300 border-red-500/30'
+                        : riskLevel === 'MEDIUM'
+                          ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                          : 'bg-up/10 text-up border-up/30';
                       
                       return (
                         <tr
@@ -177,7 +235,7 @@ export default function AdminWithdrawalsPage() {
                               US
                             </div>
                             <div className="truncate max-w-[200px]">
-                              <span className="font-bold text-white block truncate">{item.toAddress.slice(0, 16)}...</span>
+                              <span className="font-bold text-white block truncate">{item.userEmail ?? item.userId}</span>
                               <span className="text-[9px] text-white/30 block font-mono">ID: {item.id.slice(0, 12).toUpperCase()}</span>
                             </div>
                           </td>
@@ -234,7 +292,15 @@ export default function AdminWithdrawalsPage() {
                     <div className="bg-white/[0.02] border border-white/5 rounded-xl p-4 text-xs space-y-2.5">
                       <div className="flex justify-between border-b border-white/5 pb-2">
                         <span className="text-white/45">Account KYC Status</span>
-                        <span className="bg-up/10 text-up px-2 py-0.5 rounded font-bold text-[9px] uppercase">Approved (Tier 2)</span>
+                        <span className="bg-up/10 text-up px-2 py-0.5 rounded font-bold text-[9px] uppercase">
+                          {selectedWd.userKycStatus ?? 'UNKNOWN'} (Tier {selectedWd.userKycTier ?? 0})
+                        </span>
+                      </div>
+                      <div className="flex justify-between border-b border-white/5 pb-2">
+                        <span className="text-white/45">Account Status</span>
+                        <span className="font-bold text-white font-mono">
+                          {selectedWd.userStatus ?? 'UNKNOWN'}{selectedWd.withdrawalsBlocked ? ' · withdrawals blocked' : ''}
+                        </span>
                       </div>
                       <div className="flex justify-between border-b border-white/5 pb-2">
                         <span className="text-white/45">Amount to Disburse</span>
@@ -250,6 +316,12 @@ export default function AdminWithdrawalsPage() {
                           {selectedWd.toAddress}
                         </span>
                       </div>
+                      {selectedWd.requiresSecondApproval && (
+                        <div className="flex justify-between">
+                          <span className="text-white/45">Maker-checker</span>
+                          <span className="font-bold text-amber-300 font-mono">Second approval required</span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -267,15 +339,15 @@ export default function AdminWithdrawalsPage() {
                       <div className="flex gap-2.5 items-start">
                         <span className="text-up font-bold">✓</span>
                         <div>
-                          <span className="font-bold text-white block">Biometric Liveness Match</span>
-                          <span className="text-[9px] text-white/40 block mt-0.5">KYC validation records confirm biometric liveness match.</span>
+                          <span className="font-bold text-white block">Account status check</span>
+                          <span className="text-[9px] text-white/40 block mt-0.5">{selectedWd.userStatus ?? 'Unknown'} account state from the user record.</span>
                         </div>
                       </div>
                       <div className="flex gap-2.5 items-start">
                         <span className="text-up font-bold">✓</span>
                         <div>
-                          <span className="font-bold text-white block">Risk Evaluation Score</span>
-                          <span className="text-[9px] text-white/40 block mt-0.5">Risk assessment index: 5% (Low Risk threshold).</span>
+                          <span className="font-bold text-white block">Risk flags</span>
+                          <span className="text-[9px] text-white/40 block mt-0.5">{JSON.stringify(selectedWd.riskFlags ?? {})}</span>
                         </div>
                       </div>
                     </div>
@@ -297,7 +369,7 @@ export default function AdminWithdrawalsPage() {
                           disabled={approve.isPending || reject.isPending}
                           className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-emerald-500 py-2.5 text-xs font-bold text-white shadow-[0_0_15px_rgba(16,185,129,0.25)] hover:brightness-105 transition disabled:opacity-50"
                         >
-                          Approve Disbursal
+                          {selectedWd.requiresSecondApproval ? 'Second Approve' : 'Approve'}
                         </button>
                         
                         <button

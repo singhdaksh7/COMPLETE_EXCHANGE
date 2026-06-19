@@ -12,9 +12,9 @@ import {
 
 /**
  * Admin crypto-withdrawal routes, mounted at /admin/v1/withdrawals.
- *   - queue read   → 'withdrawal.view'
- *   - approve      → 'withdrawal.approve'
- *   - reject       → 'withdrawal.reject'
+ *   - queue read   → 'withdrawals.view'
+ *   - approve      → 'withdrawals.approve'
+ *   - reject       → 'withdrawals.review'
  * SUPER_ADMIN bypasses the permission check.
  */
 export const adminWithdrawalRouter = Router();
@@ -22,7 +22,7 @@ export const adminWithdrawalRouter = Router();
 adminWithdrawalRouter.get(
   '/',
   adminAuthenticate,
-  adminAuthorize('withdrawal.view'),
+  adminAuthorize('withdrawals.view'),
   validate({ query: adminQueueQuerySchema }),
   asyncHandler(adminWithdrawalController.queue),
 );
@@ -30,7 +30,7 @@ adminWithdrawalRouter.get(
 adminWithdrawalRouter.post(
   '/:id/approve',
   adminAuthenticate,
-  adminAuthorize('withdrawal.approve'),
+  adminAuthorize('withdrawals.approve'),
   validate({ params: withdrawalIdParamSchema }),
   asyncHandler(adminWithdrawalController.approve),
 );
@@ -38,7 +38,7 @@ adminWithdrawalRouter.post(
 adminWithdrawalRouter.post(
   '/:id/reject',
   adminAuthenticate,
-  adminAuthorize('withdrawal.reject'),
+  adminAuthorize('withdrawals.review'),
   validate({ params: withdrawalIdParamSchema, body: rejectSchema }),
   asyncHandler(adminWithdrawalController.reject),
 );

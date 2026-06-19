@@ -39,6 +39,9 @@ export default function AdminDashboardPage() {
         { title: 'Pending INR Deposits', val: String(s.inrDeposits.pending), icon: '🕗' },
         { title: 'Approved INR Deposits', val: String(s.inrDeposits.approved), icon: '✅' },
         { title: 'Rejected INR Deposits', val: String(s.inrDeposits.rejected), icon: '❌' },
+        { title: 'Pending Withdrawal Total', val: `${s.withdrawals.pendingTotal} USDT`, icon: '⏳' },
+        { title: 'Completed Withdrawal Total', val: `${s.withdrawals.completedTotal} USDT`, icon: '✅' },
+        { title: 'Failed / Rejected Withdrawals', val: String(s.withdrawals.failedRejectedCount), icon: '⛔' },
         { title: 'Pending KYC Reviews', val: String(s.kyc.pending), icon: '📝' },
         { title: 'Active Admins', val: String(s.admins.active), icon: '🛡️' },
         { title: 'Suspended Admins', val: String(s.admins.suspended), icon: '⛔' },
@@ -123,7 +126,7 @@ export default function AdminDashboardPage() {
                 )}
               </div>
               {s ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
                   {realMetrics.map((item, i) => (
                     <div key={i} className="relative rounded-xl border border-white/5 bg-white/[0.01] p-4 flex flex-col justify-between min-h-[100px] overflow-hidden">
                       <div className="pointer-events-none absolute -inset-px rounded-xl bg-gradient-to-b from-gold/5 to-transparent opacity-25" />
@@ -158,6 +161,22 @@ export default function AdminDashboardPage() {
                       <span className="font-mono text-white/40 truncate">{a.actorEmail ?? a.actorAdminId.slice(0, 8)}</span>
                       <span className="text-white/30 shrink-0">{new Date(a.occurredAt).toLocaleTimeString()}</span>
                     </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {s && s.withdrawals.pendingByAsset.length > 0 && (
+              <div className="rounded-xl border border-white/5 bg-white/[0.01] p-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-white/60">Asset-wise pending withdrawal exposure</span>
+                  <a href="/admin/withdrawals" className="text-[10px] text-gold hover:underline">Review queue →</a>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {s.withdrawals.pendingByAsset.map((row) => (
+                    <span key={row.asset} className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-xs font-mono text-white/75">
+                      {row.asset}: {row.amount}
+                    </span>
                   ))}
                 </div>
               </div>

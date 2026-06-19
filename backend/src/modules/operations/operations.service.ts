@@ -1,5 +1,6 @@
 import { config } from '../../config';
 import { depositRepository } from '../deposit/deposit.repository';
+import { withdrawalRepository } from '../withdrawal/withdrawal.repository';
 import {
   operationsRepository,
   type AdminLogWithActor,
@@ -8,6 +9,12 @@ import {
 
 export interface OperationsSummary {
   inrDeposits: { pending: number; approved: number; rejected: number; total: number };
+  withdrawals: {
+    pendingTotal: string;
+    completedTotal: string;
+    failedRejectedCount: number;
+    pendingByAsset: Array<{ asset: string; amount: string }>;
+  };
   kyc: { pending: number };
   admins: { active: number; suspended: number };
   recentAdminActions: AuditLogDto[];
@@ -46,9 +53,17 @@ function toAuditDto(row: AdminLogWithActor): AuditLogDto {
 
 export const operationsService = {
   async summary(): Promise<OperationsSummary> {
-    const [byStatus, kycPending, activeAdmins, suspendedAdmins, recent] =
+    const [
+      byStatus,
+      withdrawalStats,
+      kycPending,
+      activeAdmins,
+      suspendedAdmins,
+      recent,
+    ] =
       await Promise.all([
         depositRepository.countManualDepositsByStatus(),
+        withdrawalRepository.withdrawalStats(),
         operationsRepository.countUsersByKycPending(),
         operationsRepository.countAdminsByStatus('ACTIVE'),
         operationsRepository.countAdminsByStatus('SUSPENDED'),
@@ -62,6 +77,15 @@ export const operationsService = {
 
     return {
       inrDeposits: { pending, approved, rejected, total },
+      withdrawals: {
+        pendingTotal: withdrawalStats.pendingTotal.toFixed(),
+        completedTotal: withdrawalStats.completedTotal.toFixed(),
+        failedRejectedCount: withdrawalStats.failedRejectedCount,
+        pendingByAsset: withdrawalStats.pendingByAsset.map((row) => ({
+          asset: row.asset,
+          amount: row.amount.toFixed(),
+        })),
+      },
       kyc: { pending: kycPending },
       admins: { active: activeAdmins, suspended: suspendedAdmins },
       recentAdminActions: recent.map(toAuditDto),

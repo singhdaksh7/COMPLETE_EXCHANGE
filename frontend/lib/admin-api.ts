@@ -211,7 +211,18 @@ export const adminApi = {
     }),
 
   // ---- withdrawal queue + decisions ----
-  withdrawals: (params: { status?: string; cursor?: string; limit?: number } = {}) =>
+  withdrawals: (
+    params: {
+      status?: string;
+      asset?: string;
+      userId?: string;
+      email?: string;
+      fromDate?: string;
+      toDate?: string;
+      cursor?: string;
+      limit?: number;
+    } = {},
+  ) =>
     adminApiFetch<Page<CryptoWithdrawal>>(
       `/withdrawals${buildQuery({ limit: 20, ...params })}`,
       'GET',

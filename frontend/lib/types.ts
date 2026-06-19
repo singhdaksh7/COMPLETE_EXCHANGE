@@ -374,6 +374,12 @@ export interface OperationsAuditLog {
 
 export interface OperationsSummary {
   inrDeposits: { pending: number; approved: number; rejected: number; total: number };
+  withdrawals: {
+    pendingTotal: string;
+    completedTotal: string;
+    failedRejectedCount: number;
+    pendingByAsset: Array<{ asset: string; amount: string }>;
+  };
   kyc: { pending: number };
   admins: { active: number; suspended: number };
   recentAdminActions: OperationsAuditLog[];
@@ -444,6 +450,18 @@ export interface CryptoWithdrawal {
   requestedAt: string;
   broadcastAt: string | null;
   completedAt: string | null;
+  userEmail?: string | null;
+  userStatus?: string | null;
+  userKycStatus?: string | null;
+  userKycTier?: number | null;
+  withdrawalsBlocked?: boolean | null;
+  riskLevel?: string | null;
+  riskNote?: string | null;
+  riskFlags?: unknown;
+  approvedBy?: string | null;
+  approvedBy2?: string | null;
+  firstApprovedAt?: string | null;
+  requiresSecondApproval?: boolean;
 }
 
 /** User-facing crypto deposit (GET /wallets/deposits). */
