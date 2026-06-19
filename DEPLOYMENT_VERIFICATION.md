@@ -67,6 +67,10 @@ aws ecs describe-task-definition --task-definition cex-staging-admin \
 ... command=["node","dist/scripts/reset-staging-admin.js"] env ALLOW_STAGING_ADMIN_RESET=YES RESET_ADMIN_PASSWORD=<strong>
 # Approve a test user's KYC for demo
 ... command=["node","dist/scripts/approve-staging-kyc.js"] env ALLOW_STAGING_KYC_APPROVE=YES KYC_APPROVE_EMAIL=<user>
+# Seed demo order-book depth (resting non-crossing limit orders via the real,
+# validated order path). Prereq: the demo user is KYC-approved AND funded
+# (INR for BUYs, USDT for SELLs). Safe — unfunded orders are cleanly rejected.
+... command=["node","dist/scripts/seed-demo-market.js"] env ALLOW_STAGING_MARKET_SEED=YES DEMO_USER_EMAIL=<funded-user>
 ```
 
 ## 7. CloudFront invalidation (after frontend or static deploy)

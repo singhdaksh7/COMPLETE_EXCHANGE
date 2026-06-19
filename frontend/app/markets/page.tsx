@@ -67,8 +67,11 @@ export default function MarketsPage() {
       
       {/* Title Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white tracking-tight">Markets</h1>
-        <p className="text-xs text-white/50 mt-1">Explore 500+ cryptocurrencies and trade with the best market depth and liquidity.</p>
+        <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
+          Markets
+          <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-300">Sandbox</span>
+        </h1>
+        <p className="text-xs text-white/50 mt-1">Sandbox / test markets. Prices, volume and depth reflect activity on this environment only — not a live exchange.</p>
       </div>
 
       {q.isLoading && <p className="text-sm text-white/40 py-6">Loading market indices...</p>}

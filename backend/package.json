@@ -29,6 +29,7 @@
     "admin:reset-staging": "node dist/scripts/reset-staging-admin.js",
     "kyc:approve-staging": "node dist/scripts/approve-staging-kyc.js",
     "rbac:ensure-staging": "node dist/scripts/ensure-admin-rbac.js",
+    "market:seed-staging": "node dist/scripts/seed-demo-market.js",
     "test": "vitest run",
     "test:watch": "vitest"
   },

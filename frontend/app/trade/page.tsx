@@ -103,6 +103,12 @@ function TradeInner() {
           <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-gold via-gold-glow to-gold bg-clip-text text-transparent">
             Spot Trading Desk
           </h1>
+          <span
+            title="Sandbox / test market — no real liquidity or volume. Book and trades reflect orders placed on this environment only."
+            className="rounded-full bg-amber-500/15 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-300"
+          >
+            Sandbox
+          </span>
           <ConnectionBadge live={live} />
         </div>
 
@@ -274,7 +280,7 @@ function OrderBookPanel({ symbol, live, market }: { symbol: string; live: boolea
       <div className="relative z-10 flex justify-between items-center border-b border-white/5 pb-3">
         <div>
           <h2 className="text-sm font-bold text-white tracking-tight uppercase">Order Book</h2>
-          <p className="text-[10px] text-white/40 mt-0.5">Real-time bids, asks, and depth curves.</p>
+          <p className="text-[10px] text-white/40 mt-0.5">Sandbox market — bids/asks reflect orders placed on this environment.</p>
         </div>
         <div className="flex items-center gap-3">
           <select disabled title="Grouping selector coming soon" className="rounded border border-white/10 bg-noir px-2 py-1 text-[10px] text-white/40 focus:outline-none cursor-not-allowed opacity-50">
@@ -321,7 +327,10 @@ function OrderBookPanel({ symbol, live, market }: { symbol: string; live: boolea
               );
             })}
             {bids.length === 0 && (
-              <p className="text-xs text-white/30 text-center py-12">No buy orders inside book.</p>
+              <p className="text-xs text-white/30 text-center py-12">
+                No buy orders yet on this sandbox market.
+                <br />Depth appears once limit orders are placed.
+              </p>
             )}
           </div>
         </div>
@@ -372,7 +381,10 @@ function OrderBookPanel({ symbol, live, market }: { symbol: string; live: boolea
               );
             })}
             {asks.length === 0 && (
-              <p className="text-xs text-white/30 text-center py-12">No sell orders inside book.</p>
+              <p className="text-xs text-white/30 text-center py-12">
+                No sell orders yet on this sandbox market.
+                <br />Depth appears once limit orders are placed.
+              </p>
             )}
           </div>
         </div>
@@ -694,7 +706,9 @@ function OpenOrders({ symbol, live }: { symbol: string; live: boolean }) {
       )}
 
       {orders.length === 0 ? (
-        <p className="text-xs text-white/40 py-6 text-center">No active resting orders.</p>
+        <p className="text-xs text-white/40 py-6 text-center">
+          No open orders. Orders you place on this sandbox market appear here until filled or cancelled.
+        </p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
@@ -802,7 +816,9 @@ function RecentTrades({ symbol, live }: { symbol: string; live: boolean }) {
           </div>
         ) : activeTab === 'MARKET' ? (
           marketTrades.length === 0 ? (
-            <p className="text-xs text-white/40 py-6 text-center font-sans">No public trades recorded.</p>
+            <p className="text-xs text-white/40 py-6 text-center font-sans">
+              No trades yet on this sandbox market. Trades appear here once orders match.
+            </p>
           ) : (
             <div className="space-y-1.5 font-mono text-xs">
               <div className="grid grid-cols-3 text-[10px] font-bold uppercase tracking-wider text-white/30 border-b border-white/5 pb-2">
@@ -834,7 +850,9 @@ function RecentTrades({ symbol, live }: { symbol: string; live: boolean }) {
             </div>
           )
         ) : userTrades.length === 0 ? (
-          <p className="text-xs text-white/40 py-6 text-center font-sans">No trades logged yet.</p>
+          <p className="text-xs text-white/40 py-6 text-center font-sans">
+            You have no trades on this sandbox market yet. Place an order to get started.
+          </p>
         ) : (
           <div className="space-y-1.5 font-mono text-xs">
             <div className="grid grid-cols-3 text-[10px] font-bold uppercase tracking-wider text-white/30 border-b border-white/5 pb-2">

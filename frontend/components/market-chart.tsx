@@ -124,7 +124,8 @@ export function MarketChart({ symbol, live }: { symbol: string; live: boolean })
             </svg>
             <h4 className="text-sm font-bold text-white mb-1 tracking-tight">No candle data yet</h4>
             <p className="text-xs text-white/40 max-w-xs leading-normal">
-              Candles will appear after market trades are created.
+              This is a sandbox / test market. Candles appear after trades are
+              executed on this environment.
             </p>
           </div>
         ) : (
