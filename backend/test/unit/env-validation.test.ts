@@ -57,4 +57,67 @@ describe('env validation', () => {
       }),
     ).toThrow(/TRONGRID_API_KEY/);
   });
+
+  it('accepts production with disabled optional providers unset or blank', () => {
+    const env = validateEnv({
+      ...baseEnv,
+      CORS_ORIGINS: ' https://app.example.com , https://admin.example.com ',
+      MAIL_PROVIDER: 'log',
+      AWS_REGION: '',
+      SES_CONFIGURATION_SET: '',
+      GOOGLE_OAUTH_ENABLED: 'false',
+      GOOGLE_CLIENT_ID: '',
+      GOOGLE_CLIENT_SECRET: '',
+      GOOGLE_CALLBACK_URL: '',
+      TRON_PROVIDER: 'mock',
+      TRONGRID_API_KEY: '',
+      BSC_PROVIDER: 'mock',
+      BSC_TESTNET_RPC_URL: '',
+      RAZORPAY_PROVIDER: 'mock',
+      RAZORPAY_KEY_ID: '',
+      RAZORPAY_KEY_SECRET: '',
+      RAZORPAY_WEBHOOK_SECRET: '',
+    });
+
+    expect(env.NODE_ENV).toBe('production');
+    expect(env.CORS_ORIGINS).toEqual([
+      'https://app.example.com',
+      'https://admin.example.com',
+    ]);
+    expect(env.MAIL_PROVIDER).toBe('log');
+    expect(env.GOOGLE_OAUTH_ENABLED).toBe(false);
+    expect(env.TRON_PROVIDER).toBe('mock');
+    expect(env.BSC_PROVIDER).toBe('mock');
+    expect(env.RAZORPAY_PROVIDER).toBe('mock');
+  });
+
+  it('rejects invalid live provider config only when that provider is enabled', () => {
+    expect(() =>
+      validateEnv({
+        ...baseEnv,
+        RAZORPAY_PROVIDER: 'mock',
+        RAZORPAY_KEY_ID: '',
+        RAZORPAY_KEY_SECRET: '',
+        RAZORPAY_WEBHOOK_SECRET: '',
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      validateEnv({
+        ...baseEnv,
+        RAZORPAY_PROVIDER: 'live',
+        RAZORPAY_KEY_ID: '',
+        RAZORPAY_KEY_SECRET: 'dev-only-razorpay-key-secret-change-me',
+        RAZORPAY_WEBHOOK_SECRET: 'dev-only-razorpay-webhook-secret-change-me',
+      }),
+    ).toThrow(/RAZORPAY_KEY_ID|RAZORPAY_KEY_SECRET|RAZORPAY_WEBHOOK_SECRET/);
+
+    expect(() =>
+      validateEnv({
+        ...baseEnv,
+        GOOGLE_OAUTH_ENABLED: 'true',
+        GOOGLE_CLIENT_ID: '',
+      }),
+    ).toThrow(/GOOGLE_CLIENT_ID/);
+  });
 });

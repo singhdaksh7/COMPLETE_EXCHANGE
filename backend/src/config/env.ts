@@ -21,6 +21,16 @@ const DEV_ONLY_VALUES = new Set([
   'dev-only-razorpay-webhook-secret-change-me',
 ]);
 
+const emptyStringToUndefined = (value: unknown) =>
+  typeof value === 'string' && value.trim() === '' ? undefined : value;
+
+const optionalNonEmptyString = z.preprocess(
+  emptyStringToUndefined,
+  z.string().min(1).optional(),
+);
+
+const optionalUrl = z.preprocess(emptyStringToUndefined, z.string().url().optional());
+
 export const envSchema = z
   .object({
   NODE_ENV: z
@@ -111,9 +121,9 @@ export const envSchema = z
     .default('http://localhost:3000')
     .transform((v) => v.replace(/\/+$/, '')),
   // AWS region for SES. Required only in 'ses' mode (enforced in superRefine).
-  AWS_REGION: z.string().min(1).optional(),
+  AWS_REGION: optionalNonEmptyString,
   // Optional SES configuration set for bounce/complaint tracking.
-  SES_CONFIGURATION_SET: z.string().min(1).optional(),
+  SES_CONFIGURATION_SET: optionalNonEmptyString,
 
   // ---- GOOGLE OAUTH ----
   // Off by default. When enabled, CLIENT_ID/SECRET/CALLBACK_URL are required
@@ -123,11 +133,11 @@ export const envSchema = z
     .string()
     .default('false')
     .transform((v) => v === 'true'),
-  GOOGLE_CLIENT_ID: z.string().min(1).optional(),
-  GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
+  GOOGLE_CLIENT_ID: optionalNonEmptyString,
+  GOOGLE_CLIENT_SECRET: optionalNonEmptyString,
   // Must exactly match an Authorized Redirect URI on the Google OAuth client,
   // e.g. https://api.example.com/api/v1/auth/google/callback
-  GOOGLE_CALLBACK_URL: z.string().url().optional(),
+  GOOGLE_CALLBACK_URL: optionalUrl,
 
   // ---- KYC ----
   // Secret used to derive the AES-256-GCM key that seals KYC PII (PAN, Aadhaar
@@ -160,18 +170,26 @@ export const envSchema = z
   // we can never accidentally hit Razorpay with placeholder credentials.
   RAZORPAY_PROVIDER: z.enum(['mock', 'live']).default('mock'),
   // Razorpay API key id ('rzp_test_...'/'rzp_live_...'). Optional in mock mode.
-  RAZORPAY_KEY_ID: z.string().optional(),
+  RAZORPAY_KEY_ID: optionalNonEmptyString,
   // Razorpay key secret — signs orders and verifies payment signatures. In mock
   // mode a deterministic dev default is used so tests can compute signatures.
   RAZORPAY_KEY_SECRET: z
-    .string()
-    .min(8, 'RAZORPAY_KEY_SECRET must be >= 8 chars')
-    .default('dev-only-razorpay-key-secret-change-me'),
+    .preprocess(
+      emptyStringToUndefined,
+      z
+        .string()
+        .min(8, 'RAZORPAY_KEY_SECRET must be >= 8 chars')
+        .default('dev-only-razorpay-key-secret-change-me'),
+    ),
   // Razorpay webhook signing secret — verifies inbound webhook authenticity.
   RAZORPAY_WEBHOOK_SECRET: z
-    .string()
-    .min(8, 'RAZORPAY_WEBHOOK_SECRET must be >= 8 chars')
-    .default('dev-only-razorpay-webhook-secret-change-me'),
+    .preprocess(
+      emptyStringToUndefined,
+      z
+        .string()
+        .min(8, 'RAZORPAY_WEBHOOK_SECRET must be >= 8 chars')
+        .default('dev-only-razorpay-webhook-secret-change-me'),
+    ),
   // Base URL for the real Razorpay REST API (only used by the live provider).
   RAZORPAY_API_BASE: z.string().url().default('https://api.razorpay.com/v1'),
   // INR deposit bounds (rupees, scale 2). Enforced before an order is created.
@@ -202,7 +220,10 @@ export const envSchema = z
 
   // ---- CRYPTO DEPOSIT SCANNER (BSC / BEP20 USDT) ----
   BSC_PROVIDER: z.enum(['mock', 'live']).default('mock'),
-  BSC_TESTNET_RPC_URL: z.string().url().default('https://data-seed-prebsc-1-s1.bnbchain.org:8545'),
+  BSC_TESTNET_RPC_URL: z.preprocess(
+    emptyStringToUndefined,
+    z.string().url().default('https://data-seed-prebsc-1-s1.bnbchain.org:8545'),
+  ),
   // How far behind the chain head we scan (avoid the unstable tip). Detection
   // happens here; crediting waits for min-confirmations depth.
   SCAN_SAFETY_LAG: z.coerce.number().int().min(0).default(1),
@@ -286,8 +307,6 @@ export const envSchema = z
         'JWT_REFRESH_SECRET',
         'KYC_ENCRYPTION_KEY',
         'KYC_WEBHOOK_SECRET',
-        'RAZORPAY_KEY_SECRET',
-        'RAZORPAY_WEBHOOK_SECRET',
       ] as const) {
         if (DEV_ONLY_VALUES.has(val[key])) {
           ctx.addIssue({
@@ -354,10 +373,19 @@ const parsed = envSchema.safeParse(process.env);
 
 if (!parsed.success) {
   // We cannot use the structured logger here — it depends on this config.
+  const flattened = parsed.error.flatten();
   // eslint-disable-next-line no-console
   console.error(
-    '❌ Invalid environment configuration:\n',
-    JSON.stringify(parsed.error.flatten().fieldErrors, null, 2),
+    'Invalid environment configuration during startup. The process will exit before logger initialization.',
+    JSON.stringify(
+      {
+        nodeEnv: process.env.NODE_ENV ?? 'development',
+        fieldErrors: flattened.fieldErrors,
+        formErrors: flattened.formErrors,
+      },
+      null,
+      2,
+    ),
   );
   process.exit(1);
 }
