@@ -369,6 +369,7 @@ export function AdminNav() {
     { href: '/admin/deposits', label: 'Deposits queue' },
     { href: '/admin/withdrawals', label: 'Withdrawals queue' },
     { href: '/admin/conversions', label: 'Conversions ledger' },
+    { href: '/admin/reports', label: 'Fee reports' },
     { href: '/admin/scanner', label: 'Blockchain scan' },
     { href: '/admin/admins', label: 'Admin management' },
     { href: '/admin/audit', label: 'Audit log' },

@@ -490,6 +490,23 @@ function OrderForm({ symbol, market, kycStatus }: { symbol: string; market?: Mar
 
   const baseAsset = market?.baseAsset ?? 'USDT';
   const quoteAsset = market?.quoteAsset ?? 'INR';
+  const makerBps = market?.makerFeeBps ?? 0;
+  const takerBps = market?.takerFeeBps ?? 0;
+
+  // Conservative (taker-rate) fee estimate for the order being entered. The fee
+  // is charged on the asset the user RECEIVES: BUY → base, SELL → quote. Only
+  // shown for LIMIT orders where the amount is known up front; MARKET fills
+  // depend on the execution price, so we show the rate but not a figure.
+  const feeEstimate = useMemo(() => {
+    if (type !== 'LIMIT') return null;
+    const p = Number(price);
+    const qty = Number(quantity);
+    if (!Number.isFinite(p) || !Number.isFinite(qty) || p <= 0 || qty <= 0) return null;
+    if (side === 'BUY') {
+      return { amount: (qty * takerBps) / 10000, asset: baseAsset };
+    }
+    return { amount: (p * qty * takerBps) / 10000, asset: quoteAsset };
+  }, [type, side, price, quantity, takerBps, baseAsset, quoteAsset]);
 
   return (
     <div className="relative rounded-2xl border border-white/5 bg-white/[0.01] p-5 space-y-4">
@@ -625,6 +642,27 @@ function OrderForm({ symbol, market, kycStatus }: { symbol: string; market?: Mar
             Order {place.data?.data.status.toLowerCase()} ({place.data?.data.id.slice(0, 8)})
           </div>
         )}
+        {market && (
+          <div className="rounded-lg border border-white/5 bg-noir-2/60 p-3 space-y-1.5 text-[10px]">
+            <div className="flex justify-between">
+              <span className="text-white/45">Maker fee</span>
+              <span className="font-mono text-white/70">{(makerBps / 100).toFixed(2)}% ({makerBps} bps)</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-white/45">Taker fee</span>
+              <span className="font-mono text-white/70">{(takerBps / 100).toFixed(2)}% ({takerBps} bps)</span>
+            </div>
+            {feeEstimate && (
+              <div className="flex justify-between border-t border-white/5 pt-1.5">
+                <span className="text-white/45">Est. fee (taker)</span>
+                <span className="font-mono font-bold text-gold">
+                  ~{feeEstimate.amount.toFixed(feeEstimate.asset === quoteAsset ? 2 : 6)} {feeEstimate.asset}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
         {market && (
           <div className="text-[9px] text-white/35 leading-relaxed border-t border-white/5 pt-2 mt-2 font-mono">
             Min quote: {market.minNotional} {quoteAsset} · tick {market.tickSize} · step {market.stepSize}
@@ -855,18 +893,22 @@ function RecentTrades({ symbol, live }: { symbol: string; live: boolean }) {
           </p>
         ) : (
           <div className="space-y-1.5 font-mono text-xs">
-            <div className="grid grid-cols-3 text-[10px] font-bold uppercase tracking-wider text-white/30 border-b border-white/5 pb-2">
+            <div className="grid grid-cols-4 text-[10px] font-bold uppercase tracking-wider text-white/30 border-b border-white/5 pb-2">
               <span>Price</span>
               <span className="text-right">Qty</span>
+              <span className="text-right">Fee</span>
               <span className="text-right">Side</span>
             </div>
 
             {userTrades.map((t) => {
               const isBuy = t.side === 'BUY';
               return (
-                <div key={t.id} className="grid grid-cols-3 hover:bg-white/[0.02] px-1 py-0.5 rounded transition">
+                <div key={t.id} className="grid grid-cols-4 hover:bg-white/[0.02] px-1 py-0.5 rounded transition">
                   <span className="font-semibold text-white">{t.price}</span>
                   <span className="text-right text-white/70">{t.quantity}</span>
+                  <span className="text-right text-white/50" title={t.role ? `${t.role} fee` : 'fee'}>
+                    {t.fee && Number(t.fee) > 0 ? `${t.fee} ${t.feeAsset ?? ''}`.trim() : '—'}
+                  </span>
                   <span className={`text-right font-bold text-[10px] ${isBuy ? 'text-up' : 'text-down'}`}>
                     {t.side}
                   </span>

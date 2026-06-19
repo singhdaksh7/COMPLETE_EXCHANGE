@@ -11,6 +11,7 @@ import type {
   Conversion,
   CreatedAdmin,
   CryptoWithdrawal,
+  FeeReport,
   InrDeposit,
   KycProfile,
   OperationsAuditLog,
@@ -242,6 +243,10 @@ export const adminApi = {
       `/conversions${buildQuery({ limit: 20, ...params })}`,
       'GET',
     ),
+
+  // ---- fee revenue reports (Stage 3.8) ----
+  feeReport: (params: { fromDate?: string; toDate?: string } = {}) =>
+    adminApiFetch<FeeReport>(`/reports/fees${buildQuery(params)}`, 'GET'),
 
   // ---- scanner health ----
   scannerHealth: () => adminApiFetch<ScannerHealth>('/scanner/health', 'GET'),

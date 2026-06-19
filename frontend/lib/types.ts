@@ -652,3 +652,27 @@ export interface CryptoDeposit {
   detectedAt: string;
   creditedAt: string | null;
 }
+
+// ---- admin: fee revenue reports (Stage 3.8) ----
+export interface FeeAssetTotal {
+  asset: string;
+  amount: string;
+}
+
+export interface MarketFeeSetting {
+  symbol: string;
+  baseAsset: string;
+  quoteAsset: string;
+  makerFeeBps: number;
+  takerFeeBps: number;
+  status: string;
+}
+
+export interface FeeReport {
+  fromDate: string | null;
+  toDate: string | null;
+  tradingFees: { totalByAsset: FeeAssetTotal[] };
+  withdrawalFees: { totalByAsset: FeeAssetTotal[]; flatFeeUsdt: string };
+  ledgerFeeRevenue: { totalByAsset: FeeAssetTotal[] };
+  marketFees: MarketFeeSetting[];
+}

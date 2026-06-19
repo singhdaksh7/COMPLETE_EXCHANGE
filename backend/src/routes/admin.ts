@@ -9,6 +9,7 @@ import { adminConversionRouter } from '../modules/conversion/conversion.admin.ro
 import { adminTradingRouter } from '../modules/trading/trading.admin.routes';
 import { adminOperationsRouter } from '../modules/operations/operations.admin.routes';
 import { adminUsersRouter } from '../modules/admin-users/admin-users.routes';
+import { adminReportsRouter } from '../modules/reports/reports.admin.routes';
 import { healthRouter } from '../modules/health/health.routes';
 
 /**
@@ -38,6 +39,7 @@ adminApiRouter.use('/withdrawals', adminWithdrawalRouter);
 adminApiRouter.use('/conversions', adminConversionRouter);
 adminApiRouter.use('/spot', adminTradingRouter);
 adminApiRouter.use('/operations', adminOperationsRouter);
+adminApiRouter.use('/reports', adminReportsRouter);
 adminApiRouter.use('/users', adminUsersRouter);
 
 // Future admin modules (each behind admin RBAC):
