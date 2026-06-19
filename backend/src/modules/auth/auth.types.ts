@@ -44,6 +44,16 @@ export interface SessionDto {
   current: boolean;
 }
 
+/** A single account/security event for the user activity feed. */
+export interface ActivityEventDto {
+  id: string;
+  action: string;
+  entityType: string | null;
+  ip: string | null;
+  metadata: unknown;
+  occurredAt: Date;
+}
+
 /** Request-scoped context threaded into the service for audit/forensics. */
 export interface AuthContext {
   ip?: string;

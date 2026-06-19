@@ -139,4 +139,10 @@ export const authController = {
     const result = await authService.me(req.user.id);
     sendSuccess(res, result);
   },
+
+  async activity(req: Request, res: Response): Promise<void> {
+    if (!req.user) throw new UnauthorizedError();
+    const items = await authService.listActivity(req.user.id, 50);
+    sendSuccess(res, { items });
+  },
 };

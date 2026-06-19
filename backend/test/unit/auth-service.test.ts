@@ -26,6 +26,7 @@ vi.mock('../../src/modules/auth/auth.repository', () => ({
     revokeSessionForUser: vi.fn(),
     revokeAllSessionsForUser: vi.fn(),
     getUserRolesAndPermissions: vi.fn(),
+    listUserAuditLogs: vi.fn(),
   },
 }));
 
@@ -505,5 +506,35 @@ describe('session management & RBAC', () => {
     await expect(
       authService.validateAccessSession('user-1', 'sess-1'),
     ).rejects.toMatchObject({ errorCode: 'SESSION_INVALID' });
+  });
+});
+
+describe('authService.listActivity', () => {
+  it('maps the user audit rows into activity events (newest first preserved)', async () => {
+    repo.listUserAuditLogs.mockResolvedValue([
+      {
+        id: 2n,
+        action: 'auth.password_changed',
+        entityType: 'user',
+        ip: '10.0.0.1',
+        metadata: null,
+        occurredAt: new Date('2026-06-19T10:00:00Z'),
+      },
+      {
+        id: 1n,
+        action: 'auth.login',
+        entityType: 'user',
+        ip: '10.0.0.1',
+        metadata: null,
+        occurredAt: new Date('2026-06-19T09:00:00Z'),
+      },
+    ] as never);
+
+    const items = await authService.listActivity('user-1', 50);
+
+    expect(repo.listUserAuditLogs).toHaveBeenCalledWith('user-1', 50);
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({ id: '2', action: 'auth.password_changed' });
+    expect(items[1]).toMatchObject({ id: '1', action: 'auth.login' });
   });
 });

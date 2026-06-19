@@ -154,6 +154,7 @@ export function UserNav() {
     { href: '/dashboard', label: 'Dashboard', icon: <DashboardIcon /> },
     { href: '/portfolio', label: 'Portfolio', icon: <PortfolioIcon /> },
     { href: '/wallet', label: 'Wallet', icon: <WalletIcon /> },
+    { href: '/transactions', label: 'Transactions', icon: <WalletIcon /> },
     { href: '/markets', label: 'Markets', icon: <MarketsIcon /> },
     { href: '/trade', label: 'Trade', icon: <TradeIcon /> },
     { href: '/orders', label: 'Orders', icon: <OrdersIcon /> },

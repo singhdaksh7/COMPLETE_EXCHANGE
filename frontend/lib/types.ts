@@ -28,6 +28,24 @@ export interface LoginData {
   tokens: TokenPair;
 }
 
+export interface UserSession {
+  id: string;
+  ip: string | null;
+  device: unknown;
+  createdAt: string;
+  expiresAt: string;
+  current: boolean;
+}
+
+export interface UserActivityEvent {
+  id: string;
+  action: string;
+  entityType: string | null;
+  ip: string | null;
+  metadata: unknown;
+  occurredAt: string;
+}
+
 export interface MeData {
   user: PublicUser;
   roles: string[];

@@ -113,3 +113,5 @@ authRouter.delete(
 );
 
 authRouter.get('/me', authenticate, asyncHandler(authController.me));
+
+authRouter.get('/activity', authenticate, asyncHandler(authController.activity));

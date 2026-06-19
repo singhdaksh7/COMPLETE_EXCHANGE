@@ -29,7 +29,9 @@ import type {
   SubmitKycInput,
   Ticker,
   Trade,
+  UserActivityEvent,
   UserCryptoDeposit,
+  UserSession,
   Wallet,
   WalletOverview,
   WithdrawalAddress,
@@ -106,6 +108,17 @@ export const userApi = {
     apiFetch<void>(USER_API_URL, '/auth/resend-verification', { method: 'POST', body }),
 
   me: () => authed<MeData>('/auth/me'),
+
+  // ---- account security ----
+  changePassword: (body: { currentPassword: string; newPassword: string }) =>
+    authed<void>('/auth/change-password', { method: 'POST', body }),
+
+  listSessions: () => authed<{ items: UserSession[] }>('/auth/sessions'),
+
+  revokeSession: (sessionId: string) =>
+    authed<void>(`/auth/sessions/${sessionId}`, { method: 'DELETE' }),
+
+  listActivity: () => authed<{ items: UserActivityEvent[] }>('/auth/activity'),
 
   getKyc: () => authed<KycProfile>('/kyc'),
 

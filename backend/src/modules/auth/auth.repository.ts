@@ -133,6 +133,28 @@ export const authRepository = {
     });
   },
 
+  /**
+   * The user's own security/account events from the append-only audit log
+   * (login, password change, KYC submission, deposit submitted, withdrawal
+   * requested, session revoke, …). Scoped by actorId so only the caller's
+   * actions are returned.
+   */
+  listUserAuditLogs(userId: string, limit: number) {
+    return prisma.auditLog.findMany({
+      where: { actorId: userId },
+      orderBy: { id: 'desc' },
+      take: limit,
+      select: {
+        id: true,
+        action: true,
+        entityType: true,
+        ip: true,
+        metadata: true,
+        occurredAt: true,
+      },
+    });
+  },
+
   /** Revoke a single session, scoped to its owner (prevents cross-user revoke). */
   async revokeSessionForUser(
     userId: string,

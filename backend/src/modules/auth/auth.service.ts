@@ -35,6 +35,7 @@ import type {
   AuthResult,
   AuthContext,
   LoginInput,
+  ActivityEventDto,
   MeResult,
   PublicUser,
   RegisterInput,
@@ -661,6 +662,22 @@ export const authService = {
   ): Promise<SessionDto[]> {
     const sessions = await authRepository.findActiveSessionsByUser(userId);
     return sessions.map((s) => toSessionDto(s, currentSessionId));
+  },
+
+  /** The caller's recent account/security events (read-only audit feed). */
+  async listActivity(
+    userId: string,
+    limit = 50,
+  ): Promise<ActivityEventDto[]> {
+    const rows = await authRepository.listUserAuditLogs(userId, limit);
+    return rows.map((r) => ({
+      id: r.id.toString(),
+      action: r.action,
+      entityType: r.entityType,
+      ip: r.ip,
+      metadata: r.metadata,
+      occurredAt: r.occurredAt,
+    }));
   },
 
   async revokeSession(
