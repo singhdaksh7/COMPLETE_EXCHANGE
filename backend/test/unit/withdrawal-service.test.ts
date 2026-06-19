@@ -75,7 +75,7 @@ function withdrawal(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   repo.getWithdrawalFreeze.mockResolvedValue({ key: 'withdrawals_frozen', value: { enabled: false } } as never);
-  repo.findUserKyc.mockResolvedValue({ id: USER_ID, status: 'ACTIVE', kycStatus: 'APPROVED', kycTier: 1 } as never);
+  repo.findUserKyc.mockResolvedValue({ id: USER_ID, status: 'ACTIVE', kycStatus: 'APPROVED', kycTier: 1, withdrawalsBlocked: false } as never);
   repo.getSupportedToken.mockResolvedValue({ asset: 'USDT', chain: 'TRON', contractAddr: 'TUSDT', decimals: 6, minConfirmations: 20, isActive: true } as never);
   repo.findActiveAddress.mockResolvedValue({ whitelistedAt: new Date(Date.now() - 1000) } as never);
   repo.getTierLimit.mockResolvedValue(null);
@@ -91,10 +91,18 @@ describe('requestWithdrawal', () => {
   });
 
   it('requires approved KYC', async () => {
-    repo.findUserKyc.mockResolvedValue({ id: USER_ID, status: 'ACTIVE', kycStatus: 'PENDING', kycTier: 0 } as never);
+    repo.findUserKyc.mockResolvedValue({ id: USER_ID, status: 'ACTIVE', kycStatus: 'PENDING', kycTier: 0, withdrawalsBlocked: false } as never);
     await expect(
       withdrawalService.requestWithdrawal(USER_ID, { toAddress: TO, amount: '10' }),
     ).rejects.toMatchObject({ errorCode: 'KYC_REQUIRED' });
+  });
+
+  it('blocks user-level withdrawal requests when risk-blocked', async () => {
+    repo.findUserKyc.mockResolvedValue({ id: USER_ID, status: 'ACTIVE', kycStatus: 'APPROVED', kycTier: 1, withdrawalsBlocked: true } as never);
+    await expect(
+      withdrawalService.requestWithdrawal(USER_ID, { toAddress: TO, amount: '10' }),
+    ).rejects.toMatchObject({ errorCode: 'WITHDRAWALS_BLOCKED' });
+    expect(repo.createWithdrawal).not.toHaveBeenCalled();
   });
 
   it('enforces the address allowlist', async () => {

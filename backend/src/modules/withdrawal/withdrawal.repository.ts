@@ -26,7 +26,13 @@ export const withdrawalRepository = {
   findUserKyc(userId: string) {
     return prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, status: true, kycStatus: true, kycTier: true },
+      select: {
+        id: true,
+        status: true,
+        kycStatus: true,
+        kycTier: true,
+        withdrawalsBlocked: true,
+      },
     });
   },
 

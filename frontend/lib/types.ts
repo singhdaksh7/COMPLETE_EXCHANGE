@@ -161,6 +161,124 @@ export interface AdminKycQueue {
   nextCursor: string | null;
 }
 
+export interface AdminUserBalance {
+  asset: string;
+  available: string;
+  locked: string;
+  total: string;
+}
+
+export interface AdminUserListItem {
+  id: string;
+  email: string;
+  emailVerified: boolean;
+  emailVerifiedAt: string | null;
+  kycStatus: string;
+  kycTier: number;
+  accountStatus: string;
+  withdrawalsBlocked: boolean;
+  riskLevel: string;
+  riskNote: string | null;
+  createdAt: string;
+  lastLoginAt: string | null;
+  balances: AdminUserBalance[];
+}
+
+export interface AdminUserDetail extends AdminUserListItem {
+  phone: string | null;
+  phoneVerifiedAt: string | null;
+  totpEnabled: boolean;
+  updatedAt: string;
+  kycProfile: {
+    fullName: string | null;
+    status: string;
+    provider: string | null;
+    providerRef: string | null;
+    panMasked: string | null;
+    aadhaarMasked: string | null;
+    livenessStatus: string | null;
+    documentStatus: string | null;
+    riskScore: number | null;
+    rejectedReason: string | null;
+    reviewedAt: string | null;
+  } | null;
+  sessions: Array<{
+    id: string;
+    ip: string | null;
+    deviceInfo: unknown;
+    createdAt: string;
+    expiresAt: string;
+    revokedAt: string | null;
+  }>;
+  inrTransactions: Array<{
+    id: string;
+    type: string;
+    amount: string;
+    fee: string;
+    status: string;
+    provider: string | null;
+    utr: string | null;
+    method: string | null;
+    reviewedAt: string | null;
+    rejectionReason: string | null;
+    createdAt: string;
+  }>;
+  withdrawals: Array<{
+    id: string;
+    chain: string;
+    asset: string;
+    toAddress: string;
+    amount: string;
+    fee: string;
+    netAmount: string;
+    status: string;
+    txHash: string | null;
+    failureReason: string | null;
+    requestedAt: string;
+    completedAt: string | null;
+  }>;
+  orders: Array<{
+    id: string;
+    marketSymbol: string;
+    side: string;
+    type: string;
+    price: string | null;
+    quantity: string | null;
+    quoteBudget: string | null;
+    filledQuantity: string;
+    quoteSpent: string;
+    status: string;
+    createdAt: string;
+    closedAt: string | null;
+  }>;
+  trades: Array<{
+    id: string;
+    marketSymbol: string;
+    price: string;
+    quantity: string;
+    quoteAmount: string;
+    makerSide: string;
+    seq: string;
+    executedAt: string;
+  }>;
+  adminLogs: Array<{
+    id: string;
+    action: string;
+    reason: string | null;
+    beforeState: unknown;
+    afterState: unknown;
+    occurredAt: string;
+  }>;
+  auditLogs: Array<{
+    id: string;
+    action: string;
+    entityType: string | null;
+    entityId: string | null;
+    metadata: unknown;
+    occurredAt: string;
+  }>;
+}
+
 // ---- shared ----
 export interface Page<T> {
   items: T[];

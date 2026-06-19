@@ -364,6 +364,7 @@ export function AdminNav() {
 
   const adminLinks = [
     { href: '/admin/dashboard', label: 'Dashboard' },
+    { href: '/admin/users', label: 'Users' },
     { href: '/admin/kyc', label: 'KYC Verification' },
     { href: '/admin/deposits', label: 'Deposits queue' },
     { href: '/admin/withdrawals', label: 'Withdrawals queue' },

@@ -2,6 +2,8 @@ import { ApiError, type Envelope } from './api';
 import { tokenStore } from './auth';
 import type {
   AdminKycQueue,
+  AdminUserDetail,
+  AdminUserListItem,
   AdminListItem,
   AdminLoginData,
   AdminMeData,
@@ -141,6 +143,44 @@ export const adminApi = {
     userId: string,
     body: { decision: 'APPROVE' | 'REJECT'; tier?: number; reason?: string },
   ) => adminApiFetch<KycProfile>(`/kyc/${userId}/decision`, 'POST', { body }),
+
+  // ---- user management + risk controls ----
+  users: (
+    params: {
+      email?: string;
+      kycStatus?: string;
+      accountStatus?: string;
+      riskLevel?: string;
+      createdFrom?: string;
+      createdTo?: string;
+      cursor?: string;
+      limit?: number;
+    } = {},
+  ) =>
+    adminApiFetch<Page<AdminUserListItem>>(
+      `/users${buildQuery({ limit: 50, ...params })}`,
+      'GET',
+    ),
+
+  userDetail: (userId: string) =>
+    adminApiFetch<AdminUserDetail>(`/users/${userId}`, 'GET'),
+
+  setUserStatus: (userId: string, status: 'ACTIVE' | 'FROZEN') =>
+    adminApiFetch<AdminUserListItem>(`/users/${userId}/status`, 'PATCH', {
+      body: { status },
+    }),
+
+  setUserWithdrawalBlock: (userId: string, withdrawalsBlocked: boolean) =>
+    adminApiFetch<AdminUserListItem>(
+      `/users/${userId}/withdrawals-block`,
+      'PATCH',
+      { body: { withdrawalsBlocked } },
+    ),
+
+  updateUserRisk: (
+    userId: string,
+    body: { riskLevel?: 'LOW' | 'MEDIUM' | 'HIGH'; riskNote?: string | null },
+  ) => adminApiFetch<AdminUserListItem>(`/users/${userId}/risk`, 'PATCH', { body }),
 
   // ---- INR deposit monitoring + manual approval ----
   deposits: (

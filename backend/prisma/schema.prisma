@@ -51,6 +51,12 @@ enum UserStatus {
   CLOSED
 }
 
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
 enum KycStatus {
   NOT_STARTED
   PENDING
@@ -335,21 +341,24 @@ model Market {
 // USERS / AUTH / SESSIONS
 // ============================================================================
 model User {
-  id              String     @id @default(uuid()) @db.Uuid
-  email           String     @unique @db.Citext
-  phone           String?    @unique
-  passwordHash    String     @map("password_hash")
-  status          UserStatus @default(ACTIVE)
-  emailVerifiedAt DateTime?  @map("email_verified_at")
-  phoneVerifiedAt DateTime?  @map("phone_verified_at")
-  kycStatus       KycStatus  @default(NOT_STARTED) @map("kyc_status")
-  kycTier         Int        @default(0) @map("kyc_tier")
-  totpSecretEnc   Bytes?     @map("totp_secret_enc")
-  totpEnabled     Boolean    @default(false) @map("totp_enabled")
-  referralCode    String?    @unique @map("referral_code")
-  createdAt       DateTime   @default(now()) @map("created_at")
-  updatedAt       DateTime   @updatedAt @map("updated_at")
-  deletedAt       DateTime?  @map("deleted_at")
+  id                 String     @id @default(uuid()) @db.Uuid
+  email              String     @unique @db.Citext
+  phone              String?    @unique
+  passwordHash       String     @map("password_hash")
+  status             UserStatus @default(ACTIVE)
+  emailVerifiedAt    DateTime?  @map("email_verified_at")
+  phoneVerifiedAt    DateTime?  @map("phone_verified_at")
+  kycStatus          KycStatus  @default(NOT_STARTED) @map("kyc_status")
+  kycTier            Int        @default(0) @map("kyc_tier")
+  withdrawalsBlocked Boolean    @default(false) @map("withdrawals_blocked")
+  riskLevel          RiskLevel  @default(LOW) @map("risk_level")
+  riskNote           String?    @map("risk_note")
+  totpSecretEnc      Bytes?     @map("totp_secret_enc")
+  totpEnabled        Boolean    @default(false) @map("totp_enabled")
+  referralCode       String?    @unique @map("referral_code")
+  createdAt          DateTime   @default(now()) @map("created_at")
+  updatedAt          DateTime   @updatedAt @map("updated_at")
+  deletedAt          DateTime?  @map("deleted_at")
 
   sessions          AuthSession[]
   oauthAccounts     OAuthAccount[]
@@ -513,16 +522,16 @@ model AdminRole {
 // KYC
 // ============================================================================
 model KycProfile {
-  id             String    @id @default(uuid()) @db.Uuid
-  userId         String    @unique @map("user_id") @db.Uuid
-  fullName       String?   @map("full_name")
-  dob            DateTime? @db.Date
-  panEnc         Bytes?    @map("pan_enc")
-  aadhaarRefEnc  Bytes?    @map("aadhaar_ref_enc")
-  address        Json?
-  status         KycStatus @default(PENDING)
-  provider       String?
-  providerRef    String?   @map("provider_ref")
+  id                  String          @id @default(uuid()) @db.Uuid
+  userId              String          @unique @map("user_id") @db.Uuid
+  fullName            String?         @map("full_name")
+  dob                 DateTime?       @db.Date
+  panEnc              Bytes?          @map("pan_enc")
+  aadhaarRefEnc       Bytes?          @map("aadhaar_ref_enc")
+  address             Json?
+  status              KycStatus       @default(PENDING)
+  provider            String?
+  providerRef         String?         @map("provider_ref")
   // Generic third-party provider linkage + normalized outcome (vendor-neutral).
   providerSessionId   String?         @map("provider_session_id")
   providerApplicantId String?         @map("provider_applicant_id")
@@ -531,11 +540,11 @@ model KycProfile {
   livenessStatus      KycCheckStatus? @map("liveness_status")
   documentStatus      KycCheckStatus? @map("document_status")
   riskScore           Int?            @map("risk_score")
-  rejectedReason String?   @map("rejected_reason")
-  reviewedBy     String?   @map("reviewed_by") @db.Uuid
-  reviewedAt     DateTime? @map("reviewed_at")
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
+  rejectedReason      String?         @map("rejected_reason")
+  reviewedBy          String?         @map("reviewed_by") @db.Uuid
+  reviewedAt          DateTime?       @map("reviewed_at")
+  createdAt           DateTime        @default(now()) @map("created_at")
+  updatedAt           DateTime        @updatedAt @map("updated_at")
 
   user     User   @relation(fields: [userId], references: [id])
   reviewer Admin? @relation("KycReviewer", fields: [reviewedBy], references: [id])
@@ -1214,16 +1223,16 @@ model Admin {
   ipAllowlist   String[] @default([]) @map("ip_allowlist")
   createdAt     DateTime @default(now()) @map("created_at")
 
-  roles                AdminRole[]
-  sessions             AdminSession[]
-  logs                 AdminLog[]
-  reviewedKycProfiles  KycProfile[]       @relation("KycReviewer")
-  approvedWithdrawals  CryptoWithdrawal[] @relation("WithdrawApprover1")
-  approvedWithdrawals2 CryptoWithdrawal[] @relation("WithdrawApprover2")
-  grantedRoles         UserRole[]         @relation("RoleGranter")
-  updatedFlags         SystemFlag[]       @relation("FlagUpdater")
-  reviewedInrDeposits  InrTransaction[]   @relation("InrDepositReviewer")
-  firstApprovedDeposits InrTransaction[]  @relation("InrDepositFirstApprover")
+  roles                 AdminRole[]
+  sessions              AdminSession[]
+  logs                  AdminLog[]
+  reviewedKycProfiles   KycProfile[]       @relation("KycReviewer")
+  approvedWithdrawals   CryptoWithdrawal[] @relation("WithdrawApprover1")
+  approvedWithdrawals2  CryptoWithdrawal[] @relation("WithdrawApprover2")
+  grantedRoles          UserRole[]         @relation("RoleGranter")
+  updatedFlags          SystemFlag[]       @relation("FlagUpdater")
+  reviewedInrDeposits   InrTransaction[]   @relation("InrDepositReviewer")
+  firstApprovedDeposits InrTransaction[]   @relation("InrDepositFirstApprover")
 
   @@map("admins")
 }

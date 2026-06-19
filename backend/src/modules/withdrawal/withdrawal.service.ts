@@ -126,6 +126,12 @@ export const withdrawalService = {
     if (user.status !== 'ACTIVE') {
       throw new ForbiddenError('Account is not active', 'ACCOUNT_INACTIVE');
     }
+    if (user.withdrawalsBlocked) {
+      throw new ForbiddenError(
+        'Withdrawals are blocked for this account',
+        'WITHDRAWALS_BLOCKED',
+      );
+    }
     if (user.kycStatus !== 'APPROVED' || user.kycTier < 1) {
       throw new ForbiddenError('KYC approval is required to withdraw', 'KYC_REQUIRED');
     }

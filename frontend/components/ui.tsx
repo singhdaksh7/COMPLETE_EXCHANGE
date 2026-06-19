@@ -115,6 +115,13 @@ export function StatusBadge({ status }: { status: string }) {
     REJECTED: red,
     NOT_STARTED: gray,
     ACTIVE: green,
+    FROZEN: red,
+    LOCKED: red,
+    CLOSED: gray,
+    'WITHDRAWALS BLOCKED': red,
+    'LOW RISK': green,
+    'MEDIUM RISK': yellow,
+    'HIGH RISK': red,
     // deposits / conversions / withdrawals
     SUCCESS: green,
     CREDITED: green,
