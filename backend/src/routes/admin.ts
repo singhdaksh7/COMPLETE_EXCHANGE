@@ -9,6 +9,7 @@ import { adminConversionRouter } from '../modules/conversion/conversion.admin.ro
 import { adminTradingRouter } from '../modules/trading/trading.admin.routes';
 import { adminOperationsRouter } from '../modules/operations/operations.admin.routes';
 import { adminUsersRouter } from '../modules/admin-users/admin-users.routes';
+import { healthRouter } from '../modules/health/health.routes';
 
 /**
  * Aggregates all admin API routers mounted under the admin prefix
@@ -27,6 +28,7 @@ adminApiRouter.get('/ping', (_req, res) => {
   res.json({ success: true, data: { surface: 'admin', status: 'ok' } });
 });
 
+adminApiRouter.use('/', healthRouter);
 adminApiRouter.use('/', adminRbacRouter);
 adminApiRouter.use('/kyc', adminKycRouter);
 adminApiRouter.use('/inr/deposits', adminDepositRouter);

@@ -12,7 +12,16 @@ dotenv.config();
  * invalid or missing variable rather than failing later at request time.
  * This is a custodial financial system — fail fast, fail loud.
  */
-const envSchema = z
+const DEV_ONLY_VALUES = new Set([
+  'change_me_access_secret_min_32_chars_long_value',
+  'change_me_refresh_secret_min_32_chars_long_value',
+  'dev-only-change-me-kyc-pii-encryption-key',
+  'dev-only-kyc-webhook-secret-change-me',
+  'dev-only-razorpay-key-secret-change-me',
+  'dev-only-razorpay-webhook-secret-change-me',
+]);
+
+export const envSchema = z
   .object({
   NODE_ENV: z
     .enum(['development', 'test', 'production'])
@@ -263,6 +272,32 @@ const envSchema = z
   })
   // Fail fast: 'ses' mode is useless (and silently drops mail) without a region.
   .superRefine((val, ctx) => {
+    const productionLike = val.NODE_ENV === 'production';
+    if (productionLike && val.CORS_ORIGINS.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['CORS_ORIGINS'],
+        message: 'CORS_ORIGINS must be set in production',
+      });
+    }
+    if (productionLike) {
+      for (const key of [
+        'JWT_ACCESS_SECRET',
+        'JWT_REFRESH_SECRET',
+        'KYC_ENCRYPTION_KEY',
+        'KYC_WEBHOOK_SECRET',
+        'RAZORPAY_KEY_SECRET',
+        'RAZORPAY_WEBHOOK_SECRET',
+      ] as const) {
+        if (DEV_ONLY_VALUES.has(val[key])) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message: `${key} must not use a dev/default placeholder in production`,
+          });
+        }
+      }
+    }
     if (val.MAIL_PROVIDER === 'ses' && !val.AWS_REGION) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -282,7 +317,38 @@ const envSchema = z
         }
       }
     }
+    if (val.TRON_PROVIDER === 'live' && !val.TRONGRID_API_KEY) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['TRONGRID_API_KEY'],
+        message: 'TRONGRID_API_KEY is required when TRON_PROVIDER=live',
+      });
+    }
+    if (val.BSC_PROVIDER === 'live' && !val.BSC_TESTNET_RPC_URL) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['BSC_TESTNET_RPC_URL'],
+        message: 'BSC_TESTNET_RPC_URL is required when BSC_PROVIDER=live',
+      });
+    }
+    if (val.RAZORPAY_PROVIDER === 'live') {
+      for (const key of ['RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET', 'RAZORPAY_WEBHOOK_SECRET'] as const) {
+        if (!val[key] || DEV_ONLY_VALUES.has(val[key])) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message: `${key} is required and must not be a dev placeholder when RAZORPAY_PROVIDER=live`,
+          });
+        }
+      }
+    }
   });
+
+export type ParsedEnv = z.infer<typeof envSchema>;
+
+export function validateEnv(raw: NodeJS.ProcessEnv): ParsedEnv {
+  return envSchema.parse(raw);
+}
 
 const parsed = envSchema.safeParse(process.env);
 

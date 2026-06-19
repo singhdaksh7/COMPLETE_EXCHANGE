@@ -1,11 +1,35 @@
 import { isDatabaseHealthy } from '../../lib/prisma';
 import { isRedisHealthy } from '../../lib/redis';
+import { config } from '../../config';
+
+export interface HealthMeta {
+  service: string;
+  version: string;
+  environment: string;
+  uptime: number;
+  timestamp: string;
+}
 
 export interface ReadinessReport {
   status: 'ok' | 'degraded';
+  service: string;
+  version: string;
+  environment: string;
+  uptime: number;
+  timestamp: string;
   checks: {
-    database: boolean;
-    redis: boolean;
+    database: 'ok' | 'degraded';
+    redis: 'ok' | 'degraded';
+  };
+}
+
+export function getHealthMeta(): HealthMeta {
+  return {
+    service: 'cex-backend',
+    version: process.env.npm_package_version ?? '0.1.0',
+    environment: config.env,
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
   };
 }
 
@@ -21,5 +45,12 @@ export async function getReadiness(): Promise<ReadinessReport> {
   ]);
 
   const status = database && redisOk ? 'ok' : 'degraded';
-  return { status, checks: { database, redis: redisOk } };
+  return {
+    status,
+    ...getHealthMeta(),
+    checks: {
+      database: database ? 'ok' : 'degraded',
+      redis: redisOk ? 'ok' : 'degraded',
+    },
+  };
 }

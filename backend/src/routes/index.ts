@@ -16,6 +16,7 @@ import {
   orderRouter,
   tradeRouter,
 } from '../modules/trading/trading.routes';
+import { healthRouter } from '../modules/health/health.routes';
 
 /**
  * Aggregates all versioned API routers mounted under the API prefix
@@ -23,6 +24,7 @@ import {
  */
 export const apiRouter = Router();
 
+apiRouter.use('/', healthRouter);
 apiRouter.use('/auth', authRouter);
 apiRouter.use('/kyc', kycRouter);
 // Wallet-infra routes (/wallets/overview, /networks, /addresses) must be

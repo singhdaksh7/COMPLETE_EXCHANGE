@@ -1,10 +1,17 @@
 import type { Request, Response } from 'express';
 import { sendSuccess, sendError } from '../../utils/response';
-import { getReadiness } from './health.service';
+import { getHealthMeta, getReadiness } from './health.service';
 
 /** Liveness: the process is up and the event loop responds. */
 export function liveness(_req: Request, res: Response): void {
-  sendSuccess(res, { status: 'ok', uptime: process.uptime() });
+  sendSuccess(res, {
+    status: 'ok',
+    ...getHealthMeta(),
+    checks: {
+      database: 'not_checked',
+      redis: 'not_checked',
+    },
+  });
 }
 
 /** Readiness: all critical dependencies are reachable. */
@@ -20,8 +27,9 @@ export async function readiness(_req: Request, res: Response): Promise<void> {
 /** Build/version metadata. */
 export function version(_req: Request, res: Response): void {
   sendSuccess(res, {
-    name: 'cex-backend',
-    version: process.env.npm_package_version ?? '0.1.0',
+    service: 'cex-backend',
+    version: getHealthMeta().version,
     node: process.version,
+    timestamp: new Date().toISOString(),
   });
 }
