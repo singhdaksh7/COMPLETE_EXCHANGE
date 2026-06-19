@@ -7,6 +7,40 @@ import {
 import { prisma } from '../../lib/prisma';
 import { ConflictError } from '../../lib/errors';
 
+/** Shared filter for the admin deposit list + export. */
+export interface AdminDepositFilter {
+  status?: InrTxnStatus;
+  provider?: string;
+  userId?: string;
+  email?: string;
+  utr?: string;
+  fromDate?: Date;
+  toDate?: Date;
+  minAmount?: string;
+  maxAmount?: string;
+}
+
+function buildAdminDepositWhere(input: AdminDepositFilter): Prisma.InrTransactionWhereInput {
+  const amount: Prisma.DecimalFilter = {};
+  if (input.minAmount !== undefined) amount.gte = new Prisma.Decimal(input.minAmount);
+  if (input.maxAmount !== undefined) amount.lte = new Prisma.Decimal(input.maxAmount);
+
+  const createdAt: Prisma.DateTimeFilter = {};
+  if (input.fromDate) createdAt.gte = input.fromDate;
+  if (input.toDate) createdAt.lte = input.toDate;
+
+  return {
+    type: 'DEPOSIT',
+    ...(input.status ? { status: input.status } : {}),
+    ...(input.provider ? { provider: input.provider } : {}),
+    ...(input.userId ? { userId: input.userId } : {}),
+    ...(input.utr ? { utr: { contains: input.utr } } : {}),
+    ...(input.email ? { user: { email: { contains: input.email } } } : {}),
+    ...(Object.keys(amount).length ? { amount } : {}),
+    ...(Object.keys(createdAt).length ? { createdAt } : {}),
+  };
+}
+
 /**
  * Repository layer: the ONLY place that talks to Prisma for INR deposits and
  * payment webhook events. The DB schema is frozen — this layer only reads/writes
@@ -122,6 +156,26 @@ export const depositRepository = {
   },
 
   /**
+   * Record the FIRST approval of a dual-approval deposit. Conditional on
+   * status='PENDING' AND first_approved_by IS NULL so a deposit can only ever
+   * receive a first approval once; no money moves here.
+   */
+  async markFirstApproval(
+    id: string,
+    data: { firstApprovedBy: string },
+  ): Promise<{ updated: boolean; row: InrTransaction | null }> {
+    const result = await prisma.inrTransaction.updateMany({
+      where: { id, status: 'PENDING', firstApprovedBy: null },
+      data: {
+        firstApprovedBy: data.firstApprovedBy,
+        firstApprovedAt: new Date(),
+      },
+    });
+    const row = await prisma.inrTransaction.findUnique({ where: { id } });
+    return { updated: result.count === 1, row };
+  },
+
+  /**
    * Reject a manual deposit PENDING → FAILED with a reason. Conditional on
    * status='PENDING' so a credited deposit can never be flipped to FAILED.
    */
@@ -222,24 +276,40 @@ export const depositRepository = {
   },
 
   /** Admin monitoring view across all users, with optional filters. */
-  adminListDeposits(input: {
-    status?: InrTxnStatus;
-    provider?: string;
-    userId?: string;
-    cursor?: string;
-    limit: number;
-  }): Promise<InrTransaction[]> {
+  adminListDeposits(input: AdminDepositFilter & { cursor?: string; limit: number }): Promise<InrTransaction[]> {
     return prisma.inrTransaction.findMany({
       where: {
-        type: 'DEPOSIT',
-        ...(input.status ? { status: input.status } : {}),
-        ...(input.provider ? { provider: input.provider } : {}),
-        ...(input.userId ? { userId: input.userId } : {}),
+        ...buildAdminDepositWhere(input),
         ...(input.cursor ? { id: { lt: input.cursor } } : {}),
       },
       orderBy: { createdAt: 'desc' },
       take: input.limit + 1,
     });
+  },
+
+  /** Unpaginated export view (capped) for CSV download. */
+  adminExportDeposits(
+    input: AdminDepositFilter,
+    cap = 5000,
+  ): Promise<(InrTransaction & { user: { email: string } })[]> {
+    return prisma.inrTransaction.findMany({
+      where: buildAdminDepositWhere(input),
+      orderBy: { createdAt: 'desc' },
+      take: cap,
+      include: { user: { select: { email: true } } },
+    });
+  },
+
+  /** Counts of manual INR deposits grouped by status (for the ops dashboard). */
+  async countManualDepositsByStatus(): Promise<Record<string, number>> {
+    const rows = await prisma.inrTransaction.groupBy({
+      by: ['status'],
+      where: { type: 'DEPOSIT', provider: 'MANUAL' },
+      _count: { _all: true },
+    });
+    const out: Record<string, number> = {};
+    for (const r of rows) out[r.status] = r._count._all;
+    return out;
   },
 
   // ---------------------------------------------------------------------------

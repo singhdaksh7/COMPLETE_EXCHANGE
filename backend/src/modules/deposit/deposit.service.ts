@@ -11,6 +11,7 @@ import {
 import { recordAudit } from '../../lib/audit';
 import { ledgerService } from '../ledger/ledger.service';
 import { depositRepository } from './deposit.repository';
+import type { AdminDepositFilter } from './deposit.repository';
 import { getRazorpayProvider } from './providers';
 import { RAZORPAY_PROVIDER_ID } from './providers/razorpay.provider';
 import {
@@ -557,6 +558,59 @@ export const depositService = {
       );
     }
 
+    // Maker-checker: deposits at/above the threshold need two DIFFERENT admins.
+    const threshold = new Prisma.Decimal(config.inrOps.dualApprovalThreshold);
+    const requiresDual = deposit.amount.gte(threshold);
+
+    // ----- FIRST approval of a dual-approval deposit: record, do NOT credit ---
+    if (requiresDual && !deposit.firstApprovedBy) {
+      const { updated, row } = await depositRepository.markFirstApproval(
+        deposit.id,
+        { firstApprovedBy: ctx.actorId },
+      );
+      if (!row) throw new NotFoundError('Manual deposit not found');
+      if (updated) {
+        await recordAudit({
+          actorType: 'ADMIN',
+          actorId: ctx.actorId,
+          action: DepositAction.MANUAL_FIRST_APPROVED,
+          entityType: REFERENCE_TYPE,
+          entityId: deposit.id,
+          ip: ctx.ip,
+          userAgent: ctx.userAgent,
+          requestId: ctx.requestId,
+          metadata: { amount: deposit.amount.toFixed(2), utr: deposit.utr },
+        });
+        await depositRepository.writeAdminLog({
+          adminId: ctx.actorId,
+          action: DepositAction.MANUAL_FIRST_APPROVED,
+          targetType: REFERENCE_TYPE,
+          targetId: deposit.id,
+          ip: ctx.ip,
+          requestId: ctx.requestId,
+          beforeState: { status: 'PENDING', firstApprovedBy: null },
+          afterState: {
+            status: 'PENDING_SECOND_APPROVAL',
+            firstApprovedBy: ctx.actorId,
+          },
+        });
+      }
+      return toInrDepositDto(row);
+    }
+
+    // ----- Same admin cannot perform the second approval --------------------
+    if (requiresDual && deposit.firstApprovedBy === ctx.actorId) {
+      throw new ForbiddenError(
+        'A second, different admin must approve this deposit',
+        'SAME_APPROVER',
+      );
+    }
+
+    // ----- Credit step: single approval (below threshold) OR second approval
+    //       (dual, by a different admin). Money moves here, exactly once. ------
+    const creditAction = requiresDual
+      ? DepositAction.MANUAL_SECOND_APPROVED
+      : DepositAction.MANUAL_APPROVED;
     const amount = deposit.amount.toFixed(2);
     // (b) Double-entry posting: manual bank clearing → user available INR.
     const posted = await ledgerService.post(
@@ -568,6 +622,7 @@ export const depositService = {
           provider: MANUAL_PROVIDER,
           utr: deposit.utr,
           method: deposit.method,
+          firstApprovedBy: deposit.firstApprovedBy,
           approvedBy: ctx.actorId,
         },
         lines: [
@@ -590,7 +645,7 @@ export const depositService = {
       { userId: deposit.userId, requestId: ctx.requestId, ip: ctx.ip },
     );
 
-    // (c) Flip PENDING → SUCCESS, bind ledger txn + reviewing admin.
+    // (c) Flip PENDING → SUCCESS, bind ledger txn + final reviewing admin.
     const { updated, row } = await depositRepository.markManualApproved(
       deposit.id,
       { reviewedBy: ctx.actorId, ledgerTxnId: posted.id },
@@ -603,22 +658,28 @@ export const depositService = {
       await recordAudit({
         actorType: 'ADMIN',
         actorId: ctx.actorId,
-        action: DepositAction.MANUAL_APPROVED,
+        action: creditAction,
         entityType: REFERENCE_TYPE,
         entityId: deposit.id,
         ip: ctx.ip,
         userAgent: ctx.userAgent,
         requestId: ctx.requestId,
-        metadata: { amount, ledgerTxnId: posted.id, utr: deposit.utr },
+        metadata: {
+          amount,
+          ledgerTxnId: posted.id,
+          utr: deposit.utr,
+          firstApprovedBy: deposit.firstApprovedBy,
+          dualApproval: requiresDual,
+        },
       });
       await depositRepository.writeAdminLog({
         adminId: ctx.actorId,
-        action: DepositAction.MANUAL_APPROVED,
+        action: creditAction,
         targetType: REFERENCE_TYPE,
         targetId: deposit.id,
         ip: ctx.ip,
         requestId: ctx.requestId,
-        beforeState: { status: 'PENDING' },
+        beforeState: { status: 'PENDING', firstApprovedBy: deposit.firstApprovedBy },
         afterState: { status: 'SUCCESS', ledgerTxnId: posted.id },
       });
     }
@@ -693,16 +754,10 @@ export const depositService = {
   },
 
   // ------------------------------------------------------------------
-  // 8. Admin deposit monitoring
+  // 8. Admin deposit monitoring (filterable) + CSV export
   // ------------------------------------------------------------------
   async adminListDeposits(
-    input: {
-      status?: InrTxnStatus;
-      provider?: string;
-      userId?: string;
-      cursor?: string;
-      limit: number;
-    },
+    input: AdminDepositFilter & { cursor?: string; limit: number },
     ctx: DepositContext = {},
   ): Promise<{ items: InrDepositDto[]; nextCursor: string | null }> {
     const rows = await depositRepository.adminListDeposits(input);
@@ -729,7 +784,64 @@ export const depositService = {
     }
     return result;
   },
+
+  /** CSV export of INR deposits (no secrets — id, user email, amount, UTR,
+   *  method, status, approvers, timestamps). */
+  async adminExportDepositsCsv(
+    input: AdminDepositFilter,
+    ctx: DepositContext = {},
+  ): Promise<string> {
+    const rows = await depositRepository.adminExportDeposits(input);
+    if (ctx.actorId) {
+      await depositRepository.writeAdminLog({
+        adminId: ctx.actorId,
+        action: 'inr.deposit.export',
+        targetType: 'inr_deposit_queue',
+        ip: ctx.ip,
+        requestId: ctx.requestId,
+        afterState: { count: rows.length },
+      });
+    }
+    const header = [
+      'id',
+      'user_email',
+      'amount',
+      'utr',
+      'method',
+      'status',
+      'first_approved_by',
+      'reviewed_by',
+      'reviewed_at',
+      'created_at',
+    ];
+    const lines = [header.join(',')];
+    for (const r of rows) {
+      lines.push(
+        [
+          r.id,
+          r.user.email,
+          r.amount.toFixed(2),
+          r.utr ?? '',
+          r.method ?? '',
+          r.status,
+          r.firstApprovedBy ?? '',
+          r.reviewedBy ?? '',
+          r.reviewedAt ? r.reviewedAt.toISOString() : '',
+          r.createdAt.toISOString(),
+        ]
+          .map(csvCell)
+          .join(','),
+      );
+    }
+    return lines.join('\n');
+  },
 };
+
+/** Quote a CSV cell when it contains a comma, quote, or newline. */
+function csvCell(value: string): string {
+  if (/[",\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  return value;
+}
 
 function page(
   rows: InrTransaction[],

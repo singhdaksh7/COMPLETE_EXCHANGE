@@ -947,16 +947,22 @@ model InrTransaction {
   utr               String?      @map("utr") // bank/UPI reference, manual deposits
   method            String?      @map("method") // 'UPI' | 'IMPS' | 'NEFT' | 'QR' | 'BANK'
   proofKey          String?      @map("proof_key") // object-storage key for the proof screenshot (optional)
-  reviewedBy        String?      @map("reviewed_by") @db.Uuid // admin who approved/rejected
+  // Maker-checker (Stage 3.4C): first approver for dual-approval deposits. The
+  // final/second approver (or rejecter) is reviewedBy. Below the threshold,
+  // firstApprovedBy stays null and reviewedBy alone records the single approver.
+  firstApprovedBy   String?      @map("first_approved_by") @db.Uuid
+  firstApprovedAt   DateTime?    @map("first_approved_at")
+  reviewedBy        String?      @map("reviewed_by") @db.Uuid // admin who finally approved/rejected
   reviewedAt        DateTime?    @map("reviewed_at")
   rejectionReason   String?      @map("rejection_reason")
   metadata          Json?
   createdAt         DateTime     @default(now()) @map("created_at")
   updatedAt         DateTime     @updatedAt @map("updated_at")
 
-  user      User               @relation(fields: [userId], references: [id])
-  ledgerTxn LedgerTransaction? @relation(fields: [ledgerTxnId], references: [id])
-  reviewer  Admin?             @relation("InrDepositReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+  user          User               @relation(fields: [userId], references: [id])
+  ledgerTxn     LedgerTransaction? @relation(fields: [ledgerTxnId], references: [id])
+  reviewer      Admin?             @relation("InrDepositReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+  firstApprover Admin?             @relation("InrDepositFirstApprover", fields: [firstApprovedBy], references: [id], onDelete: SetNull)
 
   @@unique([provider, providerPaymentId]) // idempotent settlement
   @@unique([provider, utr]) // duplicate-UTR guard; NULL utr (Razorpay) rows never collide (NULLs distinct)
@@ -1217,6 +1223,7 @@ model Admin {
   grantedRoles         UserRole[]         @relation("RoleGranter")
   updatedFlags         SystemFlag[]       @relation("FlagUpdater")
   reviewedInrDeposits  InrTransaction[]   @relation("InrDepositReviewer")
+  firstApprovedDeposits InrTransaction[]  @relation("InrDepositFirstApprover")
 
   @@map("admins")
 }

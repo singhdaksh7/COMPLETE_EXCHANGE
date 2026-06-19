@@ -3,7 +3,10 @@ import { UnauthorizedError } from '../../lib/errors';
 import { sendSuccess } from '../../utils/response';
 import { depositService } from './deposit.service';
 import type { DepositContext } from './deposit.types';
-import type { AdminDepositQueryDto } from './deposit.validators';
+import type {
+  AdminDepositExportDto,
+  AdminDepositQueryDto,
+} from './deposit.validators';
 
 function ctx(req: Request): DepositContext {
   return {
@@ -21,13 +24,50 @@ function ctx(req: Request): DepositContext {
 export const adminDepositController = {
   async list(req: Request, res: Response): Promise<void> {
     if (!req.admin) throw new UnauthorizedError();
-    const { cursor, limit, status, provider, userId } =
-      req.query as unknown as AdminDepositQueryDto;
+    const q = req.query as unknown as AdminDepositQueryDto;
     const result = await depositService.adminListDeposits(
-      { cursor, limit, status, provider, userId },
+      {
+        cursor: q.cursor,
+        limit: q.limit,
+        status: q.status,
+        provider: q.provider,
+        userId: q.userId,
+        email: q.email,
+        utr: q.utr,
+        fromDate: q.fromDate,
+        toDate: q.toDate,
+        minAmount: q.minAmount,
+        maxAmount: q.maxAmount,
+      },
       ctx(req),
     );
     sendSuccess(res, result);
+  },
+
+  // GET /inr/deposits/export — CSV of the filtered deposit set.
+  async exportCsv(req: Request, res: Response): Promise<void> {
+    if (!req.admin) throw new UnauthorizedError();
+    const q = req.query as unknown as AdminDepositExportDto;
+    const csv = await depositService.adminExportDepositsCsv(
+      {
+        status: q.status,
+        provider: q.provider,
+        userId: q.userId,
+        email: q.email,
+        utr: q.utr,
+        fromDate: q.fromDate,
+        toDate: q.toDate,
+        minAmount: q.minAmount,
+        maxAmount: q.maxAmount,
+      },
+      ctx(req),
+    );
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="inr-deposits.csv"',
+    );
+    res.status(200).send(csv);
   },
 
   // POST /inr/deposits/:id/approve — credit the user's INR balance (idempotent).

@@ -212,11 +212,36 @@ export interface InrDeposit {
   utr: string | null;
   method: string | null;
   proofKey: string | null;
+  firstApprovedBy: string | null;
+  firstApprovedAt: string | null;
   reviewedBy: string | null;
   reviewedAt: string | null;
   rejectionReason: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+// --- Admin operations (Stage 3.4C) ---
+export interface OperationsAuditLog {
+  id: string;
+  actorAdminId: string;
+  actorEmail: string | null;
+  action: string;
+  targetType: string | null;
+  targetId: string | null;
+  reason: string | null;
+  beforeState: unknown;
+  afterState: unknown;
+  ip: string | null;
+  occurredAt: string;
+}
+
+export interface OperationsSummary {
+  inrDeposits: { pending: number; approved: number; rejected: number; total: number };
+  kyc: { pending: number };
+  admins: { active: number; suspended: number };
+  recentAdminActions: OperationsAuditLog[];
+  dualApprovalThreshold: string;
 }
 
 export type ManualDepositMethod = 'UPI' | 'IMPS' | 'NEFT' | 'QR' | 'BANK';

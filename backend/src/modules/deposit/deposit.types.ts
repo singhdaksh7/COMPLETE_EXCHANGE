@@ -25,6 +25,9 @@ export const DepositAction = {
   MANUAL_SUBMITTED: 'inr.deposit.manual_submitted',
   MANUAL_APPROVED: 'inr.deposit.manual_approved',
   MANUAL_REJECTED: 'inr.deposit.manual_rejected',
+  // Maker-checker (dual approval) lifecycle
+  MANUAL_FIRST_APPROVED: 'inr.deposit.manual_first_approved',
+  MANUAL_SECOND_APPROVED: 'inr.deposit.manual_second_approved',
 } as const;
 
 /** Provider tag for manually-submitted (non-gateway) INR deposits. */
@@ -87,6 +90,8 @@ export interface InrDepositDto {
   utr: string | null;
   method: string | null;
   proofKey: string | null;
+  firstApprovedBy: string | null;
+  firstApprovedAt: Date | null;
   reviewedBy: string | null;
   reviewedAt: Date | null;
   rejectionReason: string | null;
@@ -118,6 +123,8 @@ export function toInrDepositDto(txn: InrTransaction): InrDepositDto {
     utr: txn.utr,
     method: txn.method,
     proofKey: txn.proofKey,
+    firstApprovedBy: txn.firstApprovedBy,
+    firstApprovedAt: txn.firstApprovedAt,
     reviewedBy: txn.reviewedBy,
     reviewedAt: txn.reviewedAt,
     rejectionReason: txn.rejectionReason,

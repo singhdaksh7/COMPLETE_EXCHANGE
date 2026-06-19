@@ -369,6 +369,7 @@ export function AdminNav() {
     { href: '/admin/conversions', label: 'Conversions ledger' },
     { href: '/admin/scanner', label: 'Blockchain scan' },
     { href: '/admin/admins', label: 'Admin management' },
+    { href: '/admin/audit', label: 'Audit log' },
   ];
 
   return (

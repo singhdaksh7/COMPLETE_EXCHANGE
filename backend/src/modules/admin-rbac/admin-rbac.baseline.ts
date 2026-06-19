@@ -35,6 +35,7 @@ export const ADMIN_PERMISSIONS: PermissionDef[] = [
   { code: 'admin.manage', description: 'Create / suspend / manage admin accounts' },
   { code: 'admin.view', description: 'View admin accounts' },
   { code: 'audit.view', description: 'Read audit & admin logs' },
+  { code: 'operations.view', description: 'View the admin operations dashboard' },
 ];
 
 /** Sentinel: SUPER_ADMIN receives EVERY permission. */
@@ -68,12 +69,13 @@ export const ADMIN_ROLES: RoleDef[] = [
       'ledger.view',
       'recon.run',
       'deposit.view',
+      'operations.view',
     ],
   },
   {
     name: 'KYC_REVIEWER',
     description: 'KYC / AML review',
-    permissions: ['kyc.view', 'kyc.review', 'user.view'],
+    permissions: ['kyc.view', 'kyc.review', 'user.view', 'operations.view'],
   },
   {
     name: 'SUPPORT',

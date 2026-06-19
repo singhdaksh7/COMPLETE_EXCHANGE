@@ -11,6 +11,8 @@ import type {
   CryptoWithdrawal,
   InrDeposit,
   KycProfile,
+  OperationsAuditLog,
+  OperationsSummary,
   Page,
   PublicAdmin,
   ScannerHealth,
@@ -95,6 +97,32 @@ async function adminApiFetch<T>(
   return envelope as Envelope<T>;
 }
 
+/**
+ * Authenticated CSV download: fetches with the admin bearer token, then triggers
+ * a browser download. Returns nothing; throws ApiError on failure.
+ */
+async function adminDownload(path: string, filename: string): Promise<void> {
+  const token = tokenStore.getAdminAccess();
+  const res = await fetch(`${ADMIN_API_BASE}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  }).catch(() => {
+    throw new ApiError('Network error downloading export', 'NETWORK_ERROR', 0);
+  });
+  if (!res.ok) {
+    if (res.status === 401) tokenStore.clearAdmin();
+    throw new ApiError(`Export failed (${res.status})`, 'EXPORT_FAILED', res.status);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export const adminApi = {
   // Admin login: explicit POST to the ABSOLUTE base, unauthenticated.
   login: (body: { email: string; password: string; totp: string }) =>
@@ -115,9 +143,22 @@ export const adminApi = {
   ) => adminApiFetch<KycProfile>(`/kyc/${userId}/decision`, 'POST', { body }),
 
   // ---- INR deposit monitoring + manual approval ----
-  deposits: (params: { status?: string; cursor?: string; limit?: number } = {}) =>
+  deposits: (
+    params: {
+      status?: string;
+      cursor?: string;
+      limit?: number;
+      userId?: string;
+      email?: string;
+      utr?: string;
+      minAmount?: string;
+      maxAmount?: string;
+      fromDate?: string;
+      toDate?: string;
+    } = {},
+  ) =>
     adminApiFetch<Page<InrDeposit>>(
-      `/inr/deposits${buildQuery({ limit: 20, ...params })}`,
+      `/inr/deposits${buildQuery({ limit: 50, ...params })}`,
       'GET',
     ),
 
@@ -190,4 +231,20 @@ export const adminApi = {
       'PUT',
       { body: { ips } },
     ),
+
+  // ---- operations dashboard + audit (Stage 3.4C) ----
+  operationsSummary: () =>
+    adminApiFetch<OperationsSummary>('/operations/summary', 'GET'),
+
+  audit: (params: Record<string, string | number | undefined> = {}) =>
+    adminApiFetch<Page<OperationsAuditLog>>(
+      `/operations/audit${buildQuery({ limit: 50, ...params })}`,
+      'GET',
+    ),
+
+  exportDepositsCsv: (params: Record<string, string | number | undefined> = {}) =>
+    adminDownload(`/inr/deposits/export${buildQuery(params)}`, 'inr-deposits.csv'),
+
+  exportAuditCsv: (params: Record<string, string | number | undefined> = {}) =>
+    adminDownload(`/operations/audit/export${buildQuery(params)}`, 'admin-audit.csv'),
 };

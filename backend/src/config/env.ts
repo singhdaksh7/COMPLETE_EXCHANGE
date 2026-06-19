@@ -174,6 +174,13 @@ const envSchema = z
     .string()
     .regex(/^\d+(\.\d{1,2})?$/)
     .default('1000000.00'),
+  // Manual INR deposits at/above this amount require dual approval
+  // (maker-checker): a first admin approves, then a DIFFERENT second admin
+  // credits. Below it, a single approval credits as before.
+  MANUAL_INR_DUAL_APPROVAL_THRESHOLD: z
+    .string()
+    .regex(/^\d+(\.\d{1,2})?$/)
+    .default('50000.00'),
 
   // ---- CRYPTO DEPOSIT SCANNER (TRON / TRC20 USDT) ----
   // Provider selection. 'mock' is fully offline/deterministic (dev + tests);

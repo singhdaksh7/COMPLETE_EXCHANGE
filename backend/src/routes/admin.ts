@@ -7,6 +7,7 @@ import { adminScannerRouter } from '../modules/scanner/scanner.admin.routes';
 import { adminWithdrawalRouter } from '../modules/withdrawal/withdrawal.admin.routes';
 import { adminConversionRouter } from '../modules/conversion/conversion.admin.routes';
 import { adminTradingRouter } from '../modules/trading/trading.admin.routes';
+import { adminOperationsRouter } from '../modules/operations/operations.admin.routes';
 
 /**
  * Aggregates all admin API routers mounted under the admin prefix
@@ -33,6 +34,7 @@ adminApiRouter.use('/scanner', adminScannerRouter);
 adminApiRouter.use('/withdrawals', adminWithdrawalRouter);
 adminApiRouter.use('/conversions', adminConversionRouter);
 adminApiRouter.use('/spot', adminTradingRouter);
+adminApiRouter.use('/operations', adminOperationsRouter);
 
 // Future admin modules (each behind admin RBAC):
 // adminApiRouter.use('/withdrawals', adminWithdrawalsRouter);

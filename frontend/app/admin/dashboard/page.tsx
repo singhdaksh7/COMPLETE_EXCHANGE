@@ -22,19 +22,28 @@ export default function AdminDashboardPage() {
     queryFn: () => adminApi.me(),
     enabled: ready,
   });
+  const ops = useQuery({
+    queryKey: ['admin-ops-summary'],
+    queryFn: () => adminApi.operationsSummary(),
+    enabled: ready,
+    retry: false,
+  });
 
   if (!ready) return null;
   const me = q.data?.data;
+  const s = ops.data?.data;
 
-  // Static mock stats from screenshot to populate the dashboard dashboard layout
-  const metrics = [
-    { title: 'Total Users', val: '1,248,672', change: '+12.45%', icon: '👥' },
-    { title: 'Active Users', val: '842,312', change: '+9.32%', icon: '👤' },
-    { title: 'KYC Pending', val: '12,453', change: '+8.15%', icon: '📝' },
-    { title: 'Total Deposits', val: '₹1,245.85 Cr', change: '+15.23%', icon: '💰' },
-    { title: 'Total Withdrawals', val: '₹1,045.32 Cr', change: '+11.42%', icon: '💸' },
-    { title: 'Revenue', val: '₹34.25 Cr', change: '+18.75%', icon: '📈' },
-  ];
+  // REAL operational counts from the backend (operations.view).
+  const realMetrics = s
+    ? [
+        { title: 'Pending INR Deposits', val: String(s.inrDeposits.pending), icon: '🕗' },
+        { title: 'Approved INR Deposits', val: String(s.inrDeposits.approved), icon: '✅' },
+        { title: 'Rejected INR Deposits', val: String(s.inrDeposits.rejected), icon: '❌' },
+        { title: 'Pending KYC Reviews', val: String(s.kyc.pending), icon: '📝' },
+        { title: 'Active Admins', val: String(s.admins.active), icon: '🛡️' },
+        { title: 'Suspended Admins', val: String(s.admins.suspended), icon: '⛔' },
+      ]
+    : [];
 
   const alerts = [
     { title: 'High Withdrawal Volume', desc: 'Withdrawal volume exceeded 100 Cr', time: '10 min ago', type: 'high' },
@@ -107,38 +116,66 @@ export default function AdminDashboardPage() {
         {me && (
           <div className="space-y-6">
 
-            {/* Demo-data notice: the analytics on this dashboard are static
-                placeholders, NOT live figures. Real, live admin data lives on
-                the Deposits queue and KYC pages. */}
+            {/* REAL operational metrics (live from the backend). */}
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-up">● Live operations</span>
+                {ops.isError && (
+                  <span className="text-[10px] text-white/40">
+                    (operations.view permission required for live counts)
+                  </span>
+                )}
+              </div>
+              {s ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
+                  {realMetrics.map((item, i) => (
+                    <div key={i} className="relative rounded-xl border border-white/5 bg-white/[0.01] p-4 flex flex-col justify-between min-h-[100px] overflow-hidden">
+                      <div className="pointer-events-none absolute -inset-px rounded-xl bg-gradient-to-b from-gold/5 to-transparent opacity-25" />
+                      <div className="relative z-10 flex justify-between items-center mb-1">
+                        <span className="text-[9px] font-bold text-white/40 uppercase tracking-wider">{item.title}</span>
+                        <span className="text-xs">{item.icon}</span>
+                      </div>
+                      <div className="relative z-10">
+                        <span className="text-2xl font-black text-white font-mono block leading-tight">{item.val}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-white/40">
+                  {ops.isLoading ? 'Loading live counts…' : 'Live counts unavailable.'}
+                </p>
+              )}
+            </div>
+
+            {/* Recent admin actions (REAL — from AdminLog). */}
+            {s && s.recentAdminActions.length > 0 && (
+              <div className="rounded-xl border border-white/5 bg-white/[0.01] p-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-white/60">Recent admin actions (live)</span>
+                  <a href="/admin/audit" className="text-[10px] text-gold hover:underline">View audit log →</a>
+                </div>
+                <div className="space-y-1">
+                  {s.recentAdminActions.slice(0, 8).map((a) => (
+                    <div key={a.id} className="flex justify-between gap-2 text-[11px] text-white/70">
+                      <span className="font-mono">{a.action}</span>
+                      <span className="font-mono text-white/40 truncate">{a.actorEmail ?? a.actorAdminId.slice(0, 8)}</span>
+                      <span className="text-white/30 shrink-0">{new Date(a.occurredAt).toLocaleTimeString()}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Demo-data notice: the CHARTS/alerts below are illustrative only. */}
             <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-200 flex flex-wrap items-center justify-between gap-2">
               <span>
-                <strong>⚠️ Sample data —</strong> the metrics, charts, alerts and activity below are
-                static placeholders, not live values.
+                <strong>⚠️ Sample data —</strong> the charts, alerts and activity feed below are
+                illustrative placeholders, not live values. Live counts are above.
               </span>
               <a href="/admin/deposits" className="font-bold text-amber-100 underline hover:text-white">
                 Go to live INR Deposits →
               </a>
-            </div>
-
-            {/* 6 Metrics Grid (SAMPLE/PLACEHOLDER VALUES — not live) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
-              {metrics.map((item, i) => (
-                <div key={i} className="relative rounded-xl border border-white/5 bg-white/[0.01] p-4 flex flex-col justify-between min-h-[100px] overflow-hidden">
-                  <div className="pointer-events-none absolute -inset-px rounded-xl bg-gradient-to-b from-gold/5 to-transparent opacity-25" />
-                  
-                  <div className="relative z-10 flex justify-between items-center mb-1">
-                    <span className="text-[9px] font-bold text-white/40 uppercase tracking-wider">{item.title}</span>
-                    <span className="text-xs">{item.icon}</span>
-                  </div>
-                  
-                  <div className="relative z-10">
-                    <span className="text-base font-black text-white font-mono block leading-tight">{item.val}</span>
-                    <span className="text-[9px] text-up font-bold mt-1 block">
-                      {item.change} <span className="text-white/30 font-medium">from last week</span>
-                    </span>
-                  </div>
-                </div>
-              ))}
             </div>
 
             {/* Admin identity details (preserving session diagnostics) */}

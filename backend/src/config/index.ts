@@ -96,6 +96,11 @@ export const config = {
     depositMax: env.INR_DEPOSIT_MAX,
   },
 
+  inrOps: {
+    // Maker-checker threshold for manual INR deposits (rupees, scale 2).
+    dualApprovalThreshold: env.MANUAL_INR_DUAL_APPROVAL_THRESHOLD,
+  },
+
   scanner: {
     tronProvider: env.TRON_PROVIDER,
     tronGridApiKey: env.TRONGRID_API_KEY,

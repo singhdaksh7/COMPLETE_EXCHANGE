@@ -74,15 +74,28 @@ export const depositQuerySchema = z
   })
   .strict();
 
+// Shared filter fields for the admin deposit list + CSV export.
+const adminDepositFilters = {
+  status: inrTxnStatus.optional(),
+  provider: z.string().trim().min(1).max(40).optional(),
+  userId: z.string().uuid().optional(),
+  email: z.string().trim().min(1).max(255).optional(),
+  utr: z.string().trim().min(1).max(40).optional(),
+  fromDate: z.coerce.date().optional(),
+  toDate: z.coerce.date().optional(),
+  minAmount: z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+  maxAmount: z.string().regex(/^\d+(\.\d{1,2})?$/).optional(),
+};
+
 export const adminDepositQuerySchema = z
   .object({
     cursor: z.string().optional(),
     limit: z.coerce.number().int().min(1).max(100).default(50),
-    status: inrTxnStatus.optional(),
-    provider: z.string().trim().min(1).max(40).optional(),
-    userId: z.string().uuid().optional(),
+    ...adminDepositFilters,
   })
   .strict();
+
+export const adminDepositExportSchema = z.object(adminDepositFilters).strict();
 
 export type CreateDepositDto = z.infer<typeof createDepositSchema>;
 export type CreateManualDepositDto = z.infer<typeof createManualDepositSchema>;
@@ -90,3 +103,4 @@ export type ManualDecisionDto = z.infer<typeof manualDecisionSchema>;
 export type VerifyPaymentDto = z.infer<typeof verifyPaymentSchema>;
 export type DepositQueryDto = z.infer<typeof depositQuerySchema>;
 export type AdminDepositQueryDto = z.infer<typeof adminDepositQuerySchema>;
+export type AdminDepositExportDto = z.infer<typeof adminDepositExportSchema>;

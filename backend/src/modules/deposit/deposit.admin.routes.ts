@@ -5,6 +5,7 @@ import { adminAuthenticate } from '../../middleware/admin-authenticate';
 import { adminAuthorize } from '../../middleware/admin-authorize';
 import { adminDepositController } from './deposit.admin.controller';
 import {
+  adminDepositExportSchema,
   adminDepositQuerySchema,
   depositIdParamSchema,
   manualDecisionSchema,
@@ -24,6 +25,14 @@ adminDepositRouter.get(
   adminAuthorize('inr.view'),
   validate({ query: adminDepositQuerySchema }),
   asyncHandler(adminDepositController.list),
+);
+
+adminDepositRouter.get(
+  '/export',
+  adminAuthenticate,
+  adminAuthorize('inr.view'),
+  validate({ query: adminDepositExportSchema }),
+  asyncHandler(adminDepositController.exportCsv),
 );
 
 adminDepositRouter.post(
