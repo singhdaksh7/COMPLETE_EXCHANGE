@@ -55,7 +55,7 @@ export default function DashboardPage() {
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 5);
 
-  const firstName = me?.user.fullName ? me.user.fullName.split(' ')[0] : 'Rahul';
+  const firstName = me?.user.fullName ? me.user.fullName.split(' ')[0] : 'Trader';
 
   return (
     <UserShell className="max-w-[1400px]">
@@ -99,8 +99,7 @@ export default function DashboardPage() {
               </svg>
             </div>
             <div className="relative z-10 flex gap-4 text-[10px] font-bold mt-4 border-t border-white/5 pt-2">
-              <span className="text-up">24h Change +2.48%</span>
-              <span className="text-up">Since Last Week +8.35%</span>
+              <span className="text-white/40">Indicative valuation at ≈ ₹83.20/USDT</span>
             </div>
           </div>
 
@@ -145,7 +144,10 @@ export default function DashboardPage() {
             <div className="pointer-events-none absolute -inset-px rounded-2xl bg-gradient-to-b from-gold/15 to-transparent opacity-60" />
             <div className="relative z-10 flex justify-between items-start">
               <div>
-                <span className="text-[10px] font-bold text-white/45 uppercase tracking-wider block">Today&rsquo;s PnL</span>
+                <span className="text-[10px] font-bold text-white/45 uppercase tracking-wider flex items-center gap-1.5">
+                  Today&rsquo;s PnL
+                  <span className="rounded bg-amber-500/15 px-1 py-0.5 text-[8px] font-bold text-amber-300">SAMPLE</span>
+                </span>
                 <span className="text-2xl font-black text-up font-mono mt-1 block">
                   + ₹ 45,320.50
                 </span>
@@ -209,7 +211,10 @@ export default function DashboardPage() {
             {/* Market Overview Indicators */}
             <div className="relative rounded-2xl border border-white/5 bg-white/[0.01] p-6 space-y-4">
               <div className="flex justify-between items-center border-b border-white/5 pb-2">
-                <h3 className="text-xs font-bold uppercase tracking-widest text-white/45">Market Global Overview</h3>
+                <h3 className="text-xs font-bold uppercase tracking-widest text-white/45 flex items-center gap-1.5">
+                  Market Global Overview
+                  <span className="rounded bg-amber-500/15 px-1 py-0.5 text-[8px] font-bold text-amber-300">SAMPLE</span>
+                </h3>
                 <Link href="/markets" className="text-[10px] text-gold font-bold hover:underline uppercase tracking-wide">View All Markets →</Link>
               </div>
               

@@ -97,15 +97,11 @@ export default function AdminDashboardPage() {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Date range picker selector */}
+            {/* Live counts reflect all-time data from the backend. */}
             <div className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-xs font-mono text-white/70 flex items-center gap-2">
-              <span>📅</span>
-              <span>May 06, 2025 - May 12, 2025</span>
+              <span>📊</span>
+              <span>Live operational counts</span>
             </div>
-            
-            <button className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-4 py-2 text-xs font-bold text-white hover:bg-white/[0.06] transition">
-              <span>📥</span> Export Report
-            </button>
           </div>
         </div>
 
