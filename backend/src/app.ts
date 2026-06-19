@@ -26,7 +26,7 @@ import { apiRouter } from './routes';
  *   5. http request logging
  *   6. body parsing (limited) → bounded payloads
  *   7. global rate limiting
- *   8. health routes (unauthenticated, no prefix)
+ *   8. health routes (unauthenticated, root + API prefix)
  *   9. versioned API routes
  *  10. 404 handler
  *  11. central error handler  → standard error envelope (must be last)
@@ -72,8 +72,10 @@ export function createApp(): Express {
 
   app.use(globalRateLimiter);
 
-  // Health/version at root (no API prefix) for load balancers & containers.
+  // Health/version at root for load balancers & containers, and under the
+  // public API prefix for CloudFront/ALB path routing.
   app.use('/', healthRouter);
+  app.use(config.http.apiPrefix, healthRouter);
 
   // Versioned API.
   app.use(config.http.apiPrefix, apiRouter);

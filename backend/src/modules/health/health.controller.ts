@@ -7,7 +7,7 @@ export function liveness(_req: Request, res: Response): void {
   sendSuccess(res, {
     status: 'ok',
     ...getHealthMeta(),
-    checks: {
+    dependencies: {
       database: 'not_checked',
       redis: 'not_checked',
     },
@@ -20,7 +20,7 @@ export async function readiness(_req: Request, res: Response): Promise<void> {
   if (report.status === 'ok') {
     sendSuccess(res, report);
   } else {
-    sendError(res, 503, 'NOT_READY', 'One or more dependencies are unhealthy', report.checks);
+    sendError(res, 503, 'NOT_READY', 'One or more dependencies are unhealthy', report);
   }
 }
 

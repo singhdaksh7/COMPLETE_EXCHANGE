@@ -54,8 +54,10 @@ export function createAdminApp(): Express {
 
   app.use(globalRateLimiter);
 
-  // Health/version at root for the admin deployment's load balancer.
+  // Health/version at root for the admin deployment's load balancer, and under
+  // the admin prefix for CloudFront/ALB path routing.
   app.use('/', healthRouter);
+  app.use(config.admin.apiPrefix, healthRouter);
 
   // Versioned admin API.
   app.use(config.admin.apiPrefix, adminApiRouter);

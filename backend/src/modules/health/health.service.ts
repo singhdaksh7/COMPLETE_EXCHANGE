@@ -17,7 +17,7 @@ export interface ReadinessReport {
   environment: string;
   uptime: number;
   timestamp: string;
-  checks: {
+  dependencies: {
     database: 'ok' | 'degraded';
     redis: 'ok' | 'degraded';
   };
@@ -48,7 +48,7 @@ export async function getReadiness(): Promise<ReadinessReport> {
   return {
     status,
     ...getHealthMeta(),
-    checks: {
+    dependencies: {
       database: database ? 'ok' : 'degraded',
       redis: redisOk ? 'ok' : 'degraded',
     },
