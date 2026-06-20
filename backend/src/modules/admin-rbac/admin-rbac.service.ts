@@ -25,6 +25,7 @@ import {
   UnauthorizedError,
 } from '../../lib/errors';
 import { isIpAllowed, isValidIpv4OrCidr } from '../../lib/ip-allowlist';
+import { adminTotpRequired } from '../../lib/prod-safety';
 import { adminRbacRepository } from './admin-rbac.repository';
 import type {
   AdminContext,
@@ -196,8 +197,32 @@ export const adminRbacService = {
     if (admin.status !== 'ACTIVE') {
       throw new ForbiddenError('Admin account is not active', 'ADMIN_NOT_ACTIVE');
     }
-    if (admin.totpEnabled && !verifyTotp(Buffer.from(admin.totpSecretEnc), input.totp)) {
-      throw new UnauthorizedError('Invalid TOTP code', 'INVALID_TOTP');
+    if (admin.totpEnabled) {
+      if (!verifyTotp(Buffer.from(admin.totpSecretEnc), input.totp)) {
+        throw new UnauthorizedError('Invalid TOTP code', 'INVALID_TOTP');
+      }
+    } else if (
+      adminTotpRequired({
+        isProd: config.isProd,
+        totpEnabled: admin.totpEnabled,
+        allowOverride: config.security.allowAdminLoginWithoutTotp,
+      })
+    ) {
+      // Production requires a real second factor. A TOTP-less admin must enroll
+      // (out-of-band bootstrap, or via the ALLOW_ADMIN_LOGIN_WITHOUT_TOTP
+      // staging override) before logging in. The blocked attempt is audited.
+      await adminRbacRepository.writeAdminLog({
+        adminId: admin.id,
+        action: 'admin.login_blocked_no_totp',
+        targetType: 'admin',
+        targetId: admin.id,
+        ip: input.ip,
+        requestId: input.requestId,
+      });
+      throw new ForbiddenError(
+        'TOTP enrollment is required before admin login',
+        'ADMIN_TOTP_REQUIRED',
+      );
     }
     // Per-admin IP allowlist: when configured, only listed IPs may authenticate.
     if (!isIpAllowed(input.ip, admin.ipAllowlist)) {

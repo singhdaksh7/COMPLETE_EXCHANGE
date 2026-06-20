@@ -41,12 +41,21 @@ vi.mock('../../src/lib/redis', () => ({
   authRedisDel: vi.fn().mockResolvedValue(1),
 }));
 
+// Control the production TOTP guard decision directly (default: not required,
+// matching dev/test) so the existing login tests are unaffected.
+vi.mock('../../src/lib/prod-safety', () => ({
+  adminTotpRequired: vi.fn(() => false),
+  productionSafetyIssues: vi.fn(() => []),
+}));
+
 import { adminRbacRepository } from '../../src/modules/admin-rbac/admin-rbac.repository';
 import { adminRbacService } from '../../src/modules/admin-rbac/admin-rbac.service';
 import { authRedisDel } from '../../src/lib/redis';
+import { adminTotpRequired } from '../../src/lib/prod-safety';
 
 const repo = vi.mocked(adminRbacRepository);
 const redisDel = vi.mocked(authRedisDel);
+const totpRequired = vi.mocked(adminTotpRequired);
 
 function makeAdmin(over: Partial<Admin> = {}): Admin {
   return {
@@ -103,6 +112,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  totpRequired.mockReturnValue(false);
   redisDel.mockResolvedValue(1);
   repo.createAdminSession.mockResolvedValue(makeSession());
   repo.writeAdminLog.mockResolvedValue({} as never);
@@ -129,6 +139,26 @@ describe('adminRbacService', () => {
     expect(repo.writeAdminLog).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'admin.login' }),
     );
+  });
+
+  it('blocks a TOTP-less admin login when production requires TOTP (no override)', async () => {
+    totpRequired.mockReturnValue(true); // simulate production without the override
+    repo.findAdminByEmail.mockResolvedValue(makeAdmin({ passwordHash, totpEnabled: false }));
+
+    await expect(
+      adminRbacService.login({
+        email: 'admin@example.com',
+        password: 'AdminPassw0rd!',
+        totp: '000000',
+        ip: '127.0.0.1',
+      }),
+    ).rejects.toMatchObject({ errorCode: 'ADMIN_TOTP_REQUIRED' });
+
+    // The blocked attempt is audited and no session is created.
+    expect(repo.writeAdminLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'admin.login_blocked_no_totp' }),
+    );
+    expect(repo.createAdminSession).not.toHaveBeenCalled();
   });
 
   it('rejects inactive admins during live session validation', async () => {

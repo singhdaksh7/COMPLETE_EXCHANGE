@@ -15,6 +15,8 @@ const redactPaths = [
   'req.headers.cookie',
   'req.headers.x-api-key',
   'req.headers.x-admin-token',
+  'req.headers["x-kyc-signature"]',
+  'req.headers["x-razorpay-signature"]',
   'req.body.password',
   'req.body.currentPassword',
   'req.body.newPassword',
@@ -50,6 +52,12 @@ const redactPaths = [
   '*.privateKey',
   '*.databaseUrl',
   '*.redisUrl',
+  // RPC endpoints and provider API keys must never reach logs.
+  '*.rpcUrl',
+  '*.apiKey',
+  '*.tronGridApiKey',
+  '*.bscTestnetRpcUrl',
+  '*.kmsKeyRef',
 ];
 
 const options: LoggerOptions = {

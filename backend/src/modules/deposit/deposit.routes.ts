@@ -3,6 +3,7 @@ import { asyncHandler } from '../../utils/async-handler';
 import { authenticate } from '../../middleware/authenticate';
 import { validate } from '../../middleware/validate';
 import { idempotency } from '../../middleware/idempotency';
+import { sensitiveRateLimiter } from '../../middleware/rate-limit';
 import { depositController } from './deposit.controller';
 import {
   createDepositSchema,
@@ -39,6 +40,7 @@ depositRouter.post(
 depositRouter.post(
   '/manual',
   authenticate,
+  sensitiveRateLimiter,
   validate({ body: createManualDepositSchema }),
   idempotency(),
   asyncHandler(depositController.createManual),

@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import { z } from 'zod';
+import { productionSafetyIssues } from '../lib/prod-safety';
 
 // Load .env before validation. In production the platform injects real
 // environment variables, so a missing .env file is not an error.
@@ -298,6 +299,33 @@ export const envSchema = z
   CONVERSION_TDS_BPS: z.coerce.number().int().min(0).max(10_000).default(100),
   // Quote lifetime (ms). Short-lived; expired quotes are rejected at execution.
   CONVERSION_QUOTE_TTL_MS: z.coerce.number().int().positive().default(30_000),
+
+  // ---- PRODUCTION SAFETY OVERRIDES (Stage 4.2) ----
+  // Staging runs NODE_ENV=production with offline/mock services and may run
+  // admins without TOTP. Each unsafe-in-production toggle is blocked at startup
+  // UNLESS its clearly-named override below is explicitly set to 'true'. A real
+  // production deployment leaves these false so it fails fast on unsafe config.
+  // DO NOT set any of these in a genuine production environment.
+  ALLOW_MOCK_PROVIDERS: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
+  ALLOW_MOCK_WITHDRAWAL_SIGNER: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
+  ALLOW_LOG_MAIL_PROVIDER: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
+  ALLOW_UNVERIFIED_EMAIL_LOGIN: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
+  ALLOW_ADMIN_LOGIN_WITHOUT_TOTP: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
   })
   // Fail fast: 'ses' mode is useless (and silently drops mail) without a region.
   .superRefine((val, ctx) => {
@@ -330,6 +358,29 @@ export const envSchema = z
         code: z.ZodIssueCode.custom,
         path: ['AWS_REGION'],
         message: 'AWS_REGION is required when MAIL_PROVIDER=ses',
+      });
+    }
+    // Production-safety: refuse to boot with unsafe staging/demo toggles in
+    // production unless each is explicitly acknowledged via its ALLOW_* override.
+    for (const issue of productionSafetyIssues({
+      nodeEnv: val.NODE_ENV,
+      tronProvider: val.TRON_PROVIDER,
+      bscProvider: val.BSC_PROVIDER,
+      priceProvider: val.PRICE_PROVIDER,
+      razorpayProvider: val.RAZORPAY_PROVIDER,
+      kycProvider: val.KYC_PROVIDER,
+      withdrawalSigner: val.WITHDRAWAL_SIGNER,
+      mailProvider: val.MAIL_PROVIDER,
+      requireEmailVerification: val.REQUIRE_EMAIL_VERIFICATION,
+      allowMockProviders: val.ALLOW_MOCK_PROVIDERS,
+      allowMockWithdrawalSigner: val.ALLOW_MOCK_WITHDRAWAL_SIGNER,
+      allowLogMailProvider: val.ALLOW_LOG_MAIL_PROVIDER,
+      allowUnverifiedEmailLogin: val.ALLOW_UNVERIFIED_EMAIL_LOGIN,
+    })) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [issue.path],
+        message: issue.message,
       });
     }
     // Fail fast: don't boot with OAuth "enabled" but unconfigured.

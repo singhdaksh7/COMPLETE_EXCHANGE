@@ -3,6 +3,7 @@ import { asyncHandler } from '../../utils/async-handler';
 import { authenticate } from '../../middleware/authenticate';
 import { validate } from '../../middleware/validate';
 import { idempotency } from '../../middleware/idempotency';
+import { sensitiveRateLimiter } from '../../middleware/rate-limit';
 import { withdrawalController } from './withdrawal.controller';
 import {
   addAddressSchema,
@@ -35,6 +36,7 @@ withdrawalRouter.get(
 withdrawalRouter.post(
   '/',
   authenticate,
+  sensitiveRateLimiter,
   validate({ body: createWithdrawalSchema }),
   idempotency(),
   asyncHandler(withdrawalController.create),

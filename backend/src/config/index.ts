@@ -60,6 +60,16 @@ export const config = {
     rbacCacheTtlSec: env.RBAC_CACHE_TTL_SEC,
   },
 
+  // Production-safety acknowledgements (Stage 4.2). All default false; staging
+  // sets the ones it needs. See src/lib/prod-safety.ts. NEVER set in real prod.
+  security: {
+    allowMockProviders: env.ALLOW_MOCK_PROVIDERS,
+    allowMockWithdrawalSigner: env.ALLOW_MOCK_WITHDRAWAL_SIGNER,
+    allowLogMailProvider: env.ALLOW_LOG_MAIL_PROVIDER,
+    allowUnverifiedEmailLogin: env.ALLOW_UNVERIFIED_EMAIL_LOGIN,
+    allowAdminLoginWithoutTotp: env.ALLOW_ADMIN_LOGIN_WITHOUT_TOTP,
+  },
+
   mail: {
     provider: env.MAIL_PROVIDER,
     from: env.MAIL_FROM,
