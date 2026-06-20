@@ -147,6 +147,11 @@ export interface AdminKycQueueItem {
   status: string;
   tier: number;
   submittedAt: string;
+  reviewedAt: string | null;
+  reviewedBy: string | null;
+  rejectedReason: string | null;
+  riskLevel: string;
+  accountStatus: string;
   // Phase 2 provider additions
   provider?: string | null;
   livenessStatus?: string | null;
@@ -159,6 +164,64 @@ export interface AdminKycQueueItem {
 export interface AdminKycQueue {
   items: AdminKycQueueItem[];
   nextCursor: string | null;
+}
+
+export interface KycTimelineEntry {
+  id: string;
+  action: string;
+  actorAdminId: string;
+  actorEmail: string | null;
+  reason: string | null;
+  occurredAt: string;
+}
+
+export interface AdminKycDetail extends AdminKycQueueItem {
+  dob: string | null;
+  address: Record<string, string> | null;
+  complianceNote: string | null;
+  riskNote: string | null;
+  withdrawalsBlocked: boolean;
+  documents: KycDocument[];
+  activity: {
+    depositCount: number;
+    withdrawalCount: number;
+    lastDepositAt: string | null;
+    lastWithdrawalAt: string | null;
+  };
+  timeline: KycTimelineEntry[];
+}
+
+export interface ComplianceSummary {
+  counts: {
+    notStarted: number;
+    pending: number;
+    inReview: number;
+    manualReview: number;
+    needsMoreInfo: number;
+    approved: number;
+    rejected: number;
+  };
+  pendingOver24h: number;
+  pendingOver48h: number;
+  highRiskUsers: number;
+  rejectionRatePct: number | null;
+  recentActions: KycTimelineEntry[];
+}
+
+export type KycDecisionBody =
+  | { decision: 'APPROVE'; tier?: number; complianceNote?: string }
+  | { decision: 'REJECT'; reason: string; complianceNote?: string }
+  | { decision: 'REQUEST_INFO'; reason: string; complianceNote?: string };
+
+export interface KycQueueFilters {
+  cursor?: string;
+  limit?: number;
+  status?: string;
+  email?: string;
+  riskLevel?: string;
+  accountStatus?: string;
+  submittedFrom?: string;
+  submittedTo?: string;
 }
 
 export interface AdminUserBalance {

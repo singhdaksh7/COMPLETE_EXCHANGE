@@ -17,6 +17,17 @@ describe('KYC status transition machine', () => {
     expect(canTransition('REJECTED', 'PENDING')).toBe(true); // resubmission
   });
 
+  it('supports the NEEDS_MORE_INFO request-info lifecycle', () => {
+    expect(canTransition('PENDING', 'NEEDS_MORE_INFO')).toBe(true);
+    expect(canTransition('IN_REVIEW', 'NEEDS_MORE_INFO')).toBe(true);
+    expect(canTransition('MANUAL_REVIEW', 'NEEDS_MORE_INFO')).toBe(true);
+    expect(canTransition('NEEDS_MORE_INFO', 'PENDING')).toBe(true); // resubmission
+    expect(canTransition('NEEDS_MORE_INFO', 'APPROVED')).toBe(true);
+    expect(canTransition('NEEDS_MORE_INFO', 'REJECTED')).toBe(true);
+    // Still non-approved, so gating remains intact: cannot jump from approved.
+    expect(canTransition('APPROVED', 'NEEDS_MORE_INFO')).toBe(false);
+  });
+
   it('treats a same-status change as an idempotent no-op', () => {
     expect(canTransition('APPROVED', 'APPROVED')).toBe(true);
     expect(canTransition('PENDING', 'PENDING')).toBe(true);

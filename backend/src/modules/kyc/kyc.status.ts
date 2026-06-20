@@ -9,18 +9,20 @@ import type { KycVerificationStatus } from './providers';
  * gating fields (`user.kycStatus` / `user.kycTier`) can never be moved into an
  * inconsistent state.
  *
- *   NOT_STARTED   → PENDING
- *   PENDING       → IN_REVIEW | MANUAL_REVIEW | APPROVED | REJECTED
- *   IN_REVIEW     → MANUAL_REVIEW | APPROVED | REJECTED
- *   MANUAL_REVIEW → APPROVED | REJECTED
- *   REJECTED      → PENDING            (resubmission)
- *   APPROVED      → (terminal)
+ *   NOT_STARTED     → PENDING
+ *   PENDING         → IN_REVIEW | MANUAL_REVIEW | NEEDS_MORE_INFO | APPROVED | REJECTED
+ *   IN_REVIEW       → MANUAL_REVIEW | NEEDS_MORE_INFO | APPROVED | REJECTED
+ *   MANUAL_REVIEW   → NEEDS_MORE_INFO | APPROVED | REJECTED
+ *   NEEDS_MORE_INFO → PENDING (resubmission) | APPROVED | REJECTED
+ *   REJECTED        → PENDING            (resubmission)
+ *   APPROVED        → (terminal)
  */
 export const KYC_TRANSITIONS: Record<KycStatus, readonly KycStatus[]> = {
   NOT_STARTED: ['PENDING'],
-  PENDING: ['IN_REVIEW', 'MANUAL_REVIEW', 'APPROVED', 'REJECTED'],
-  IN_REVIEW: ['MANUAL_REVIEW', 'APPROVED', 'REJECTED'],
-  MANUAL_REVIEW: ['APPROVED', 'REJECTED'],
+  PENDING: ['IN_REVIEW', 'MANUAL_REVIEW', 'NEEDS_MORE_INFO', 'APPROVED', 'REJECTED'],
+  IN_REVIEW: ['MANUAL_REVIEW', 'NEEDS_MORE_INFO', 'APPROVED', 'REJECTED'],
+  MANUAL_REVIEW: ['NEEDS_MORE_INFO', 'APPROVED', 'REJECTED'],
+  NEEDS_MORE_INFO: ['PENDING', 'APPROVED', 'REJECTED'],
   REJECTED: ['PENDING'],
   APPROVED: [],
 };

@@ -1,6 +1,7 @@
 import { ApiError, type Envelope } from './api';
 import { tokenStore } from './auth';
 import type {
+  AdminKycDetail,
   AdminKycQueue,
   AdminUserDetail,
   AdminUserListItem,
@@ -8,12 +9,15 @@ import type {
   AdminLoginData,
   AdminMeData,
   AdminRoleOption,
+  ComplianceSummary,
   Conversion,
   CreatedAdmin,
   CryptoWithdrawal,
   FeeReport,
   InrDeposit,
+  KycDecisionBody,
   KycProfile,
+  KycQueueFilters,
   OperationsAuditLog,
   OperationsSummary,
   Page,
@@ -133,17 +137,23 @@ export const adminApi = {
 
   me: () => adminApiFetch<AdminMeData>('/auth/me', 'GET'),
 
-  kycQueue: (params: { cursor?: string; limit?: number }) => {
-    const qs = new URLSearchParams();
-    if (params.cursor) qs.set('cursor', params.cursor);
-    qs.set('limit', String(params.limit ?? 20));
-    return adminApiFetch<AdminKycQueue>(`/kyc?${qs.toString()}`, 'GET');
-  },
+  kycQueue: (params: KycQueueFilters = {}) =>
+    adminApiFetch<AdminKycQueue>(
+      `/kyc${buildQuery({ limit: 50, ...params })}`,
+      'GET',
+    ),
 
-  decide: (
-    userId: string,
-    body: { decision: 'APPROVE' | 'REJECT'; tier?: number; reason?: string },
-  ) => adminApiFetch<KycProfile>(`/kyc/${userId}/decision`, 'POST', { body }),
+  kycDetail: (userId: string) =>
+    adminApiFetch<AdminKycDetail>(`/kyc/${userId}`, 'GET'),
+
+  decide: (userId: string, body: KycDecisionBody) =>
+    adminApiFetch<KycProfile>(`/kyc/${userId}/decision`, 'POST', { body }),
+
+  addKycNote: (userId: string, note: string) =>
+    adminApiFetch<AdminKycDetail>(`/kyc/${userId}/note`, 'POST', { body: { note } }),
+
+  complianceSummary: () =>
+    adminApiFetch<ComplianceSummary>('/kyc/compliance/summary', 'GET'),
 
   // ---- user management + risk controls ----
   users: (

@@ -24,6 +24,11 @@ function StatusRing({ status }: { status: string }) {
     color = 'stroke-gold';
     label = 'Checking';
     glow = 'shadow-gold-glow';
+  } else if (status === 'NEEDS_MORE_INFO') {
+    percentage = 60;
+    color = 'stroke-sky-400';
+    label = 'Action Needed';
+    glow = 'shadow-[0_0_25px_rgba(56,189,248,0.25)]';
   } else if (status === 'REJECTED') {
     percentage = 100;
     color = 'stroke-down';
@@ -103,6 +108,7 @@ export default function KycStatusPage() {
 
   const isRejected = k?.status === 'REJECTED';
   const isApproved = k?.status === 'APPROVED';
+  const isNeedsInfo = k?.status === 'NEEDS_MORE_INFO';
   const isPending =
     k?.status === 'PENDING' ||
     k?.status === 'IN_REVIEW' ||
@@ -166,12 +172,12 @@ export default function KycStatusPage() {
                     {k.provider && <div className="flex justify-between text-xs"><span className="text-white/45">Provider Integration</span><span className="font-semibold text-ink">{k.provider}</span></div>}
                   </div>
 
-                  {isRejected && (
-                    <button 
+                  {(isRejected || isNeedsInfo) && (
+                    <button
                       onClick={() => router.push('/kyc/submit')}
                       className="w-full rounded-lg bg-gradient-to-r from-gold to-gold-glow px-4 py-2.5 text-xs font-bold text-noir shadow-gold-glow hover:brightness-105 transition"
                     >
-                      Retry Verification Flow
+                      {isNeedsInfo ? 'Resubmit With Updated Details' : 'Retry Verification Flow'}
                     </button>
                   )}
                 </div>
@@ -206,7 +212,18 @@ export default function KycStatusPage() {
                     <span>⚠️</span> Verification Rejected
                   </h4>
                   <p className="text-xs text-white/70 leading-relaxed">
-                    {k.rejectedReason ?? 'The automated verification engine flag matched spoofing indicators. Please retry with high resolution credentials.'}
+                    {k.rejectedReason ?? 'Your verification could not be approved. Please review your details and resubmit.'}
+                  </p>
+                </div>
+              )}
+
+              {isNeedsInfo && (
+                <div className="rounded-xl border border-sky-500/20 bg-sky-500/5 p-5">
+                  <h4 className="text-sm font-bold text-sky-300 mb-1 flex items-center gap-1.5">
+                    <span>✉️</span> Additional Information Requested
+                  </h4>
+                  <p className="text-xs text-white/70 leading-relaxed">
+                    {k.rejectedReason ?? 'Our compliance team needs more information to complete your verification. Please resubmit with the requested details.'}
                   </p>
                 </div>
               )}

@@ -62,6 +62,7 @@ enum KycStatus {
   PENDING
   IN_REVIEW
   MANUAL_REVIEW
+  NEEDS_MORE_INFO
   APPROVED
   REJECTED
 }
@@ -541,6 +542,8 @@ model KycProfile {
   documentStatus      KycCheckStatus? @map("document_status")
   riskScore           Int?            @map("risk_score")
   rejectedReason      String?         @map("rejected_reason")
+  // Internal compliance note — admin-only, NEVER exposed on user-facing APIs.
+  complianceNote      String?         @map("compliance_note")
   reviewedBy          String?         @map("reviewed_by") @db.Uuid
   reviewedAt          DateTime?       @map("reviewed_at")
   createdAt           DateTime        @default(now()) @map("created_at")

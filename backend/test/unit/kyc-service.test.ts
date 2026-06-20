@@ -6,10 +6,18 @@ vi.mock('../../src/modules/kyc/kyc.repository', () => ({
     findUserById: vi.fn(),
     findProfileByUserId: vi.fn(),
     findProfileByProviderRef: vi.fn(),
+    findProfileDetail: vi.fn(),
+    activitySummary: vi.fn(),
+    kycTimeline: vi.fn(),
+    recentKycActions: vi.fn(),
+    countByStatus: vi.fn(),
+    countPendingOlderThan: vi.fn(),
+    countHighRiskUsers: vi.fn(),
+    setComplianceNote: vi.fn(),
     submitProfile: vi.fn(),
     createDocument: vi.fn(),
     listDocumentsByUser: vi.fn(),
-    listPendingProfiles: vi.fn(),
+    listProfiles: vi.fn(),
     decide: vi.fn(),
     applyProviderUpdate: vi.fn(),
     findWebhookEvent: vi.fn(),
@@ -253,5 +261,131 @@ describe('kycService.decide', () => {
     await expect(
       kycService.decide('user-1', { decision: 'APPROVE' }, { actorId: 'admin-1' }),
     ).rejects.toMatchObject({ errorCode: 'NOT_FOUND' });
+  });
+
+  it('requests more info: moves to NEEDS_MORE_INFO with a user-safe reason', async () => {
+    repo.findProfileByUserId.mockResolvedValue(makeProfile({ status: 'PENDING' }));
+    repo.findUserById.mockResolvedValue(makeUser({ kycTier: 0 }));
+    repo.decide.mockResolvedValue(
+      makeProfile({ status: 'NEEDS_MORE_INFO', rejectedReason: 'send a clearer PAN' }),
+    );
+
+    const result = await kycService.decide(
+      'user-1',
+      { decision: 'REQUEST_INFO', reason: 'send a clearer PAN' },
+      { actorId: 'admin-1' },
+    );
+
+    expect(result.status).toBe('NEEDS_MORE_INFO');
+    const decideArg = repo.decide.mock.calls[0][1];
+    expect(decideArg).toMatchObject({
+      status: 'NEEDS_MORE_INFO',
+      userKycStatus: 'NEEDS_MORE_INFO',
+      rejectedReason: 'send a clearer PAN',
+    });
+    // Request-info must NOT cascade the document statuses.
+    expect(decideArg.cascadeDocuments).toBeUndefined();
+    expect(repo.writeAdminLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'kyc.request_info', reason: 'send a clearer PAN' }),
+    );
+  });
+
+  it('stores the internal compliance note but never returns it on the user DTO', async () => {
+    repo.findProfileByUserId.mockResolvedValue(makeProfile({ status: 'PENDING' }));
+    repo.findUserById.mockResolvedValue(makeUser({ kycTier: 0 }));
+    repo.decide.mockResolvedValue(
+      makeProfile({ status: 'REJECTED', rejectedReason: 'blurry' }),
+    );
+
+    const result = await kycService.decide(
+      'user-1',
+      { decision: 'REJECT', reason: 'blurry', complianceNote: 'repeat offender' },
+      { actorId: 'admin-1' },
+    );
+
+    // The note is persisted via the repository…
+    expect(repo.decide.mock.calls[0][1].complianceNote).toBe('repeat offender');
+    // …but the user-facing DTO carries no compliance note field at all.
+    expect(JSON.stringify(result)).not.toContain('repeat offender');
+    expect('complianceNote' in result).toBe(false);
+    // And the internal note is not written into the hash-chained audit metadata.
+    const approveAudit = audit.mock.calls.find((c) => c[0].action === 'kyc.reject');
+    expect(JSON.stringify(approveAudit?.[0].metadata)).not.toContain('repeat offender');
+  });
+});
+
+describe('kycService.addComplianceNote', () => {
+  it('saves an internal note and records an admin-log entry', async () => {
+    repo.findProfileByUserId.mockResolvedValue(makeProfile({ status: 'PENDING' }));
+    repo.setComplianceNote.mockResolvedValue(makeProfile());
+    repo.findProfileDetail.mockResolvedValue({
+      ...makeProfile({ complianceNote: 'watchlist hit' }),
+      user: {
+        email: 'u@example.com',
+        kycTier: 0,
+        riskLevel: 'LOW',
+        riskNote: null,
+        status: 'ACTIVE',
+        withdrawalsBlocked: false,
+      },
+    } as never);
+    repo.listDocumentsByUser.mockResolvedValue([]);
+    repo.activitySummary.mockResolvedValue({
+      depositCount: 0,
+      withdrawalCount: 0,
+      lastDepositAt: null,
+      lastWithdrawalAt: null,
+    });
+    repo.kycTimeline.mockResolvedValue([]);
+
+    const detail = await kycService.addComplianceNote('user-1', 'watchlist hit', {
+      actorId: 'admin-1',
+    });
+
+    expect(repo.setComplianceNote).toHaveBeenCalledWith('user-1', 'watchlist hit');
+    expect(detail.complianceNote).toBe('watchlist hit');
+    expect(repo.writeAdminLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'kyc.note', reason: 'watchlist hit' }),
+    );
+  });
+});
+
+describe('kycService.complianceSummary', () => {
+  it('aggregates real counts and computes the rejection rate', async () => {
+    repo.countByStatus.mockResolvedValue([
+      { status: 'PENDING', _count: { _all: 4 } },
+      { status: 'APPROVED', _count: { _all: 6 } },
+      { status: 'REJECTED', _count: { _all: 2 } },
+      { status: 'NEEDS_MORE_INFO', _count: { _all: 1 } },
+    ] as never);
+    repo.countPendingOlderThan.mockResolvedValueOnce(3).mockResolvedValueOnce(1);
+    repo.countHighRiskUsers.mockResolvedValue(5);
+    repo.recentKycActions.mockResolvedValue([]);
+
+    const summary = await kycService.complianceSummary({ actorId: 'admin-1' });
+
+    expect(summary.counts).toMatchObject({
+      pending: 4,
+      approved: 6,
+      rejected: 2,
+      needsMoreInfo: 1,
+    });
+    expect(summary.pendingOver24h).toBe(3);
+    expect(summary.pendingOver48h).toBe(1);
+    expect(summary.highRiskUsers).toBe(5);
+    // 2 rejected of 8 decided = 25%.
+    expect(summary.rejectionRatePct).toBe(25);
+  });
+
+  it('returns a null rejection rate when nothing has been decided', async () => {
+    repo.countByStatus.mockResolvedValue([
+      { status: 'PENDING', _count: { _all: 2 } },
+    ] as never);
+    repo.countPendingOlderThan.mockResolvedValue(0);
+    repo.countHighRiskUsers.mockResolvedValue(0);
+    repo.recentKycActions.mockResolvedValue([]);
+
+    const summary = await kycService.complianceSummary();
+    expect(summary.rejectionRatePct).toBeNull();
   });
 });

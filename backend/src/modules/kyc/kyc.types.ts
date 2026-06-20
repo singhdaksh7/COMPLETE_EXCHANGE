@@ -24,8 +24,12 @@ export const KycAction = {
   WEBHOOK_INVALID_SIGNATURE: 'kyc.webhook.invalid_signature',
   WEBHOOK_DUPLICATE: 'kyc.webhook.duplicate',
   QUEUE_VIEW: 'kyc.queue.view',
+  DETAIL_VIEW: 'kyc.detail.view',
   APPROVE: 'kyc.approve',
   REJECT: 'kyc.reject',
+  REQUEST_INFO: 'kyc.request_info',
+  NOTE: 'kyc.note',
+  COMPLIANCE_VIEW: 'kyc.compliance.view',
 } as const;
 
 export interface SubmitProfileInput {
@@ -43,9 +47,10 @@ export interface SubmitDocumentInput {
 }
 
 export interface KycDecisionInput {
-  decision: 'APPROVE' | 'REJECT';
+  decision: 'APPROVE' | 'REJECT' | 'REQUEST_INFO';
   tier?: number;
   reason?: string;
+  complianceNote?: string;
 }
 
 /** Public KYC profile view (matches OpenAPI `KycProfile`). No raw PII leaves here. */
@@ -109,6 +114,11 @@ export interface AdminKycQueueItem {
   status: string;
   tier: number;
   submittedAt: Date;
+  reviewedAt: Date | null;
+  reviewedBy: string | null;
+  rejectedReason: string | null;
+  riskLevel: string;
+  accountStatus: string;
   provider: string | null;
   livenessStatus: KycCheckStatus | null;
   documentStatus: KycCheckStatus | null;
@@ -122,6 +132,56 @@ export interface KycQueueResult {
   nextCursor: string | null;
 }
 
+/** One entry in the per-user KYC action timeline (from admin_logs). */
+export interface KycTimelineEntry {
+  id: string;
+  action: string;
+  actorAdminId: string;
+  actorEmail: string | null;
+  reason: string | null;
+  occurredAt: Date;
+}
+
+/**
+ * Full admin KYC review view for one user. Extends the queue item with the
+ * internal compliance note, identity details (masked), documents, a recent
+ * deposit/withdrawal summary, and the KYC action timeline. The internal
+ * compliance note appears here (admin surface) but NEVER on the user DTO.
+ */
+export interface AdminKycDetail extends AdminKycQueueItem {
+  dob: Date | null;
+  address: unknown;
+  complianceNote: string | null;
+  riskNote: string | null;
+  withdrawalsBlocked: boolean;
+  documents: KycDocumentDto[];
+  activity: {
+    depositCount: number;
+    withdrawalCount: number;
+    lastDepositAt: Date | null;
+    lastWithdrawalAt: Date | null;
+  };
+  timeline: KycTimelineEntry[];
+}
+
+/** Real, aggregate compliance metrics for the compliance dashboard. */
+export interface ComplianceSummary {
+  counts: {
+    notStarted: number;
+    pending: number;
+    inReview: number;
+    manualReview: number;
+    needsMoreInfo: number;
+    approved: number;
+    rejected: number;
+  };
+  pendingOver24h: number;
+  pendingOver48h: number;
+  highRiskUsers: number;
+  rejectionRatePct: number | null;
+  recentActions: KycTimelineEntry[];
+}
+
 export function toKycSessionDto(session: KycSession): KycSessionDto {
   return {
     provider: session.provider,
@@ -131,9 +191,16 @@ export function toKycSessionDto(session: KycSession): KycSessionDto {
   };
 }
 
-export function toAdminKycQueueItem(
-  profile: KycProfile & { user: { email: string; kycTier: number } },
-): AdminKycQueueItem {
+export type AdminKycProfileRow = KycProfile & {
+  user: {
+    email: string;
+    kycTier: number;
+    riskLevel: string;
+    status: string;
+  };
+};
+
+export function toAdminKycQueueItem(profile: AdminKycProfileRow): AdminKycQueueItem {
   return {
     userId: profile.userId,
     email: profile.user.email,
@@ -141,6 +208,11 @@ export function toAdminKycQueueItem(
     status: profile.status,
     tier: profile.user.kycTier,
     submittedAt: profile.createdAt,
+    reviewedAt: profile.reviewedAt,
+    reviewedBy: profile.reviewedBy,
+    rejectedReason: profile.rejectedReason,
+    riskLevel: profile.user.riskLevel,
+    accountStatus: profile.user.status,
     provider: profile.provider,
     livenessStatus: profile.livenessStatus,
     documentStatus: profile.documentStatus,
@@ -195,5 +267,24 @@ export function toKycDocumentDto(doc: KycDocument): KycDocumentDto {
     docType: doc.docType,
     status: doc.status,
     createdAt: doc.createdAt,
+  };
+}
+
+/** Map an admin_logs row (with resolved admin email) to a timeline entry. */
+export function toKycTimelineEntry(row: {
+  id: bigint;
+  action: string;
+  adminId: string;
+  reason: string | null;
+  occurredAt: Date;
+  admin?: { email: string } | null;
+}): KycTimelineEntry {
+  return {
+    id: row.id.toString(),
+    action: row.action,
+    actorAdminId: row.adminId,
+    actorEmail: row.admin?.email ?? null,
+    reason: row.reason,
+    occurredAt: row.occurredAt,
   };
 }

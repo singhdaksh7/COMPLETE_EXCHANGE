@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { KycDocType } from '@prisma/client';
+import { KycDocType, KycStatus, RiskLevel, UserStatus } from '@prisma/client';
 
 /**
  * zod schemas = the single source of validation truth for the KYC module.
@@ -49,20 +49,37 @@ export const kycDocumentSchema = z
 
 export const kycDecisionSchema = z
   .object({
-    decision: z.enum(['APPROVE', 'REJECT']),
+    decision: z.enum(['APPROVE', 'REJECT', 'REQUEST_INFO']),
     tier: z.number().int().min(0).max(5).optional(),
+    // User-facing reason/message (safe to show the user). Required for REJECT
+    // and REQUEST_INFO.
     reason: z.string().trim().max(500).optional(),
+    // Internal compliance note (admin-only, never returned on user APIs).
+    complianceNote: z.string().trim().max(1000).optional(),
   })
   .strict()
   .refine(
-    (v) => v.decision !== 'REJECT' || (v.reason !== undefined && v.reason.length > 0),
-    { message: 'reason is required when rejecting', path: ['reason'] },
+    (v) =>
+      v.decision === 'APPROVE' ||
+      (v.reason !== undefined && v.reason.length > 0),
+    { message: 'reason is required when rejecting or requesting more info', path: ['reason'] },
   );
+
+/** Standalone internal compliance note (no status change). */
+export const kycNoteSchema = z
+  .object({ note: z.string().trim().min(1).max(1000) })
+  .strict();
 
 export const kycQueueQuerySchema = z
   .object({
     cursor: z.string().uuid('Invalid cursor').optional(),
     limit: z.coerce.number().int().min(1).max(100).default(20),
+    status: z.nativeEnum(KycStatus).optional(),
+    email: z.string().trim().min(1).max(256).optional(),
+    riskLevel: z.nativeEnum(RiskLevel).optional(),
+    accountStatus: z.nativeEnum(UserStatus).optional(),
+    submittedFrom: z.coerce.date().optional(),
+    submittedTo: z.coerce.date().optional(),
   })
   .strict();
 
@@ -73,4 +90,5 @@ export const userIdParamSchema = z
 export type KycSubmitDto = z.infer<typeof kycSubmitSchema>;
 export type KycDocumentDto = z.infer<typeof kycDocumentSchema>;
 export type KycDecisionDto = z.infer<typeof kycDecisionSchema>;
+export type KycNoteDto = z.infer<typeof kycNoteSchema>;
 export type KycQueueQueryDto = z.infer<typeof kycQueueQuerySchema>;

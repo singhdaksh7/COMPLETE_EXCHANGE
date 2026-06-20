@@ -18,8 +18,11 @@ import {
   toKycDocumentDto,
   toKycProfileDto,
   toKycSessionDto,
+  toKycTimelineEntry,
 } from './kyc.types';
 import type {
+  AdminKycDetail,
+  ComplianceSummary,
   KycContext,
   KycDecisionInput,
   KycDocumentDto,
@@ -31,6 +34,7 @@ import type {
   SubmitDocumentInput,
   SubmitProfileInput,
 } from './kyc.types';
+import type { KycStatus, RiskLevel, UserStatus } from '@prisma/client';
 
 /**
  * Build a secure, namespaced object-storage key. We persist ONLY this key; the
@@ -358,10 +362,28 @@ export const kycService = {
   // Admin: review queue
   // ------------------------------------------------------------------
   async reviewQueue(
-    input: { cursor?: string; limit: number },
+    input: {
+      cursor?: string;
+      limit: number;
+      status?: KycStatus;
+      email?: string;
+      riskLevel?: RiskLevel;
+      accountStatus?: UserStatus;
+      submittedFrom?: Date;
+      submittedTo?: Date;
+    },
     ctx: KycContext = {},
   ): Promise<KycQueueResult> {
-    const rows = await kycRepository.listPendingProfiles(input.limit, input.cursor);
+    const rows = await kycRepository.listProfiles({
+      limit: input.limit,
+      cursor: input.cursor,
+      status: input.status,
+      email: input.email,
+      riskLevel: input.riskLevel,
+      accountStatus: input.accountStatus,
+      submittedFrom: input.submittedFrom,
+      submittedTo: input.submittedTo,
+    });
     const hasMore = rows.length > input.limit;
     const page = hasMore ? rows.slice(0, input.limit) : rows;
     const nextCursor = hasMore ? page[page.length - 1].id : null;
@@ -369,12 +391,60 @@ export const kycService = {
     await this.auditAdmin(ctx, {
       action: KycAction.QUEUE_VIEW,
       targetType: 'kyc_queue',
-      afterState: { count: page.length },
+      afterState: { count: page.length, status: input.status ?? 'PENDING' },
     });
 
     return {
       items: page.map(toAdminKycQueueItem),
       nextCursor,
+    };
+  },
+
+  // ------------------------------------------------------------------
+  // Admin: full review detail for one user (masked PII + internal note +
+  // documents + recent activity + KYC action timeline).
+  // ------------------------------------------------------------------
+  async getDetail(userId: string, ctx: KycContext = {}): Promise<AdminKycDetail> {
+    const profile = await kycRepository.findProfileDetail(userId);
+    if (!profile) throw new NotFoundError('KYC profile not found');
+    const [documents, activity, timeline] = await Promise.all([
+      kycRepository.listDocumentsByUser(userId),
+      kycRepository.activitySummary(userId),
+      kycRepository.kycTimeline(userId),
+    ]);
+
+    await this.auditAdmin(ctx, {
+      action: KycAction.DETAIL_VIEW,
+      targetType: 'kyc_profile',
+      targetId: userId,
+    });
+
+    return {
+      userId: profile.userId,
+      email: profile.user.email,
+      fullName: profile.fullName,
+      status: profile.status,
+      tier: profile.user.kycTier,
+      submittedAt: profile.createdAt,
+      reviewedAt: profile.reviewedAt,
+      reviewedBy: profile.reviewedBy,
+      rejectedReason: profile.rejectedReason,
+      riskLevel: profile.user.riskLevel,
+      accountStatus: profile.user.status,
+      provider: profile.provider,
+      livenessStatus: profile.livenessStatus,
+      documentStatus: profile.documentStatus,
+      riskScore: profile.riskScore,
+      panMasked: profile.panMasked,
+      aadhaarMasked: profile.aadhaarMasked,
+      dob: profile.dob,
+      address: profile.address,
+      complianceNote: profile.complianceNote,
+      riskNote: profile.user.riskNote,
+      withdrawalsBlocked: profile.user.withdrawalsBlocked,
+      documents: documents.map(toKycDocumentDto),
+      activity,
+      timeline: timeline.map(toKycTimelineEntry),
     };
   },
 
@@ -403,15 +473,43 @@ export const kycService = {
         reviewedAt: new Date(),
         rejectedReason: null,
         tier,
+        complianceNote: input.complianceNote,
+        cascadeDocuments: true,
       });
       await this.auditAdmin(ctx, {
         action: KycAction.APPROVE,
         targetType: 'kyc_profile',
         targetId: userId,
         beforeState: { status: profile.status, tier: beforeTier },
+        // afterState is non-sensitive: the internal note is NEVER audited here.
         afterState: { status: 'APPROVED', tier },
       });
       return toKycProfileDto(updated, tier, 'APPROVED');
+    }
+
+    if (input.decision === 'REQUEST_INFO') {
+      // Ask the user for more information — keeps them un-approved (so all
+      // gates still block) but lets them resubmit. reason is the user-safe
+      // message; it is guaranteed present by the validator.
+      assertTransition(profile.status, 'NEEDS_MORE_INFO');
+      const reason = input.reason ?? 'Additional information required';
+      const updated = await kycRepository.decide(userId, {
+        status: 'NEEDS_MORE_INFO',
+        userKycStatus: 'NEEDS_MORE_INFO',
+        reviewedBy,
+        reviewedAt: new Date(),
+        rejectedReason: reason,
+        complianceNote: input.complianceNote,
+      });
+      await this.auditAdmin(ctx, {
+        action: KycAction.REQUEST_INFO,
+        targetType: 'kyc_profile',
+        targetId: userId,
+        reason,
+        beforeState: { status: profile.status, tier: beforeTier },
+        afterState: { status: 'NEEDS_MORE_INFO', tier: beforeTier },
+      });
+      return toKycProfileDto(updated, beforeTier, 'NEEDS_MORE_INFO');
     }
 
     // REJECT — reason is guaranteed present by the validator.
@@ -423,6 +521,8 @@ export const kycService = {
       reviewedBy,
       reviewedAt: new Date(),
       rejectedReason: reason,
+      complianceNote: input.complianceNote,
+      cascadeDocuments: true,
     });
     await this.auditAdmin(ctx, {
       action: KycAction.REJECT,
@@ -433,6 +533,75 @@ export const kycService = {
       afterState: { status: 'REJECTED', tier: beforeTier },
     });
     return toKycProfileDto(updated, beforeTier, 'REJECTED');
+  },
+
+  // ------------------------------------------------------------------
+  // Admin: add/update the internal compliance note (no status change).
+  // The note is internal-only and is never surfaced on any user API.
+  // ------------------------------------------------------------------
+  async addComplianceNote(
+    userId: string,
+    note: string,
+    ctx: KycContext = {},
+  ): Promise<AdminKycDetail> {
+    const profile = await kycRepository.findProfileByUserId(userId);
+    if (!profile) throw new NotFoundError('KYC profile not found');
+    await kycRepository.setComplianceNote(userId, note);
+    await this.auditAdmin(ctx, {
+      action: KycAction.NOTE,
+      targetType: 'kyc_profile',
+      targetId: userId,
+      // The note text is the admin reason; it stays in admin_logs (internal).
+      reason: note,
+      afterState: { hasNote: true },
+    });
+    return this.getDetail(userId, {});
+  },
+
+  // ------------------------------------------------------------------
+  // Admin: real compliance metrics for the compliance dashboard.
+  // ------------------------------------------------------------------
+  async complianceSummary(ctx: KycContext = {}): Promise<ComplianceSummary> {
+    const now = Date.now();
+    const [grouped, over24h, over48h, highRiskUsers, recent] = await Promise.all([
+      kycRepository.countByStatus(),
+      kycRepository.countPendingOlderThan(new Date(now - 24 * 3600 * 1000)),
+      kycRepository.countPendingOlderThan(new Date(now - 48 * 3600 * 1000)),
+      kycRepository.countHighRiskUsers(),
+      kycRepository.recentKycActions(15),
+    ]);
+
+    const by = (status: KycStatus): number =>
+      grouped.find((g) => g.status === status)?._count._all ?? 0;
+
+    const approved = by('APPROVED');
+    const rejected = by('REJECTED');
+    const decided = approved + rejected;
+    const rejectionRatePct =
+      decided > 0 ? Math.round((rejected / decided) * 1000) / 10 : null;
+
+    await this.auditAdmin(ctx, {
+      action: KycAction.COMPLIANCE_VIEW,
+      targetType: 'kyc_compliance',
+      afterState: { pendingOver24h: over24h },
+    });
+
+    return {
+      counts: {
+        notStarted: by('NOT_STARTED'),
+        pending: by('PENDING'),
+        inReview: by('IN_REVIEW'),
+        manualReview: by('MANUAL_REVIEW'),
+        needsMoreInfo: by('NEEDS_MORE_INFO'),
+        approved,
+        rejected,
+      },
+      pendingOver24h: over24h,
+      pendingOver48h: over48h,
+      highRiskUsers,
+      rejectionRatePct,
+      recentActions: recent.map(toKycTimelineEntry),
+    };
   },
 
   // ------------------------------------------------------------------

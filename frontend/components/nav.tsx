@@ -366,6 +366,7 @@ export function AdminNav() {
     { href: '/admin/dashboard', label: 'Dashboard' },
     { href: '/admin/users', label: 'Users' },
     { href: '/admin/kyc', label: 'KYC Verification' },
+    { href: '/admin/compliance', label: 'Compliance' },
     { href: '/admin/deposits', label: 'Deposits queue' },
     { href: '/admin/withdrawals', label: 'Withdrawals queue' },
     { href: '/admin/conversions', label: 'Conversions ledger' },

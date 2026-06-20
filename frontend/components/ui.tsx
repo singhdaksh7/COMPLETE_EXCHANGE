@@ -112,6 +112,9 @@ export function StatusBadge({ status }: { status: string }) {
     // KYC
     APPROVED: green,
     PENDING: yellow,
+    IN_REVIEW: yellow,
+    MANUAL_REVIEW: yellow,
+    NEEDS_MORE_INFO: blue,
     REJECTED: red,
     NOT_STARTED: gray,
     ACTIVE: green,

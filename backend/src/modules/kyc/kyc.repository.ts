@@ -5,8 +5,10 @@ import type {
   KycProfile,
   KycStatus,
   Prisma,
+  User,
 } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
+import type { AdminKycProfileRow } from './kyc.types';
 
 /**
  * Repository layer: the ONLY place that talks to Prisma for KYC data.
@@ -117,17 +119,92 @@ export const kycRepository = {
   },
 
   /**
-   * Oldest-first page of profiles awaiting review (FIFO queue). Fetches one
-   * extra row so the service can derive `nextCursor` without a second query.
+   * Filtered, oldest-first page of KYC profiles for the admin review queue.
+   * Defaults to PENDING (the FIFO review queue) when no status filter is given.
+   * Fetches one extra row so the service can derive `nextCursor` cheaply.
    */
-  listPendingProfiles(limit: number, cursor?: string) {
+  listProfiles(input: {
+    limit: number;
+    cursor?: string;
+    status?: KycStatus;
+    email?: string;
+    riskLevel?: User['riskLevel'];
+    accountStatus?: User['status'];
+    submittedFrom?: Date;
+    submittedTo?: Date;
+  }): Promise<AdminKycProfileRow[]> {
+    const userFilter: Prisma.UserWhereInput = {
+      ...(input.email ? { email: { contains: input.email, mode: 'insensitive' } } : {}),
+      ...(input.riskLevel ? { riskLevel: input.riskLevel } : {}),
+      ...(input.accountStatus ? { status: input.accountStatus } : {}),
+    };
+    const where: Prisma.KycProfileWhereInput = {
+      status: input.status ?? 'PENDING',
+      ...(Object.keys(userFilter).length ? { user: userFilter } : {}),
+    };
+    if (input.submittedFrom || input.submittedTo) {
+      where.createdAt = {
+        ...(input.submittedFrom ? { gte: input.submittedFrom } : {}),
+        ...(input.submittedTo ? { lte: input.submittedTo } : {}),
+      };
+    }
     return prisma.kycProfile.findMany({
-      where: { status: 'PENDING' },
+      where,
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-      include: { user: { select: { email: true, kycTier: true } } },
-      take: limit + 1,
-      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      include: {
+        user: { select: { email: true, kycTier: true, riskLevel: true, status: true } },
+      },
+      take: input.limit + 1,
+      ...(input.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {}),
     });
+  },
+
+  /** Full profile + user context + documents for the admin detail view. */
+  findProfileDetail(userId: string) {
+    return prisma.kycProfile.findUnique({
+      where: { userId },
+      include: {
+        user: {
+          select: {
+            email: true,
+            kycTier: true,
+            riskLevel: true,
+            riskNote: true,
+            status: true,
+            withdrawalsBlocked: true,
+          },
+        },
+      },
+    });
+  },
+
+  /** Recent deposit/withdrawal activity summary for the KYC detail view. */
+  async activitySummary(userId: string): Promise<{
+    depositCount: number;
+    withdrawalCount: number;
+    lastDepositAt: Date | null;
+    lastWithdrawalAt: Date | null;
+  }> {
+    const [depositCount, withdrawalCount, lastDeposit, lastWithdrawal] = await Promise.all([
+      prisma.cryptoDeposit.count({ where: { userId } }),
+      prisma.cryptoWithdrawal.count({ where: { userId } }),
+      prisma.cryptoDeposit.findFirst({
+        where: { userId },
+        orderBy: { detectedAt: 'desc' },
+        select: { detectedAt: true },
+      }),
+      prisma.cryptoWithdrawal.findFirst({
+        where: { userId },
+        orderBy: { requestedAt: 'desc' },
+        select: { requestedAt: true },
+      }),
+    ]);
+    return {
+      depositCount,
+      withdrawalCount,
+      lastDepositAt: lastDeposit?.detectedAt ?? null,
+      lastWithdrawalAt: lastWithdrawal?.requestedAt ?? null,
+    };
   },
 
   /**
@@ -143,6 +220,8 @@ export const kycRepository = {
       reviewedAt: Date;
       rejectedReason: string | null;
       tier?: number;
+      complianceNote?: string;
+      cascadeDocuments?: boolean;
     },
   ): Promise<KycProfile> {
     return prisma.$transaction(async (tx) => {
@@ -153,6 +232,9 @@ export const kycRepository = {
           reviewedBy: data.reviewedBy,
           reviewedAt: data.reviewedAt,
           rejectedReason: data.rejectedReason,
+          ...(data.complianceNote !== undefined
+            ? { complianceNote: data.complianceNote }
+            : {}),
         },
       });
       await tx.user.update({
@@ -162,12 +244,67 @@ export const kycRepository = {
           ...(data.tier !== undefined ? { kycTier: data.tier } : {}),
         },
       });
-      await tx.kycDocument.updateMany({
-        where: { userId },
-        data: { status: data.status },
-      });
+      // Cascade the document status only on a terminal APPROVE/REJECT — a
+      // request-for-more-info leaves the existing documents untouched.
+      if (data.cascadeDocuments) {
+        await tx.kycDocument.updateMany({
+          where: { userId },
+          data: { status: data.status },
+        });
+      }
       return profile;
     });
+  },
+
+  /** Set ONLY the internal compliance note (no status / gating change). */
+  setComplianceNote(userId: string, note: string): Promise<KycProfile> {
+    return prisma.kycProfile.update({
+      where: { userId },
+      data: { complianceNote: note },
+    });
+  },
+
+  /**
+   * Per-user KYC action timeline from admin_logs (admin decisions/notes),
+   * newest first, with the acting admin's email resolved for display.
+   */
+  kycTimeline(userId: string) {
+    return prisma.adminLog.findMany({
+      where: { targetType: 'kyc_profile', targetId: userId },
+      orderBy: { occurredAt: 'desc' },
+      take: 25,
+      include: { admin: { select: { email: true } } },
+    });
+  },
+
+  /** Most-recent KYC admin actions across all users (compliance dashboard). */
+  recentKycActions(limit: number) {
+    return prisma.adminLog.findMany({
+      where: {
+        targetType: 'kyc_profile',
+        action: { in: ['kyc.approve', 'kyc.reject', 'kyc.request_info', 'kyc.note'] },
+      },
+      orderBy: { occurredAt: 'desc' },
+      take: limit,
+      include: { admin: { select: { email: true } } },
+    });
+  },
+
+  /** Count of KYC profiles grouped by status. */
+  countByStatus() {
+    return prisma.kycProfile.groupBy({ by: ['status'], _count: { _all: true } });
+  },
+
+  /** Profiles still PENDING that were submitted before `before`. */
+  countPendingOlderThan(before: Date): Promise<number> {
+    return prisma.kycProfile.count({
+      where: { status: 'PENDING', createdAt: { lt: before } },
+    });
+  },
+
+  /** Active, non-deleted users flagged HIGH risk. */
+  countHighRiskUsers(): Promise<number> {
+    return prisma.user.count({ where: { riskLevel: 'HIGH', deletedAt: null } });
   },
 
   /**
