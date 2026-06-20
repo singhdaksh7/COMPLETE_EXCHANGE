@@ -109,6 +109,27 @@ export interface ScannerHealthDto {
   depositCounts: Record<string, number>;
 }
 
+/**
+ * Operational, secrets-free status summary across all scanner chains. Reports
+ * the configured provider MODE ('mock' | 'live') and the persisted checkpoint —
+ * never RPC URLs, API keys, or any provider credentials.
+ */
+export interface ScannerChainStatus {
+  chain: string;
+  providerMode: string;
+  lastScannedBlock: string | null;
+  safeBlock: string | null;
+  lastScannedHash: string | null;
+  updatedAt: Date | null;
+}
+
+export interface ScannerStatusSummary {
+  safetyLag: number;
+  reorgBuffer: number;
+  startBlock: number;
+  chains: ScannerChainStatus[];
+}
+
 export function toCryptoDepositDto(row: CryptoDeposit): CryptoDepositDto {
   return {
     id: row.id,

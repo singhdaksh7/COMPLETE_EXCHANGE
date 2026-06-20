@@ -15,6 +15,7 @@ import type {
   ScanResult,
   ScannerContext,
   ScannerHealthDto,
+  ScannerStatusSummary,
   UserCryptoDepositDto,
 } from './scanner.types';
 import type { TronProvider, BscProvider, TokenTransfer } from './providers';
@@ -323,6 +324,37 @@ export const scannerService = {
     return {
       items: slice.map(toCryptoDepositDto),
       nextCursor: hasMore ? slice[slice.length - 1].id : null,
+    };
+  },
+
+  /**
+   * Secrets-free status summary for ops/logging. Reports each chain's configured
+   * provider MODE and persisted checkpoint only — never RPC URLs, API keys, or
+   * provider credentials. Read-only and deterministic; instantiates no provider.
+   */
+  async statusSummary(): Promise<ScannerStatusSummary> {
+    const chains: Array<{ chain: string; providerMode: string }> = [
+      { chain: 'TRON', providerMode: config.scanner.tronProvider },
+      { chain: 'BSC', providerMode: config.scanner.bscProvider },
+    ];
+    const cursors = await Promise.all(
+      chains.map((c) => scannerRepository.getCursor(c.chain)),
+    );
+    return {
+      safetyLag: config.scanner.safetyLag,
+      reorgBuffer: config.scanner.reorgBuffer,
+      startBlock: config.scanner.startBlock,
+      chains: chains.map((c, i) => {
+        const cursor = cursors[i];
+        return {
+          chain: c.chain,
+          providerMode: c.providerMode,
+          lastScannedBlock: cursor ? cursor.lastScannedBlock.toString() : null,
+          safeBlock: cursor ? cursor.safeBlock.toString() : null,
+          lastScannedHash: cursor?.lastScannedHash ?? null,
+          updatedAt: cursor?.updatedAt ?? null,
+        };
+      }),
     };
   },
 

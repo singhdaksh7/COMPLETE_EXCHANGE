@@ -6,6 +6,7 @@ vi.mock('../../src/modules/scanner/scanner.repository', () => ({
     getCursor: vi.fn(),
     getSupportedToken: vi.fn(),
     listActiveDepositAddresses: vi.fn(),
+    getPendingDepositBlocks: vi.fn(),
     upsertDetectedDeposit: vi.fn(),
     orphanReorgedDeposits: vi.fn(),
     upsertCursor: vi.fn(),
@@ -38,6 +39,9 @@ beforeEach(() => {
   repo.listActiveDepositAddresses.mockResolvedValue([
     { id: 'addr-1', userId: 'user-1', address: DEST },
   ] as never);
+  // No pending/confirming deposits already persisted in the scan window — the
+  // service only needs to fetch the toBlock + transfer blocks.
+  repo.getPendingDepositBlocks.mockResolvedValue([]);
   repo.upsertDetectedDeposit.mockResolvedValue({
     row: { id: 'dep-1' },
     created: true,
@@ -118,5 +122,52 @@ describe('scannerService.scanOnce (detection)', () => {
       expect.objectContaining({ lastScannedBlock: 139n, safeBlock: 139n }),
     );
     expect(result.toBlock).toBe('139');
+  });
+
+  it('does NOT advance the cursor when the provider head fetch fails', async () => {
+    const provider = createMockTronProvider({ head: 5n });
+    provider.getLatestBlock = vi.fn().mockRejectedValue(new Error('rpc unavailable'));
+
+    await expect(scannerService.scanOnce({ provider })).rejects.toThrow('rpc unavailable');
+    expect(repo.upsertCursor).not.toHaveBeenCalled();
+    expect(repo.upsertDetectedDeposit).not.toHaveBeenCalled();
+  });
+});
+
+describe('scannerService.statusSummary', () => {
+  it('summarizes chains + checkpoints without exposing any secrets', async () => {
+    repo.getCursor.mockImplementation(async (chain: string) =>
+      chain === 'TRON'
+        ? ({
+            chain: 'TRON',
+            lastScannedBlock: 1234n,
+            lastScannedHash: 'tron_block_1234',
+            safeBlock: 1234n,
+            updatedAt: new Date('2026-06-20T00:00:00Z'),
+          } as never)
+        : null,
+    );
+
+    const summary = await scannerService.statusSummary();
+
+    expect(summary.chains.map((c) => c.chain)).toEqual(['TRON', 'BSC']);
+    const tron = summary.chains.find((c) => c.chain === 'TRON')!;
+    expect(tron.lastScannedBlock).toBe('1234');
+    expect(tron.safeBlock).toBe('1234');
+    expect(['mock', 'live']).toContain(tron.providerMode);
+
+    // A chain with no cursor reports nulls rather than throwing.
+    const bsc = summary.chains.find((c) => c.chain === 'BSC')!;
+    expect(bsc.lastScannedBlock).toBeNull();
+
+    expect(typeof summary.safetyLag).toBe('number');
+    expect(typeof summary.reorgBuffer).toBe('number');
+
+    // Secrets-free invariant: no RPC URL / api key / private key anywhere.
+    const serialized = JSON.stringify(summary).toLowerCase();
+    expect(serialized).not.toContain('http');
+    expect(serialized).not.toContain('apikey');
+    expect(serialized).not.toContain('rpc');
+    expect(serialized).not.toContain('key');
   });
 });
