@@ -47,6 +47,11 @@ export const ADMIN_PERMISSIONS: PermissionDef[] = [
   { code: 'admin.view', description: 'View admin accounts' },
   { code: 'audit.view', description: 'Read audit & admin logs' },
   { code: 'operations.view', description: 'View the admin operations dashboard' },
+  // System / Ops Center (Stage 4.3). All end in `.view`, so SUPPORT/READ_ONLY
+  // (the VIEW_ONLY roles) inherit them automatically — safe, read-only data.
+  { code: 'system.view', description: 'View the system / ops command center' },
+  { code: 'system.health.view', description: 'View API/DB/Redis readiness and version info' },
+  { code: 'system.risk.view', description: 'View system risk alerts and operational risk signals' },
 ];
 
 /** Sentinel: SUPER_ADMIN receives EVERY permission. */
@@ -90,6 +95,11 @@ export const ADMIN_ROLES: RoleDef[] = [
       'risk.manage',
       'compliance.view',
       'operations.view',
+      // Ops oversight: FINANCE acts as the operations admin and sees the full
+      // Ops Center including health + risk signals.
+      'system.view',
+      'system.health.view',
+      'system.risk.view',
     ],
   },
   {
@@ -101,6 +111,9 @@ export const ADMIN_ROLES: RoleDef[] = [
       'compliance.view',
       'user.view',
       'operations.view',
+      // Compliance admin: sees the ops center + risk alerts (not health-only).
+      'system.view',
+      'system.risk.view',
     ],
   },
   {

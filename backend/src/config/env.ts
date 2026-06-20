@@ -114,6 +114,10 @@ export const envSchema = z
   // From identity for outbound mail. In 'ses' mode this MUST be an SES-verified
   // identity in AWS_REGION. Accepts "Name <addr@domain>" or a bare address.
   MAIL_FROM: z.string().min(3).default('Exora <no-reply@exora.local>'),
+  // Optional Reply-To for outbound mail (e.g. support@exorain.com). When set,
+  // it is attached as SES ReplyToAddresses; when unset, no Reply-To is sent.
+  // This is NEVER used as the send identity — only MAIL_FROM is.
+  MAIL_REPLY_TO: optionalNonEmptyString,
   // Public base URL of the frontend, used to build verification/reset links.
   // Trailing slashes are stripped so links never become "//verify-email".
   FRONTEND_URL: z

@@ -387,6 +387,7 @@ export function AdminNav() {
     { href: '/admin/reports', label: 'Fee reports' },
     { href: '/admin/notifications', label: 'Notifications' },
     { href: '/admin/scanner', label: 'Blockchain scan' },
+    { href: '/admin/system', label: 'System / Ops Center' },
     { href: '/admin/admins', label: 'Admin management' },
     { href: '/admin/audit', label: 'Audit log' },
   ];

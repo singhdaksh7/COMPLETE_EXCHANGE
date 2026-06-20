@@ -73,6 +73,7 @@ export const config = {
   mail: {
     provider: env.MAIL_PROVIDER,
     from: env.MAIL_FROM,
+    replyTo: env.MAIL_REPLY_TO,
     awsRegion: env.AWS_REGION,
     sesConfigurationSet: env.SES_CONFIGURATION_SET,
   },

@@ -782,3 +782,125 @@ export interface FeeReport {
   ledgerFeeRevenue: { totalByAsset: FeeAssetTotal[] };
   marketFees: MarketFeeSetting[];
 }
+
+// ---- System / Ops Center (Stage 4.3) ----
+export interface SystemHealth {
+  status: 'ok' | 'degraded';
+  service: string;
+  version: string;
+  environment: string;
+  uptime: number;
+  timestamp: string;
+  dependencies: { database: 'ok' | 'degraded'; redis: 'ok' | 'degraded' };
+}
+
+export interface SystemQueues {
+  pendingInrDeposits: number;
+  makerCheckerPendingDeposits: number;
+  pendingWithdrawals: number;
+  makerCheckerPendingWithdrawals: number;
+  kycPending: number;
+  kycNeedsMoreInfo: number;
+  highRiskUsers: number;
+  frozenUsers: number;
+  withdrawalsBlockedUsers: number;
+}
+
+export interface SystemMail {
+  provider: 'log' | 'ses';
+  fromDomain: string | null;
+  replyToConfigured: boolean;
+  region: string | null;
+  configurationSetConfigured: boolean;
+  recentFailures: number;
+  statusCounts: Record<string, number>;
+  windowHours: number;
+}
+
+export interface SystemScannerChain {
+  chain: string;
+  providerMode: string;
+  lastScannedBlock: string | null;
+  safeBlock: string | null;
+  lastScannedHash: string | null;
+  updatedAt: string | null;
+}
+
+export interface SystemScanner {
+  safetyLag: number;
+  reorgBuffer: number;
+  startBlock: number;
+  chains: SystemScannerChain[];
+  recentErrors: string[];
+}
+
+export interface SystemLargeWithdrawal {
+  id: string;
+  userId: string;
+  asset: string;
+  chain: string;
+  amount: string;
+  status: string;
+  requestedAt: string;
+}
+
+export interface SystemRiskAlerts {
+  highRiskUsers: number;
+  frozenUsers: number;
+  lockedUsers: number;
+  withdrawalsBlockedUsers: number;
+  largePendingWithdrawals: {
+    thresholdUsdt: string;
+    count: number;
+    items: SystemLargeWithdrawal[];
+  };
+  failedRejectedWithdrawals: number;
+  depositApprovalsPendingTooLong: number;
+  kycPendingTooLong: number;
+  repeatedMailFailures: number;
+  failedLogins: number;
+  windowHours: number;
+}
+
+export interface SystemFlags {
+  mailProvider: 'log' | 'ses';
+  withdrawalSigner: string;
+  mockProvidersAllowed: boolean;
+  mockWithdrawalSignerAllowed: boolean;
+  logMailProviderAllowed: boolean;
+  unverifiedEmailLoginAllowed: boolean;
+  adminTotpRequired: boolean;
+  liveSigningEnabled: boolean;
+}
+
+export interface SystemOverview {
+  status: 'ok' | 'degraded';
+  version: string;
+  environment: string;
+  uptime: number;
+  timestamp: string;
+  dependencies: { database: 'ok' | 'degraded'; redis: 'ok' | 'degraded' };
+  summary: {
+    pendingInrDeposits: number;
+    pendingWithdrawals: number;
+    kycPending: number;
+    mailFailures: number;
+  };
+  scanner: {
+    chains: Array<{ chain: string; providerMode: string; lastScannedBlock: string | null }>;
+  };
+  mail: { provider: 'log' | 'ses'; fromDomain: string | null };
+  risk: {
+    highRiskUsers: number;
+    frozenUsers: number;
+    withdrawalsBlockedUsers: number;
+    largePendingWithdrawals: number;
+  };
+  flags: SystemFlags;
+  deployment: {
+    version: string;
+    environment: string;
+    apiPrefix: string;
+    adminApiPrefix: string;
+  };
+}

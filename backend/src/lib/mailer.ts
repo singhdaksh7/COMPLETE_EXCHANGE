@@ -153,10 +153,18 @@ function getSesClient(): SESv2Client {
 
 async function sendViaSes(to: string, content: EmailContent): Promise<void> {
   const client = getSesClient();
+  // Field mapping is deliberate and asymmetric:
+  //   - FromEmailAddress is ALWAYS the configured sender identity (config.mail.from,
+  //     i.e. MAIL_FROM). It must be an SES-verified identity in AWS_REGION. The
+  //     recipient address must never appear here, or SES rejects the send with
+  //     AccessDeniedException on identity/<recipient>.
+  //   - Destination.ToAddresses is the recipient (`to`).
+  //   - ReplyToAddresses is attached only when MAIL_REPLY_TO is configured.
   await client.send(
     new SendEmailCommand({
       FromEmailAddress: config.mail.from,
       Destination: { ToAddresses: [to] },
+      ...(config.mail.replyTo ? { ReplyToAddresses: [config.mail.replyTo] } : {}),
       ...(config.mail.sesConfigurationSet
         ? { ConfigurationSetName: config.mail.sesConfigurationSet }
         : {}),

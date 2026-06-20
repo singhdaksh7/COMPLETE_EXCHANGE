@@ -48,4 +48,32 @@ describe('admin RBAC baseline user-risk grants', () => {
     expect(readOnly?.permissions).toContain('compliance.view');
     expect(readOnly?.permissions).not.toContain('kyc.review');
   });
+
+  it('defines system / ops-center permissions with the right role access (Stage 4.3)', () => {
+    expect(ADMIN_PERMISSIONS.map((p) => p.code)).toEqual(
+      expect.arrayContaining(['system.view', 'system.health.view', 'system.risk.view']),
+    );
+
+    const finance = ADMIN_ROLES.find((r) => r.name === 'FINANCE');
+    const reviewer = ADMIN_ROLES.find((r) => r.name === 'KYC_REVIEWER');
+    const support = ADMIN_ROLES.find((r) => r.name === 'SUPPORT');
+    const readOnly = ADMIN_ROLES.find((r) => r.name === 'READ_ONLY');
+
+    // FINANCE acts as operations admin: full system visibility.
+    expect(finance?.permissions).toEqual(
+      expect.arrayContaining(['system.view', 'system.health.view', 'system.risk.view']),
+    );
+    // KYC_REVIEWER acts as compliance admin: ops + risk, but not health-only.
+    expect(reviewer?.permissions).toEqual(
+      expect.arrayContaining(['system.view', 'system.risk.view']),
+    );
+    // The three new permissions all end in `.view`, so the read-only roles
+    // inherit them through the VIEW_ONLY filter.
+    expect(support?.permissions).toEqual(
+      expect.arrayContaining(['system.view', 'system.health.view', 'system.risk.view']),
+    );
+    expect(readOnly?.permissions).toEqual(
+      expect.arrayContaining(['system.view', 'system.health.view', 'system.risk.view']),
+    );
+  });
 });

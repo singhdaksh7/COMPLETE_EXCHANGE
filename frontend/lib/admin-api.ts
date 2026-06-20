@@ -24,6 +24,12 @@ import type {
   Page,
   PublicAdmin,
   ScannerHealth,
+  SystemOverview,
+  SystemHealth,
+  SystemQueues,
+  SystemScanner,
+  SystemMail,
+  SystemRiskAlerts,
 } from './types';
 
 function buildQuery(params: Record<string, string | number | undefined>): string {
@@ -321,4 +327,12 @@ export const adminApi = {
 
   exportAuditCsv: (params: Record<string, string | number | undefined> = {}) =>
     adminDownload(`/operations/audit/export${buildQuery(params)}`, 'admin-audit.csv'),
+
+  // ---- system / ops command center (Stage 4.3) ----
+  systemOverview: () => adminApiFetch<SystemOverview>('/system/overview', 'GET'),
+  systemHealth: () => adminApiFetch<SystemHealth>('/system/health', 'GET'),
+  systemQueues: () => adminApiFetch<SystemQueues>('/system/queues', 'GET'),
+  systemScanner: () => adminApiFetch<SystemScanner>('/system/scanner', 'GET'),
+  systemMail: () => adminApiFetch<SystemMail>('/system/mail', 'GET'),
+  systemRiskAlerts: () => adminApiFetch<SystemRiskAlerts>('/system/risk-alerts', 'GET'),
 };

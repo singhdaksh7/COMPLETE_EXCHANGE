@@ -30,6 +30,7 @@ import {
   type GoogleProfile,
 } from '../../lib/google-oauth';
 import { mailer } from '../../lib/mailer';
+import { logger } from '../../lib/logger';
 import { notificationService } from '../notification/notification.service';
 import { recordAudit, AuditAction } from '../../lib/audit';
 import type {
@@ -152,7 +153,21 @@ export const authService = {
 
     // Do not auto-login: email must be verified first (matches OpenAPI). The
     // raw token leaves only via email; only its hash is stored (Redis + TTL).
-    await this.issueEmailVerification(user);
+    //
+    // Persisting the token must succeed (otherwise verification is impossible,
+    // so we fail the request bounded). Sending the email is best-effort: a mail
+    // provider outage (e.g. SES AccessDenied/misconfig) must NOT surface as a
+    // confusing 500 on an account that was already created. We log it and let
+    // the user re-trigger delivery via /auth/resend-verification.
+    const verificationToken = await this.persistEmailVerificationToken(user);
+    try {
+      await mailer.sendEmailVerification(user.email, verificationToken);
+    } catch (err) {
+      logger.error(
+        { err, userId: user.id },
+        'register: verification email dispatch failed; account created, user can resend',
+      );
+    }
 
     await recordAudit({
       actorType: 'USER',
@@ -171,8 +186,12 @@ export const authService = {
     };
   },
 
-  /** Generate + persist (hashed) a verification token and dispatch it. */
-  async issueEmailVerification(user: User): Promise<void> {
+  /**
+   * Generate a fresh verification token and persist its hash (Redis + TTL).
+   * Returns the raw token so the caller can dispatch it. A failure here is
+   * fatal to the operation (verification would be impossible without it).
+   */
+  async persistEmailVerificationToken(user: User): Promise<string> {
     const token = generateOpaqueToken();
     await authRedisSet(
       VERIFY_KEY(sha256(token)),
@@ -180,6 +199,12 @@ export const authService = {
       'PX',
       config.auth.emailVerificationTtlMs,
     );
+    return token;
+  },
+
+  /** Generate + persist (hashed) a verification token and dispatch it. */
+  async issueEmailVerification(user: User): Promise<void> {
+    const token = await this.persistEmailVerificationToken(user);
     await mailer.sendEmailVerification(user.email, token);
   },
 

@@ -167,6 +167,37 @@ describe('register', () => {
       authService.register({ email: 'user@example.com', password: PASSWORD }),
     ).rejects.toThrow('Authentication token store unavailable');
   });
+
+  it('still succeeds (no confusing 500) when verification email dispatch fails', async () => {
+    repo.findUserByEmail.mockResolvedValue(null);
+    repo.createUser.mockResolvedValue(makeUser({ emailVerifiedAt: null }));
+    // Simulate a mail-provider outage (e.g. SES AccessDeniedException).
+    const sendSpy = vi
+      .spyOn(mailer, 'sendEmailVerification')
+      .mockRejectedValue(new Error('SES AccessDeniedException'));
+
+    try {
+      const result = await authService.register({
+        email: 'user@example.com',
+        password: PASSWORD,
+      });
+
+      // User is created and a clear, verification-required result is returned;
+      // the token was still persisted so /auth/resend-verification works.
+      expect(result.user.email).toBe('user@example.com');
+      expect(result.emailVerificationRequired).toBe(true);
+      expect(repo.createUser).toHaveBeenCalledOnce();
+      expect(authSet).toHaveBeenCalledWith(
+        expect.stringMatching(/^auth:verify:/),
+        'user-1',
+        'PX',
+        expect.any(Number),
+      );
+      expect(sendSpy).toHaveBeenCalledOnce();
+    } finally {
+      sendSpy.mockRestore();
+    }
+  });
 });
 
 describe('login', () => {
