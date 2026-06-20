@@ -18,22 +18,37 @@ import { config } from '../config';
  * Public method signatures are stable, so callers in auth.service.ts never
  * change when the provider is swapped.
  */
-export type MailKind = 'EMAIL_VERIFICATION' | 'PASSWORD_RESET';
+export type MailKind = 'EMAIL_VERIFICATION' | 'PASSWORD_RESET' | 'NOTIFICATION';
 
 export interface SentMail {
   to: string;
   kind: MailKind;
+  // The single-use token for verification/reset mail. Empty for notification
+  // mail (which carries no token) — `subject` identifies those instead.
   token: string;
+  subject?: string;
   sentAt: Date;
 }
+
+/** Where a generic notification email ended up. Never carries secrets. */
+export type MailDelivery = 'ses' | 'log';
 
 /** Test-visible outbox. Never populated in production. */
 export const outbox: SentMail[] = [];
 
-interface EmailContent {
+export interface EmailContent {
   subject: string;
   html: string;
   text: string;
+}
+
+/** Public layout helper so notification emails share the auth-mail styling. */
+export function notificationLayout(
+  heading: string,
+  body: string,
+  cta?: { label: string; url: string },
+): string {
+  return layout(heading, body, cta ?? { label: 'Open Exora', url: config.urls.frontendUrl });
 }
 
 /* ------------------------------------------------------------------ */
@@ -186,6 +201,25 @@ export const mailer = {
   },
   async sendPasswordReset(to: string, token: string): Promise<void> {
     await dispatch(to, 'PASSWORD_RESET', token, resetEmail(resetLink(token)));
+  },
+  /**
+   * Generic transactional/notification email. Returns where it was delivered
+   * ('ses' for a real send, 'log' for the offline stub) so the notification
+   * layer can record a coarse delivery status. Carries no token and logs no
+   * sensitive content.
+   */
+  async sendNotification(to: string, content: EmailContent): Promise<MailDelivery> {
+    if (config.mail.provider === 'ses') {
+      await sendViaSes(to, content);
+      logger.info({ to, kind: 'NOTIFICATION', provider: 'ses', subject: content.subject }, 'mailer: dispatched');
+      return 'ses';
+    }
+    if (!config.isProd) {
+      outbox.push({ to, kind: 'NOTIFICATION', token: '', subject: content.subject, sentAt: new Date() });
+      if (outbox.length > 1000) outbox.shift();
+    }
+    logger.info({ to, kind: 'NOTIFICATION', provider: 'log', subject: content.subject }, 'mailer: dispatched');
+    return 'log';
   },
   /** Test helper: most recent token of a kind sent to an address. */
   lastTokenFor(to: string, kind: MailKind): string | undefined {

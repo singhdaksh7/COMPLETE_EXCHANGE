@@ -5,6 +5,7 @@ import { BadRequestError, ConflictError, NotFoundError } from '../../lib/errors'
 import { recordAudit } from '../../lib/audit';
 import { encryptPII } from '../../lib/encryption';
 import { kycRepository } from './kyc.repository';
+import { notificationService } from '../notification/notification.service';
 import { getKycProvider } from './providers';
 import type { KycProviderResult, KycWebhookInput } from './providers';
 import {
@@ -484,6 +485,7 @@ export const kycService = {
         // afterState is non-sensitive: the internal note is NEVER audited here.
         afterState: { status: 'APPROVED', tier },
       });
+      await notificationService.notify({ userId, type: 'KYC_APPROVED' });
       return toKycProfileDto(updated, tier, 'APPROVED');
     }
 
@@ -509,6 +511,8 @@ export const kycService = {
         beforeState: { status: profile.status, tier: beforeTier },
         afterState: { status: 'NEEDS_MORE_INFO', tier: beforeTier },
       });
+      // User-safe reason only — internal compliance note is never sent.
+      await notificationService.notify({ userId, type: 'KYC_NEEDS_MORE_INFO', metadata: { reason } });
       return toKycProfileDto(updated, beforeTier, 'NEEDS_MORE_INFO');
     }
 
@@ -532,6 +536,7 @@ export const kycService = {
       beforeState: { status: profile.status, tier: beforeTier },
       afterState: { status: 'REJECTED', tier: beforeTier },
     });
+    await notificationService.notify({ userId, type: 'KYC_REJECTED', metadata: { reason } });
     return toKycProfileDto(updated, beforeTier, 'REJECTED');
   },
 

@@ -30,6 +30,7 @@ import {
   type GoogleProfile,
 } from '../../lib/google-oauth';
 import { mailer } from '../../lib/mailer';
+import { notificationService } from '../notification/notification.service';
 import { recordAudit, AuditAction } from '../../lib/audit';
 import type {
   AuthResult,
@@ -698,6 +699,7 @@ export const authService = {
       userAgent: ctx.userAgent,
       requestId: ctx.requestId,
     });
+    await notificationService.notify({ userId, type: 'SECURITY_SESSION_REVOKED' });
   },
 
   // ------------------------------------------------------------------
@@ -762,6 +764,7 @@ export const authService = {
       userAgent: ctx.userAgent,
       requestId: ctx.requestId,
     });
+    await notificationService.notify({ userId, type: 'PASSWORD_CHANGED' });
   },
 
   async changePassword(
@@ -810,6 +813,7 @@ export const authService = {
       userAgent: ctx.userAgent,
       requestId: ctx.requestId,
     });
+    await notificationService.notify({ userId, type: 'PASSWORD_CHANGED' });
   },
 
   /** Revoke all (or all-but-one) sessions and denylist each in Redis. */

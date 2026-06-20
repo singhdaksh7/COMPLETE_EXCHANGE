@@ -9,6 +9,7 @@ import {
 } from '../../lib/errors';
 import { recordAudit } from '../../lib/audit';
 import { ledgerService } from '../ledger/ledger.service';
+import { notificationService } from '../notification/notification.service';
 import { withdrawalRepository } from './withdrawal.repository';
 import {
   ASSET,
@@ -258,6 +259,11 @@ export const withdrawalService = {
         holdTxnId: held.holdTxnId,
       },
     });
+    await notificationService.notify({
+      userId,
+      type: 'WITHDRAWAL_REQUESTED',
+      metadata: { amount: amount.toFixed(), asset: ASSET },
+    });
     return toCryptoWithdrawalDto(held);
   },
 
@@ -356,6 +362,11 @@ export const withdrawalService = {
           dualControl: true,
         },
       });
+      await notificationService.notify({
+        userId: existing.userId,
+        type: 'WITHDRAWAL_APPROVED',
+        metadata: { amount: existing.amount.toFixed(), asset: existing.asset },
+      });
       return toCryptoWithdrawalDto(updated as CryptoWithdrawal);
     }
 
@@ -390,6 +401,16 @@ export const withdrawalService = {
           }
         : { status: 'APPROVED', approvedBy: ctx.actorId },
     });
+    // A large withdrawal's FIRST approval only moves it to PENDING_APPROVAL — the
+    // user is notified once it is fully APPROVED (single approval here, or the
+    // dual-control second approval above).
+    if (!large) {
+      await notificationService.notify({
+        userId: existing.userId,
+        type: 'WITHDRAWAL_APPROVED',
+        metadata: { amount: existing.amount.toFixed(), asset: existing.asset },
+      });
+    }
     return toCryptoWithdrawalDto(updated as CryptoWithdrawal);
   },
 
@@ -418,6 +439,11 @@ export const withdrawalService = {
       targetId: id,
       reason,
       afterState: { status: 'REJECTED' },
+    });
+    await notificationService.notify({
+      userId: existing.userId,
+      type: 'WITHDRAWAL_REJECTED',
+      metadata: { amount: existing.amount.toFixed(), asset: existing.asset, reason },
     });
     const updated = await withdrawalRepository.findById(id);
     return toCryptoWithdrawalDto(updated as CryptoWithdrawal);
@@ -502,6 +528,11 @@ export const withdrawalService = {
       entityType: 'crypto_withdrawal',
       entityId: withdrawal.id,
       metadata: { finalTxnId: posting.id, txHash: withdrawal.txHash },
+    });
+    await notificationService.notify({
+      userId: withdrawal.userId,
+      type: 'WITHDRAWAL_COMPLETED',
+      metadata: { amount: withdrawal.amount.toFixed(), asset: withdrawal.asset },
     });
     return true;
   },

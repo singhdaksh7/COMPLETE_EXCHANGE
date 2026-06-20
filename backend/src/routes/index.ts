@@ -16,6 +16,7 @@ import {
   orderRouter,
   tradeRouter,
 } from '../modules/trading/trading.routes';
+import { notificationRouter } from '../modules/notification/notification.routes';
 import { healthRouter } from '../modules/health/health.routes';
 
 /**
@@ -44,3 +45,4 @@ apiRouter.use('/withdrawals', withdrawalRouter);
 apiRouter.use('/markets', marketRouter);
 apiRouter.use('/orders', orderRouter);
 apiRouter.use('/trades', tradeRouter);
+apiRouter.use('/notifications', notificationRouter);

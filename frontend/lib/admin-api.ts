@@ -3,6 +3,7 @@ import { tokenStore } from './auth';
 import type {
   AdminKycDetail,
   AdminKycQueue,
+  AdminNotification,
   AdminUserDetail,
   AdminUserListItem,
   AdminListItem,
@@ -154,6 +155,13 @@ export const adminApi = {
 
   complianceSummary: () =>
     adminApiFetch<ComplianceSummary>('/kyc/compliance/summary', 'GET'),
+
+  // ---- notification delivery log (Stage 4.0) ----
+  notifications: (params: { type?: string; cursor?: string; limit?: number } = {}) =>
+    adminApiFetch<{ items: AdminNotification[]; nextCursor: string | null }>(
+      `/notifications${buildQuery({ limit: 50, ...params })}`,
+      'GET',
+    ),
 
   // ---- user management + risk controls ----
   users: (

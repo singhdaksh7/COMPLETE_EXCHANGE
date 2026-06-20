@@ -144,6 +144,15 @@ export function UserNav() {
   });
   const me = q.data?.data;
 
+  // Unread notification count for the header bell badge.
+  const notifQ = useQuery({
+    queryKey: ['notifications'],
+    queryFn: () => userApi.listNotifications(),
+    retry: false,
+    refetchInterval: 30000,
+  });
+  const unread = notifQ.data?.data.unread ?? 0;
+
   const handleLogout = () => {
     disconnectSocket();
     tokenStore.clearUser();
@@ -158,6 +167,7 @@ export function UserNav() {
     { href: '/markets', label: 'Markets', icon: <MarketsIcon /> },
     { href: '/trade', label: 'Trade', icon: <TradeIcon /> },
     { href: '/orders', label: 'Orders', icon: <OrdersIcon /> },
+    { href: '/notifications', label: 'Notifications', icon: <BellIcon /> },
   ];
 
   const accountLinks = [
@@ -312,12 +322,16 @@ export function UserNav() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
             </button>
-            <button className="p-1 hover:text-gold transition relative">
+            <Link href="/notifications" className="p-1 hover:text-gold transition relative" title="Notifications">
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
               </svg>
-              <span className="absolute top-0 right-0 h-1.5 w-1.5 rounded-full bg-gold shadow-gold-glow animate-pulse" />
-            </button>
+              {unread > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[14px] h-3.5 px-1 rounded-full bg-gold text-noir text-[8px] font-black flex items-center justify-center shadow-gold-glow">
+                  {unread > 9 ? '9+' : unread}
+                </span>
+              )}
+            </Link>
             <button className="p-1 hover:text-gold transition">
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -371,6 +385,7 @@ export function AdminNav() {
     { href: '/admin/withdrawals', label: 'Withdrawals queue' },
     { href: '/admin/conversions', label: 'Conversions ledger' },
     { href: '/admin/reports', label: 'Fee reports' },
+    { href: '/admin/notifications', label: 'Notifications' },
     { href: '/admin/scanner', label: 'Blockchain scan' },
     { href: '/admin/admins', label: 'Admin management' },
     { href: '/admin/audit', label: 'Audit log' },

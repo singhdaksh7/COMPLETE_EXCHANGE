@@ -18,6 +18,7 @@ import type {
   LoginData,
   Market,
   MeData,
+  NotificationList,
   Order,
   OrderBook,
   OrderStatus,
@@ -119,6 +120,16 @@ export const userApi = {
     authed<void>(`/auth/sessions/${sessionId}`, { method: 'DELETE' }),
 
   listActivity: () => authed<{ items: UserActivityEvent[] }>('/auth/activity'),
+
+  // ---- notifications ----
+  listNotifications: (cursor?: string) =>
+    authed<NotificationList>(`/notifications${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`),
+
+  markNotificationRead: (id: string) =>
+    authed<{ read: true }>(`/notifications/${id}/read`, { method: 'POST' }),
+
+  markAllNotificationsRead: () =>
+    authed<{ updated: number }>('/notifications/read-all', { method: 'POST' }),
 
   getKyc: () => authed<KycProfile>('/kyc'),
 

@@ -10,6 +10,7 @@ import {
 } from '../../lib/errors';
 import { recordAudit } from '../../lib/audit';
 import { ledgerService } from '../ledger/ledger.service';
+import { notificationService } from '../notification/notification.service';
 import { depositRepository } from './deposit.repository';
 import type { AdminDepositFilter } from './deposit.repository';
 import { getRazorpayProvider } from './providers';
@@ -526,6 +527,12 @@ export const depositService = {
       },
     });
 
+    await notificationService.notify({
+      userId,
+      type: 'INR_DEPOSIT_SUBMITTED',
+      metadata: { amount: amount.toFixed(2), method: input.method },
+    });
+
     return toInrDepositDto(deposit);
   },
 
@@ -682,6 +689,11 @@ export const depositService = {
         beforeState: { status: 'PENDING', firstApprovedBy: deposit.firstApprovedBy },
         afterState: { status: 'SUCCESS', ledgerTxnId: posted.id },
       });
+      await notificationService.notify({
+        userId: deposit.userId,
+        type: 'INR_DEPOSIT_APPROVED',
+        metadata: { amount },
+      });
     }
 
     return toInrDepositDto(row);
@@ -747,6 +759,11 @@ export const depositService = {
         requestId: ctx.requestId,
         beforeState: { status: 'PENDING' },
         afterState: { status: 'FAILED', rejectionReason: input.reason ?? null },
+      });
+      await notificationService.notify({
+        userId: deposit.userId,
+        type: 'INR_DEPOSIT_REJECTED',
+        metadata: { amount: deposit.amount.toFixed(2), reason: input.reason ?? undefined },
       });
     }
 

@@ -49,3 +49,24 @@ describe('mailer log provider (default)', () => {
     expect(outbox).toHaveLength(0);
   });
 });
+
+describe('mailer.sendNotification (generic) — log provider, no SES required', () => {
+  beforeEach(() => mailer.clearOutbox());
+
+  it('delivers via the offline log provider and records to the outbox', async () => {
+    const delivery = await mailer.sendNotification('d@example.com', {
+      subject: 'Withdrawal completed',
+      html: '<p>done</p>',
+      text: 'done',
+    });
+    // Under MAIL_PROVIDER=log (default in tests) no SES/AWS_REGION is needed.
+    expect(delivery).toBe('log');
+    expect(outbox).toHaveLength(1);
+    expect(outbox[0]).toMatchObject({
+      to: 'd@example.com',
+      kind: 'NOTIFICATION',
+      subject: 'Withdrawal completed',
+      token: '',
+    });
+  });
+});

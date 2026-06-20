@@ -716,6 +716,49 @@ export interface CryptoDeposit {
   creditedAt: string | null;
 }
 
+// ---- notifications (Stage 4.0) ----
+export type NotificationType =
+  | 'KYC_APPROVED'
+  | 'KYC_REJECTED'
+  | 'KYC_NEEDS_MORE_INFO'
+  | 'INR_DEPOSIT_SUBMITTED'
+  | 'INR_DEPOSIT_APPROVED'
+  | 'INR_DEPOSIT_REJECTED'
+  | 'WITHDRAWAL_REQUESTED'
+  | 'WITHDRAWAL_APPROVED'
+  | 'WITHDRAWAL_REJECTED'
+  | 'WITHDRAWAL_COMPLETED'
+  | 'PASSWORD_CHANGED'
+  | 'SECURITY_SESSION_REVOKED';
+
+export interface Notification {
+  id: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  metadata: Record<string, unknown> | null;
+  read: boolean;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface NotificationList {
+  items: Notification[];
+  nextCursor: string | null;
+  unread: number;
+}
+
+export interface AdminNotification {
+  id: string;
+  userId: string;
+  email: string;
+  type: NotificationType;
+  title: string;
+  emailStatus: string | null;
+  read: boolean;
+  createdAt: string;
+}
+
 // ---- admin: fee revenue reports (Stage 3.8) ----
 export interface FeeAssetTotal {
   asset: string;

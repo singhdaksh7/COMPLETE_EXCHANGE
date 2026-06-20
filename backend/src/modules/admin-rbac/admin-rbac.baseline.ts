@@ -26,6 +26,7 @@ export const ADMIN_PERMISSIONS: PermissionDef[] = [
   { code: 'kyc.view', description: 'View KYC submissions' },
   { code: 'kyc.review', description: 'Approve / reject / request info on KYC' },
   { code: 'compliance.view', description: 'View compliance dashboard and KYC metrics' },
+  { code: 'notifications.view', description: 'View notification delivery logs' },
   { code: 'deposit.view', description: 'View crypto/INR deposits' },
   { code: 'withdrawal.view', description: 'View withdrawals' },
   { code: 'withdrawal.approve', description: 'Approve a withdrawal (dual control)' },
