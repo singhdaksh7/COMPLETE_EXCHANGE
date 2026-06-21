@@ -94,6 +94,24 @@ describe('scoreCustomerRisk', () => {
     expect(r.reasons.map((x) => x.code)).toContain('SANCTIONS_NOT_SCREENED');
   });
 
+  it('a possible (REVIEW_REQUIRED) sanctions match raises risk without prohibiting', () => {
+    const r = scoreCustomerRisk(base({ sanctionsStatus: 'REVIEW_REQUIRED' }), cfg);
+    expect(r.reasons.map((x) => x.code)).toContain('SANCTIONS_REVIEW');
+    // Possible (unconfirmed) — must NOT hard-block like a confirmed HIT.
+    expect(r.level).not.toBe('PROHIBITED');
+    expect(['MEDIUM', 'HIGH']).toContain(r.level);
+  });
+
+  it('a possible PEP match adds a PEP_REVIEW reason', () => {
+    const r = scoreCustomerRisk(base({ pepStatus: 'REVIEW_REQUIRED' }), cfg);
+    expect(r.reasons.map((x) => x.code)).toContain('PEP_REVIEW');
+  });
+
+  it('a possible adverse-media match adds an ADVERSE_MEDIA_REVIEW reason', () => {
+    const r = scoreCustomerRisk(base({ adverseMediaStatus: 'REVIEW_REQUIRED' }), cfg);
+    expect(r.reasons.map((x) => x.code)).toContain('ADVERSE_MEDIA_REVIEW');
+  });
+
   it('every reason carries a code, message and weight', () => {
     const r = scoreCustomerRisk(base({ hasPan: false, geoCaptured: false }), cfg);
     for (const reason of r.reasons) {

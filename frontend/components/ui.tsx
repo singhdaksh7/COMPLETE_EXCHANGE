@@ -125,6 +125,15 @@ export function StatusBadge({ status }: { status: string }) {
     'LOW RISK': green,
     'MEDIUM RISK': yellow,
     'HIGH RISK': red,
+    'PROHIBITED RISK': red,
+    // screening (Stage 5.1)
+    CLEAR: green,
+    POSSIBLE_MATCH: red,
+    HIT: red,
+    REVIEW_REQUIRED: yellow,
+    NOT_SCREENED: gray,
+    ERROR: red,
+    PASSED: green,
     // deposits / conversions / withdrawals
     SUCCESS: green,
     CREDITED: green,

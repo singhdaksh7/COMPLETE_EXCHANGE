@@ -30,6 +30,11 @@ export const ADMIN_PERMISSIONS: PermissionDef[] = [
   { code: 'compliance.review', description: 'Approve / reject / request-info on compliance KYC' },
   { code: 'compliance.risk.manage', description: 'Set compliance risk level / score for a user' },
   { code: 'compliance.export', description: 'Export a user compliance evidence summary' },
+  // Sanctions / PEP / adverse-media screening (Stage 5.1).
+  { code: 'compliance.screening.view', description: 'View sanctions / PEP / adverse-media screening results' },
+  { code: 'compliance.screening.run', description: 'Run a screening check for a user' },
+  { code: 'compliance.screening.review', description: 'Decide (approve / reject / false-positive) a screening check' },
+  { code: 'compliance.screening.override', description: 'Approve KYC despite an unresolved screening hit' },
   { code: 'notifications.view', description: 'View notification delivery logs' },
   { code: 'deposit.view', description: 'View crypto/INR deposits' },
   { code: 'withdrawal.view', description: 'View withdrawals' },
@@ -98,6 +103,7 @@ export const ADMIN_ROLES: RoleDef[] = [
       'users.view',
       'risk.manage',
       'compliance.view',
+      'compliance.screening.view',
       'operations.view',
       // Ops oversight: FINANCE acts as the operations admin and sees the full
       // Ops Center including health + risk signals.
@@ -117,6 +123,11 @@ export const ADMIN_ROLES: RoleDef[] = [
       // Risk-level override (compliance.risk.manage) stays SUPER_ADMIN-only.
       'compliance.review',
       'compliance.export',
+      // Screening (Stage 5.1): view / run / decide. The approval-block override
+      // (compliance.screening.override) stays SUPER_ADMIN-only.
+      'compliance.screening.view',
+      'compliance.screening.run',
+      'compliance.screening.review',
       'user.view',
       'operations.view',
       // Compliance admin: sees the ops center + risk alerts (not health-only).

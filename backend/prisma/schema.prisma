@@ -385,6 +385,7 @@ model User {
   complianceEvidence ComplianceEvidence[]
   complianceConsents ComplianceConsent[]
   riskAssessments    RiskAssessment[]
+  screeningChecks    ScreeningCheck[]
 
   @@index([status])
   @@index([kycStatus])
@@ -1293,6 +1294,7 @@ model Admin {
   reviewedComplianceProfiles ComplianceProfile[]  @relation("ComplianceReviewer")
   reviewedComplianceEvidence ComplianceEvidence[] @relation("ComplianceEvidenceReviewer")
   authoredRiskAssessments    RiskAssessment[]     @relation("RiskAssessmentAuthor")
+  decidedScreeningChecks     ScreeningCheck[]     @relation("ScreeningDecider")
 
   @@map("admins")
 }
@@ -1497,6 +1499,32 @@ enum RiskAssessmentSource {
   SYSTEM
 }
 
+/// Outcome of a single sanctions/PEP/adverse-media screening check (Stage 5.1).
+/// Distinct from the lighter ScreeningStatus used as the per-dimension posture on
+/// ComplianceProfile — this carries the richer provider lifecycle.
+enum ScreeningCheckStatus {
+  PENDING
+  CLEAR
+  POSSIBLE_MATCH
+  FAILED
+  ERROR
+}
+
+/// Screening dimension a check covers.
+enum ScreeningCategory {
+  SANCTIONS
+  PEP
+  ADVERSE_MEDIA
+}
+
+/// Admin disposition of a screening check (Stage 5.1).
+enum ScreeningDecision {
+  APPROVED
+  REJECTED
+  NEEDS_REVIEW
+  FALSE_POSITIVE
+}
+
 /// One compliance profile per user: identity, address, masked IDs, onboarding
 /// geo/IP evidence, risk grade, screening posture, and review scheduling.
 model ComplianceProfile {
@@ -1632,4 +1660,55 @@ model RiskAssessment {
 
   @@index([userId, createdAt])
   @@map("risk_assessments")
+}
+
+/// One sanctions / PEP / adverse-media screening check (Stage 5.1). Checks are
+/// produced by a pluggable ComplianceScreeningProvider (mock in staging). A
+/// "run" creates one row per category, grouped by `batchId`. Stores only a
+/// redacted provider summary — never raw vendor payloads or credentials.
+model ScreeningCheck {
+  id               String               @id @default(uuid()) @db.Uuid
+  userId           String               @map("user_id") @db.Uuid
+  batchId          String               @map("batch_id") @db.Uuid
+  category         ScreeningCategory
+  status           ScreeningCheckStatus @default(PENDING)
+  provider         String
+  providerMode     String               @map("provider_mode") // 'mock' | 'live'
+  providerReference String?             @map("provider_reference")
+  score            Int                  @default(0) // 0..100 top-match confidence
+  summary          String?
+  decision         ScreeningDecision?
+  decisionNote     String?              @map("decision_note")
+  decidedByAdminId String?              @map("decided_by_admin_id") @db.Uuid
+  decidedAt        DateTime?            @map("decided_at")
+  createdAt        DateTime             @default(now()) @map("created_at")
+  updatedAt        DateTime             @updatedAt @map("updated_at")
+
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  decidedBy Admin?           @relation("ScreeningDecider", fields: [decidedByAdminId], references: [id], onDelete: SetNull)
+  matches   ScreeningMatch[]
+
+  @@index([userId, createdAt])
+  @@index([userId, category])
+  @@index([batchId])
+  @@map("screening_checks")
+}
+
+/// A single candidate match returned by a screening check. Redacted metadata
+/// only (name fragment, list name, score) — no raw vendor document.
+model ScreeningMatch {
+  id         String            @id @default(uuid()) @db.Uuid
+  checkId    String            @map("check_id") @db.Uuid
+  category   ScreeningCategory
+  name       String
+  matchScore Int               @default(0) @map("match_score") // 0..100
+  listName   String?           @map("list_name")
+  sourceUrl  String?           @map("source_url")
+  details    Json?
+  createdAt  DateTime          @default(now()) @map("created_at")
+
+  check ScreeningCheck @relation(fields: [checkId], references: [id], onDelete: Cascade)
+
+  @@index([checkId])
+  @@map("screening_matches")
 }

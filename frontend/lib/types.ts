@@ -913,6 +913,56 @@ export type ComplianceRiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'PROHIBITED';
 export type LivenessStatus = 'NOT_STARTED' | 'PENDING' | 'PASSED' | 'FAILED' | 'REVIEW_REQUIRED';
 export type ScreeningStatus = 'NOT_SCREENED' | 'PENDING' | 'CLEAR' | 'HIT' | 'REVIEW_REQUIRED';
 
+// ---- screening: sanctions / PEP / adverse-media (Stage 5.1) ----
+export type ScreeningCheckStatus = 'PENDING' | 'CLEAR' | 'POSSIBLE_MATCH' | 'FAILED' | 'ERROR';
+export type ScreeningOverall = ScreeningCheckStatus | 'NOT_SCREENED';
+export type ScreeningCategory = 'SANCTIONS' | 'PEP' | 'ADVERSE_MEDIA';
+export type ScreeningDecision = 'APPROVED' | 'REJECTED' | 'NEEDS_REVIEW' | 'FALSE_POSITIVE';
+
+export interface ScreeningMatchItem {
+  id: string;
+  category: ScreeningCategory;
+  name: string;
+  matchScore: number;
+  listName: string | null;
+  sourceUrl: string | null;
+  details: unknown;
+  createdAt: string;
+}
+
+export interface ScreeningCheckItem {
+  id: string;
+  batchId: string;
+  category: ScreeningCategory;
+  status: ScreeningCheckStatus;
+  provider: string;
+  providerMode: 'mock' | 'live';
+  providerReference: string | null;
+  score: number;
+  summary: string | null;
+  decision: ScreeningDecision | null;
+  decisionNote: string | null;
+  decidedByAdminId: string | null;
+  decidedAt: string | null;
+  blocking: boolean;
+  matches: ScreeningMatchItem[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminScreeningView {
+  overall: ScreeningOverall;
+  blocked: boolean;
+  blockingCategories: ScreeningCategory[];
+  byCategory: {
+    SANCTIONS: ScreeningCheckItem | null;
+    PEP: ScreeningCheckItem | null;
+    ADVERSE_MEDIA: ScreeningCheckItem | null;
+  };
+  checks: ScreeningCheckItem[];
+  providerMode?: 'mock' | 'live';
+}
+
 export interface UserCompliance {
   status: ComplianceKycStatus;
   customerType: 'INDIVIDUAL' | 'BUSINESS';
@@ -924,6 +974,8 @@ export interface UserCompliance {
   livenessStatus: LivenessStatus;
   sanctionsStatus: ScreeningStatus;
   pepStatus: ScreeningStatus;
+  adverseMediaStatus: ScreeningStatus;
+  screeningStatus: ScreeningOverall;
   geoCaptureStatus: string;
   submittedAt: string | null;
   lastReviewedAt: string | null;
@@ -982,6 +1034,7 @@ export interface ComplianceQueueItem {
   riskScore: number;
   livenessStatus: LivenessStatus;
   sanctionsStatus: ScreeningStatus;
+  screeningStatus: ScreeningOverall;
   countryOfResidence: string | null;
   customerType: 'INDIVIDUAL' | 'BUSINESS';
   submittedAt: string;

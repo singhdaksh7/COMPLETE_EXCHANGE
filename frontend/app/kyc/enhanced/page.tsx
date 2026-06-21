@@ -330,7 +330,13 @@ function StatusView({ status, onRedo }: { status: NonNullable<Awaited<ReturnType
         <Info label="Aadhaar" value={status.aadhaarMasked ?? '—'} />
         <Info label="Liveness" value={status.livenessStatus} />
         <Info label="Risk level" value={status.riskLevel} />
-        <Info label="Sanctions" value={`${status.sanctionsStatus}${status.providerMode === 'mock' ? ' (mock)' : ''}`} />
+        <Info
+          label="Screening"
+          value={`${status.screeningStatus.replace('_', ' ')}${status.providerMode === 'mock' ? ' (mock)' : ''}`}
+        />
+        <Info label="Sanctions" value={status.sanctionsStatus} />
+        <Info label="PEP" value={status.pepStatus} />
+        <Info label="Adverse media" value={status.adverseMediaStatus} />
         <Info label="Next review" value={status.nextReviewDueAt ? new Date(status.nextReviewDueAt).toLocaleDateString() : '—'} />
       </div>
       {status.rejectionReason && <Alert>{status.rejectionReason}</Alert>}

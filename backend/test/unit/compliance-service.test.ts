@@ -19,6 +19,17 @@ vi.mock('../../src/modules/compliance/compliance.repository', () => ({
   },
 }));
 
+vi.mock('../../src/modules/compliance/screening.repository', () => ({
+  screeningRepository: {
+    createCheck: vi.fn().mockResolvedValue({ id: 'chk-1' }),
+    createMatches: vi.fn().mockResolvedValue({ count: 0 }),
+    findCheck: vi.fn(),
+    updateCheck: vi.fn().mockResolvedValue({}),
+    listChecks: vi.fn().mockResolvedValue([]),
+    latestChecksByCategory: vi.fn().mockResolvedValue(new Map()),
+  },
+}));
+
 vi.mock('../../src/modules/notification/notification.service', () => ({
   notificationService: { notify: vi.fn() },
 }));
@@ -34,10 +45,36 @@ vi.mock('../../src/lib/prisma', () => ({
 
 import { complianceService } from '../../src/modules/compliance/compliance.service';
 import { complianceRepository } from '../../src/modules/compliance/compliance.repository';
+import { screeningRepository } from '../../src/modules/compliance/screening.repository';
 import { notificationService } from '../../src/modules/notification/notification.service';
 
 const repo = vi.mocked(complianceRepository);
+const screenRepo = vi.mocked(screeningRepository);
 const notify = vi.mocked(notificationService.notify);
+
+type Cat = 'SANCTIONS' | 'PEP' | 'ADVERSE_MEDIA';
+function checkRow(category: Cat, over: Record<string, unknown> = {}) {
+  return {
+    id: `chk-${category}`,
+    userId: 'user-1',
+    batchId: 'batch-1',
+    category,
+    status: 'CLEAR',
+    provider: 'screening-mock',
+    providerMode: 'mock',
+    providerReference: 'ref',
+    score: 0,
+    summary: null,
+    decision: null,
+    decisionNote: null,
+    decidedByAdminId: null,
+    decidedAt: null,
+    createdAt: new Date('2026-06-22'),
+    updatedAt: new Date('2026-06-22'),
+    matches: [],
+    ...over,
+  };
+}
 
 const RAW_PAN = 'ABCDE1234F';
 const RAW_AADHAAR = '123412341234';
@@ -196,6 +233,123 @@ describe('complianceService.review — resilient to mail failure', () => {
       expect.objectContaining({ source: 'ADMIN' }),
     );
     expect(detail).toBeTruthy();
+  });
+});
+
+describe('complianceService.runScreening', () => {
+  it('a clean subject persists three CLEAR checks and refreshes posture', async () => {
+    repo.findProfile.mockResolvedValue(makeProfile({ fullName: 'Asha Verma' }) as never);
+    screenRepo.latestChecksByCategory.mockResolvedValue(
+      new Map([
+        ['SANCTIONS', checkRow('SANCTIONS')],
+        ['PEP', checkRow('PEP')],
+        ['ADVERSE_MEDIA', checkRow('ADVERSE_MEDIA')],
+      ]) as never,
+    );
+    screenRepo.listChecks.mockResolvedValue([
+      checkRow('SANCTIONS'), checkRow('PEP'), checkRow('ADVERSE_MEDIA'),
+    ] as never);
+
+    const view = await complianceService.runScreening('user-1', { actorId: 'admin-1' });
+    // One check created per category.
+    expect(screenRepo.createCheck).toHaveBeenCalledTimes(3);
+    expect(view.blocked).toBe(false);
+    expect(view.overall).toBe('CLEAR');
+  });
+
+  it('a sanctions keyword produces a blocking POSSIBLE_MATCH gate', async () => {
+    repo.findProfile.mockResolvedValue(makeProfile({ fullName: 'John Sanction' }) as never);
+    screenRepo.latestChecksByCategory.mockResolvedValue(
+      new Map([['SANCTIONS', checkRow('SANCTIONS', { status: 'POSSIBLE_MATCH', score: 86 })]]) as never,
+    );
+    screenRepo.listChecks.mockResolvedValue([
+      checkRow('SANCTIONS', { status: 'POSSIBLE_MATCH', score: 86 }),
+    ] as never);
+
+    const view = await complianceService.runScreening('user-1', { actorId: 'admin-1' });
+    expect(view.blocked).toBe(true);
+    expect(view.blockingCategories).toContain('SANCTIONS');
+  });
+});
+
+describe('complianceService.review — screening gate', () => {
+  beforeEach(() => {
+    repo.findProfile.mockResolvedValue(makeProfile({ status: 'SUBMITTED' }) as never);
+    repo.findProfileWithUser.mockResolvedValue(
+      { ...makeProfile(), user: { email: 'u@example.com', status: 'ACTIVE', kycStatus: 'NOT_STARTED', kycTier: 0 } } as never,
+    );
+    repo.listEvidence.mockResolvedValue([] as never);
+    repo.listConsents.mockResolvedValue([] as never);
+    repo.listRiskAssessments.mockResolvedValue([] as never);
+    screenRepo.listChecks.mockResolvedValue([] as never);
+  });
+
+  it('blocks APPROVE when screening has an unresolved possible match', async () => {
+    screenRepo.latestChecksByCategory.mockResolvedValue(
+      new Map([['SANCTIONS', checkRow('SANCTIONS', { status: 'POSSIBLE_MATCH' })]]) as never,
+    );
+    await expect(
+      complianceService.review('user-1', { decision: 'APPROVE' }, { actorId: 'admin-1' }),
+    ).rejects.toThrow(/Screening must be resolved/);
+  });
+
+  it('allows APPROVE with an explicit screening override', async () => {
+    screenRepo.latestChecksByCategory.mockResolvedValue(
+      new Map([['SANCTIONS', checkRow('SANCTIONS', { status: 'POSSIBLE_MATCH' })]]) as never,
+    );
+    await complianceService.review(
+      'user-1',
+      { decision: 'APPROVE' },
+      { actorId: 'admin-1' },
+      { canOverrideScreening: true },
+    );
+    expect(repo.updateProfile).toHaveBeenCalledWith(
+      'user-1',
+      expect.objectContaining({ status: 'APPROVED' }),
+    );
+  });
+
+  it('allows APPROVE when screening is clear', async () => {
+    screenRepo.latestChecksByCategory.mockResolvedValue(
+      new Map([['SANCTIONS', checkRow('SANCTIONS')]]) as never,
+    );
+    await complianceService.review('user-1', { decision: 'APPROVE' }, { actorId: 'admin-1' });
+    expect(repo.updateProfile).toHaveBeenCalledWith(
+      'user-1',
+      expect.objectContaining({ status: 'APPROVED' }),
+    );
+  });
+});
+
+describe('complianceService.decideScreening', () => {
+  it('a FALSE_POSITIVE decision is applied and posture refreshed', async () => {
+    screenRepo.findCheck.mockResolvedValue(
+      checkRow('SANCTIONS', { status: 'POSSIBLE_MATCH' }) as never,
+    );
+    repo.findProfile.mockResolvedValue(makeProfile() as never);
+    screenRepo.latestChecksByCategory.mockResolvedValue(
+      new Map([['SANCTIONS', checkRow('SANCTIONS', { status: 'POSSIBLE_MATCH', decision: 'FALSE_POSITIVE' })]]) as never,
+    );
+    screenRepo.listChecks.mockResolvedValue([] as never);
+
+    const view = await complianceService.decideScreening(
+      'user-1',
+      'chk-SANCTIONS',
+      { decision: 'FALSE_POSITIVE', note: 'common name' },
+      { actorId: 'admin-1' },
+    );
+    expect(screenRepo.updateCheck).toHaveBeenCalledWith(
+      'chk-SANCTIONS',
+      expect.objectContaining({ decision: 'FALSE_POSITIVE' }),
+    );
+    expect(view.blocked).toBe(false);
+  });
+
+  it('rejects a check that does not belong to the user', async () => {
+    screenRepo.findCheck.mockResolvedValue(checkRow('SANCTIONS', { userId: 'other' }) as never);
+    await expect(
+      complianceService.decideScreening('user-1', 'chk-SANCTIONS', { decision: 'APPROVED' }, {}),
+    ).rejects.toThrow();
   });
 });
 

@@ -174,6 +174,10 @@ export const envSchema = z
   // Signzy/IDfy/Onfido) and is not implemented yet — selecting it falls back to
   // the mock so wiring can be exercised safely.
   KYC_LIVENESS_PROVIDER: z.enum(['mock', 'external']).default('mock'),
+  // Sanctions / PEP / adverse-media screening provider (Stage 5.1). Only the
+  // offline mock is implemented; 'external' is accepted for wiring but falls
+  // back to the mock so no real paid vendor is ever called from staging.
+  SCREENING_PROVIDER: z.enum(['mock', 'external']).default('mock'),
   // Gates evaluated by the compliance risk engine / approval flow. In staging
   // these default to permissive so the mock onboarding can complete end-to-end;
   // production should enable them and wire real screening/liveness.

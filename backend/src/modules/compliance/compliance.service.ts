@@ -8,6 +8,13 @@ import { encryptPII } from '../../lib/encryption';
 import { notificationService } from '../notification/notification.service';
 import { complianceRepository } from './compliance.repository';
 import { getLivenessProvider } from './liveness';
+import { getScreeningProvider } from './screening';
+import {
+  screeningService,
+  computeGate,
+  buildScreeningView,
+  overallFromPosture,
+} from './screening.service';
 import { scoreCustomerRisk, type RiskAdminFlag } from './compliance.risk';
 import {
   CONSENT_VERSION,
@@ -36,6 +43,10 @@ function providerMode(): 'mock' | 'live' {
   return getLivenessProvider().mode;
 }
 
+function screeningMode(): 'mock' | 'live' {
+  return getScreeningProvider().mode;
+}
+
 function retentionUntil(from = new Date()): Date {
   const d = new Date(from);
   d.setFullYear(d.getFullYear() + config.compliance.recordRetentionYears);
@@ -48,7 +59,8 @@ export const complianceService = {
   // ==================================================================
   async getStatus(userId: string): Promise<UserComplianceDto | null> {
     const profile = await complianceRepository.findProfile(userId);
-    return toUserComplianceDto(profile, providerMode());
+    const dto = toUserComplianceDto(profile, providerMode());
+    return this.withScreeningStatus(userId, dto);
   },
 
   // ==================================================================
@@ -173,9 +185,6 @@ export const complianceService = {
       throw new ConflictError('Compliance KYC is already under review', 'COMPLIANCE_IN_REVIEW');
     }
 
-    // Mock AML/CFT screening (clearly marked). A real integration replaces this.
-    const screening = this.runMockScreening();
-
     const create: Prisma.ComplianceProfileUncheckedCreateInput = {
       userId,
       customerType: input.customerType,
@@ -205,9 +214,11 @@ export const complianceService = {
       onboardingLongitude: geo.longitude,
       onboardingUserAgent: geo.userAgent,
       geoCaptureStatus: geo.status,
-      sanctionsStatus: screening.sanctions,
-      pepStatus: screening.pep,
-      adverseMediaStatus: screening.adverseMedia,
+      // Screening is kicked off immediately below; mark the posture PENDING
+      // until the provider run lands.
+      sanctionsStatus: 'PENDING',
+      pepStatus: 'PENDING',
+      adverseMediaStatus: 'PENDING',
       consentVersion: CONSENT_VERSION,
       kycProvider: getLivenessProvider().name,
       retentionUntil: retentionUntil(),
@@ -250,13 +261,133 @@ export const complianceService = {
 
     await this.safeNotify({ userId, type: 'KYC_SUBMITTED' });
 
+    // Trigger sanctions / PEP / adverse-media screening (Stage 5.1). Failure is
+    // non-fatal: the submission itself must succeed even if the (mock) provider
+    // misbehaves — the profile simply stays in a PENDING screening posture.
+    await this.runScreening(userId, { ...ctx, system: true });
+
     const fresh = await complianceRepository.findProfile(userId);
-    return toUserComplianceDto(fresh, providerMode())!;
+    const dto = toUserComplianceDto(fresh, providerMode())!;
+    return this.withScreeningStatus(userId, dto);
   },
 
-  /** Deterministic mock screening — clearly marked; replace with a real vendor. */
-  runMockScreening() {
-    return { sanctions: 'CLEAR', pep: 'CLEAR', adverseMedia: 'CLEAR' } as const;
+  // ==================================================================
+  // Screening (Stage 5.1)
+  // ==================================================================
+
+  /**
+   * Run the active screening provider for a user across sanctions / PEP /
+   * adverse-media, persist the checks, refresh the per-dimension posture on the
+   * profile, and recompute risk (source = SCREENING). Never throws to the
+   * caller — a provider/mock failure is logged and leaves the posture PENDING.
+   */
+  async runScreening(userId: string, ctx: ComplianceContext & { system?: boolean } = {}) {
+    const [profile, user] = await Promise.all([
+      complianceRepository.findProfile(userId),
+      complianceRepository.findUserBasic(userId),
+    ]);
+    if (!user) throw new NotFoundError('User not found');
+
+    try {
+      const latest = await screeningService.execute({
+        userId,
+        fullName: profile?.fullName ?? null,
+        email: user.email,
+        countryOfResidence: profile?.countryOfResidence ?? null,
+        nationality: profile?.nationality ?? null,
+      });
+
+      if (profile) {
+        const patch = screeningService.posturePatch(latest);
+        if (Object.keys(patch).length > 0) {
+          await complianceRepository.updateProfile(userId, patch);
+        }
+        await this.recomputeRisk(userId, 'SCREENING', {
+          createdByAdminId: ctx.system ? undefined : ctx.actorId,
+        });
+      }
+    } catch (err) {
+      logger.error({ err, userId }, 'screening: run failed (non-fatal)');
+    }
+
+    if (ctx.system) {
+      await this.audit(ctx, userId, 'compliance.screening.run', { provider: screeningMode() });
+    } else {
+      await this.auditAdmin(ctx, userId, 'compliance.screening.run', {
+        afterState: { provider: screeningMode() },
+      });
+    }
+    return this.safeScreeningView(userId);
+  },
+
+  /**
+   * Build the screening view but never throw — a screening read must not be
+   * able to break a KYC submission (the submit path triggers a run and discards
+   * the view). Returns an empty NOT_SCREENED view on any failure.
+   */
+  async safeScreeningView(userId: string) {
+    try {
+      return await buildScreeningView(userId);
+    } catch (err) {
+      logger.error({ err, userId }, 'screening: view build failed (non-fatal)');
+      const empty: Awaited<ReturnType<typeof buildScreeningView>> = {
+        overall: 'NOT_SCREENED',
+        blocked: false,
+        blockingCategories: [],
+        byCategory: { SANCTIONS: null, PEP: null, ADVERSE_MEDIA: null },
+        checks: [],
+      };
+      return empty;
+    }
+  },
+
+  /** Admin: read the screening view (checks + per-category + gate). */
+  async getScreening(userId: string, ctx: ComplianceContext = {}) {
+    const view = await buildScreeningView(userId);
+    await this.audit(ctx, userId, 'compliance.screening.view', { overall: view.overall });
+    return { ...view, providerMode: screeningMode() };
+  },
+
+  /** Admin: record a disposition on a single screening check. */
+  async decideScreening(
+    userId: string,
+    checkId: string,
+    input: { decision: 'APPROVED' | 'REJECTED' | 'NEEDS_REVIEW' | 'FALSE_POSITIVE'; note?: string },
+    ctx: ComplianceContext = {},
+  ) {
+    const check = await screeningService.findCheck(checkId);
+    if (!check || check.userId !== userId) {
+      throw new NotFoundError('Screening check not found');
+    }
+    await screeningService.applyDecision(checkId, input.decision, input.note, ctx.actorId);
+
+    // Refresh posture + risk so a FALSE_POSITIVE/APPROVED clears the block and a
+    // REJECTED hardens it.
+    const profile = await complianceRepository.findProfile(userId);
+    if (profile) {
+      const latest = await screeningService.latestByCategory(userId);
+      const patch = screeningService.posturePatch(latest);
+      if (Object.keys(patch).length > 0) {
+        await complianceRepository.updateProfile(userId, patch);
+      }
+      await this.recomputeRisk(userId, 'SCREENING', { createdByAdminId: ctx.actorId });
+    }
+
+    await this.auditAdmin(ctx, userId, 'compliance.screening.decision', {
+      afterState: { checkId, category: check.category, decision: input.decision },
+    });
+    return buildScreeningView(userId);
+  },
+
+  /** Attach the overall screening status onto a user-facing compliance DTO. */
+  async withScreeningStatus<T extends UserComplianceDto | null>(
+    userId: string,
+    dto: T,
+  ): Promise<T> {
+    if (!dto) return dto;
+    const latest = await screeningService.latestByCategory(userId);
+    (dto as UserComplianceDto).screeningStatus = computeGate(latest).overall;
+    return dto;
   },
 
   // ==================================================================
@@ -330,6 +461,11 @@ export const complianceService = {
         riskScore: p.riskScore,
         livenessStatus: p.livenessStatus,
         sanctionsStatus: p.sanctionsStatus,
+        screeningStatus: overallFromPosture([
+          p.sanctionsStatus,
+          p.pepStatus,
+          p.adverseMediaStatus,
+        ]),
         countryOfResidence: p.countryOfResidence,
         customerType: p.customerType,
         submittedAt: p.createdAt,
@@ -369,7 +505,12 @@ export const complianceService = {
     return { evidence: evidence.map(toEvidenceDto), consents: consents.map(toConsentDto) };
   },
 
-  async review(userId: string, input: ComplianceReviewDto, ctx: ComplianceContext = {}) {
+  async review(
+    userId: string,
+    input: ComplianceReviewDto,
+    ctx: ComplianceContext = {},
+    opts: { canOverrideScreening?: boolean } = {},
+  ) {
     const profile = await complianceRepository.findProfile(userId);
     if (!profile) throw new NotFoundError('Compliance profile not found');
 
@@ -384,6 +525,15 @@ export const complianceService = {
         throw new BadRequestError(
           'Sanctions screening is required before approval',
           { code: 'SANCTIONS_REQUIRED' },
+        );
+      }
+      // Block approval while screening is unresolved (POSSIBLE_MATCH / FAILED /
+      // ERROR / PENDING) unless the admin holds compliance.screening.override.
+      const gate = computeGate(await screeningService.latestByCategory(userId));
+      if (gate.blocked && !opts.canOverrideScreening) {
+        throw new BadRequestError(
+          `Screening must be resolved before approval (blocking: ${gate.blockingCategories.join(', ')})`,
+          { code: 'SCREENING_BLOCKED' },
         );
       }
       const nextReviewDueAt = new Date(
@@ -479,12 +629,16 @@ export const complianceService = {
   /** Build a secrets-free compliance evidence summary for export (JSON/CSV). */
   async exportSummary(userId: string, ctx: ComplianceContext = {}) {
     const detail = await this.getDetail(userId, ctx);
+    // Screening checks, matches and admin decisions are part of the audit-ready
+    // evidence pack (Stage 5.1). Redacted metadata only — no raw vendor payload.
+    const screening = await buildScreeningView(userId);
     await this.auditAdmin(ctx, userId, 'compliance.export', {});
     return {
       generatedAt: new Date().toISOString(),
       disclaimer:
         'Technical compliance evidence export. Screening/liveness values may be mock in staging. Not a legal compliance attestation.',
       ...detail,
+      screening: { ...screening, providerMode: screeningMode() },
     };
   },
 

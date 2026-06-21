@@ -9,6 +9,7 @@ import {
   complianceReviewSchema,
   complianceRiskSchema,
 } from './compliance.validators';
+import { screeningDecisionSchema } from './screening.validators';
 
 /**
  * Admin compliance routes, mounted at /admin/v1/compliance (Stage 5.0).
@@ -65,4 +66,32 @@ adminComplianceRouter.get(
   adminAuthenticate,
   adminAuthorize('compliance.export'),
   asyncHandler(complianceAdminController.export),
+);
+
+// ---- screening: sanctions / PEP / adverse-media (Stage 5.1) ----
+//   view    → compliance.screening.view
+//   run     → compliance.screening.run
+//   decide  → compliance.screening.review
+//   (override of the approval block is gated separately by
+//    compliance.screening.override inside the review handler.)
+adminComplianceRouter.get(
+  '/users/:userId/screening',
+  adminAuthenticate,
+  adminAuthorize('compliance.screening.view'),
+  asyncHandler(complianceAdminController.getScreening),
+);
+
+adminComplianceRouter.post(
+  '/users/:userId/screening/run',
+  adminAuthenticate,
+  adminAuthorize('compliance.screening.run'),
+  asyncHandler(complianceAdminController.runScreening),
+);
+
+adminComplianceRouter.post(
+  '/users/:userId/screening/:checkId/decision',
+  adminAuthenticate,
+  adminAuthorize('compliance.screening.review'),
+  validate({ body: screeningDecisionSchema }),
+  asyncHandler(complianceAdminController.decideScreening),
 );

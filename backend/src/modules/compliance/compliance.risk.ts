@@ -121,6 +121,19 @@ export function scoreCustomerRisk(
   if (input.adverseMediaStatus === 'HIT') {
     add('ADVERSE_MEDIA', 'Adverse media match', 20);
   }
+  // Possible (unconfirmed) screening matches — REVIEW_REQUIRED is the posture
+  // written by the screening layer for a POSSIBLE_MATCH / FAILED / ERROR that an
+  // admin has not yet resolved. These raise risk but never hard-block on their
+  // own (a confirmed hit is recorded as HIT above and handled there).
+  if (input.sanctionsStatus === 'REVIEW_REQUIRED') {
+    add('SANCTIONS_REVIEW', 'Possible sanctions match needs review', 50);
+  }
+  if (input.pepStatus === 'REVIEW_REQUIRED') {
+    add('PEP_REVIEW', 'Possible PEP match needs review', 30);
+  }
+  if (input.adverseMediaStatus === 'REVIEW_REQUIRED') {
+    add('ADVERSE_MEDIA_REVIEW', 'Possible adverse-media match needs review', 15);
+  }
   if (cfg.requireSanctionsBeforeApproval && input.sanctionsStatus === 'NOT_SCREENED') {
     add('SANCTIONS_NOT_SCREENED', 'Sanctions screening required but not completed', 15);
   }

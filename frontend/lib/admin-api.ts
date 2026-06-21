@@ -32,6 +32,8 @@ import type {
   SystemRiskAlerts,
   ComplianceQueueItem,
   AdminComplianceDetail,
+  AdminScreeningView,
+  ScreeningDecision,
 } from './types';
 
 function buildQuery(params: Record<string, string | number | undefined>): string {
@@ -362,4 +364,22 @@ export const adminApi = {
 
   complianceExport: (userId: string) =>
     adminDownload(`/compliance/users/${userId}/export`, `compliance-${userId}.json`),
+
+  // ---- screening: sanctions / PEP / adverse-media (Stage 5.1) ----
+  complianceScreening: (userId: string) =>
+    adminApiFetch<AdminScreeningView>(`/compliance/users/${userId}/screening`, 'GET'),
+
+  complianceRunScreening: (userId: string) =>
+    adminApiFetch<AdminScreeningView>(`/compliance/users/${userId}/screening/run`, 'POST'),
+
+  complianceScreeningDecision: (
+    userId: string,
+    checkId: string,
+    body: { decision: ScreeningDecision; note?: string },
+  ) =>
+    adminApiFetch<AdminScreeningView>(
+      `/compliance/users/${userId}/screening/${checkId}/decision`,
+      'POST',
+      { body },
+    ),
 };

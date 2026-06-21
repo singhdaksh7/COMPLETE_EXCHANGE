@@ -4,6 +4,7 @@ import type {
   ComplianceProfile,
   GeoCaptureStatus,
   RiskAssessment,
+  ScreeningCheckStatus,
 } from '@prisma/client';
 
 /** Request-scoped forensic context for audit logging. */
@@ -115,6 +116,9 @@ export interface UserComplianceDto {
   livenessStatus: ComplianceProfile['livenessStatus'];
   sanctionsStatus: ComplianceProfile['sanctionsStatus'];
   pepStatus: ComplianceProfile['pepStatus'];
+  adverseMediaStatus: ComplianceProfile['adverseMediaStatus'];
+  /** Overall screening outcome (Stage 5.1); attached by the service layer. */
+  screeningStatus: ScreeningCheckStatus | 'NOT_SCREENED';
   geoCaptureStatus: ComplianceProfile['geoCaptureStatus'];
   submittedAt: Date | null;
   lastReviewedAt: Date | null;
@@ -140,6 +144,10 @@ export function toUserComplianceDto(
     livenessStatus: profile.livenessStatus,
     sanctionsStatus: profile.sanctionsStatus,
     pepStatus: profile.pepStatus,
+    adverseMediaStatus: profile.adverseMediaStatus,
+    // Populated by complianceService.withScreeningStatus; default keeps the DTO
+    // valid when computed without a screening lookup.
+    screeningStatus: profile.sanctionsStatus === 'NOT_SCREENED' ? 'NOT_SCREENED' : 'PENDING',
     geoCaptureStatus: profile.geoCaptureStatus,
     submittedAt: profile.status === 'NOT_STARTED' ? null : profile.createdAt,
     lastReviewedAt: profile.lastReviewedAt,

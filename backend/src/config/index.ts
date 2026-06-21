@@ -99,6 +99,7 @@ export const config = {
 
   compliance: {
     livenessProvider: env.KYC_LIVENESS_PROVIDER,
+    screeningProvider: env.SCREENING_PROVIDER,
     requireLiveness: env.COMPLIANCE_REQUIRE_LIVENESS,
     requireGeoCapture: env.COMPLIANCE_REQUIRE_GEO_CAPTURE,
     requireSanctionsBeforeApproval: env.COMPLIANCE_REQUIRE_SANCTIONS_BEFORE_APPROVAL,

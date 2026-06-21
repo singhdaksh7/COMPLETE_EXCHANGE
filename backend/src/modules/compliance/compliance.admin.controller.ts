@@ -41,7 +41,39 @@ export const complianceAdminController = {
 
   async review(req: Request, res: Response): Promise<void> {
     if (!req.admin) throw new UnauthorizedError();
-    const result = await complianceService.review(req.params.userId, req.body, ctx(req));
+    const canOverrideScreening =
+      (req.admin.roles?.includes('SUPER_ADMIN') ?? false) ||
+      (req.admin.permissions?.includes('compliance.screening.override') ?? false);
+    const result = await complianceService.review(
+      req.params.userId,
+      req.body,
+      ctx(req),
+      { canOverrideScreening },
+    );
+    sendSuccess(res, result);
+  },
+
+  // ---- screening (Stage 5.1) ----
+  async runScreening(req: Request, res: Response): Promise<void> {
+    if (!req.admin) throw new UnauthorizedError();
+    const result = await complianceService.runScreening(req.params.userId, ctx(req));
+    sendSuccess(res, result);
+  },
+
+  async getScreening(req: Request, res: Response): Promise<void> {
+    if (!req.admin) throw new UnauthorizedError();
+    const result = await complianceService.getScreening(req.params.userId, ctx(req));
+    sendSuccess(res, result);
+  },
+
+  async decideScreening(req: Request, res: Response): Promise<void> {
+    if (!req.admin) throw new UnauthorizedError();
+    const result = await complianceService.decideScreening(
+      req.params.userId,
+      req.params.checkId,
+      req.body,
+      ctx(req),
+    );
     sendSuccess(res, result);
   },
 

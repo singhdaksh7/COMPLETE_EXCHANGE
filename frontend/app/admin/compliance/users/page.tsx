@@ -82,7 +82,7 @@ export default function AdminComplianceQueuePage() {
                     <th className="py-2 pr-3">Risk</th>
                     <th className="py-2 pr-3">Score</th>
                     <th className="py-2 pr-3">Liveness</th>
-                    <th className="py-2 pr-3">Sanctions</th>
+                    <th className="py-2 pr-3">Screening</th>
                     <th className="py-2 pr-3">Country</th>
                     <th className="py-2 pr-3">Submitted</th>
                     <th className="py-2"></th>
@@ -96,7 +96,7 @@ export default function AdminComplianceQueuePage() {
                       <td className="py-2 pr-3"><StatusBadge status={`${u.riskLevel} RISK`} /></td>
                       <td className="py-2 pr-3 font-mono">{u.riskScore}</td>
                       <td className="py-2 pr-3"><StatusBadge status={u.livenessStatus} /></td>
-                      <td className="py-2 pr-3">{u.sanctionsStatus}</td>
+                      <td className="py-2 pr-3"><StatusBadge status={u.screeningStatus} /></td>
                       <td className="py-2 pr-3">{u.countryOfResidence ?? '—'}</td>
                       <td className="py-2 pr-3 text-muted">{new Date(u.submittedAt).toLocaleDateString()}</td>
                       <td className="py-2">

@@ -9,6 +9,7 @@ import { errorMessage } from '@/lib/api';
 import { useGuard } from '@/components/guards';
 import { AdminNav } from '@/components/nav';
 import { Alert, Button, Card, Row, Select, StatusBadge } from '@/components/ui';
+import type { ScreeningCheckItem, ScreeningDecision } from '@/lib/types';
 
 function Section({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
   return (
@@ -27,6 +28,81 @@ function MockBadge() {
     <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-300">
       Mock data
     </span>
+  );
+}
+
+function ScreeningCheckCard({
+  check,
+  onDecide,
+  pending,
+}: {
+  check: ScreeningCheckItem;
+  onDecide: (checkId: string, decision: ScreeningDecision, note: string) => void;
+  pending: boolean;
+}) {
+  const [decision, setDecision] = useState<ScreeningDecision>('FALSE_POSITIVE');
+  const [note, setNote] = useState('');
+  const label = check.category.replace('_', ' ');
+  return (
+    <div className="rounded-lg border border-line bg-panel-2 p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-ink">{label}</span>
+          <StatusBadge status={check.status} />
+          {check.blocking && (
+            <span className="rounded-full border border-red-500/40 bg-red-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-red-300">
+              Blocking
+            </span>
+          )}
+        </div>
+        <span className="font-mono text-xs text-muted">score {check.score}</span>
+      </div>
+      {check.summary && <p className="text-xs text-muted">{check.summary}</p>}
+
+      {check.matches.length > 0 && (
+        <div className="space-y-1">
+          {check.matches.map((m) => (
+            <div key={m.id} className="flex items-center justify-between rounded border border-line/60 px-2 py-1 text-xs">
+              <span className="text-ink">{m.name}</span>
+              <span className="text-muted font-mono">
+                {m.listName ?? '—'} · {m.matchScore}%
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {check.decision ? (
+        <p className="text-xs">
+          <span className="text-muted">Decision: </span>
+          <span className="font-semibold text-ink">{check.decision}</span>
+          {check.decisionNote ? <span className="text-muted"> — {check.decisionNote}</span> : null}
+        </p>
+      ) : (
+        check.status !== 'CLEAR' && (
+          <div className="flex flex-wrap items-end gap-2 pt-1">
+            <div className="w-44">
+              <label className="mb-1 block text-[11px] text-muted">Decision</label>
+              <Select value={decision} onChange={(e) => setDecision(e.target.value as ScreeningDecision)}>
+                <option value="FALSE_POSITIVE">FALSE_POSITIVE</option>
+                <option value="APPROVED">APPROVED</option>
+                <option value="NEEDS_REVIEW">NEEDS_REVIEW</option>
+                <option value="REJECTED">REJECTED</option>
+              </Select>
+            </div>
+            <input
+              className="flex-1 min-w-[160px] rounded-lg border border-line bg-panel px-3 py-2 text-xs text-ink"
+              placeholder="Note (optional)"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+            />
+            <Button variant="secondary" disabled={pending} onClick={() => onDecide(check.id, decision, note)}>
+              Record
+            </Button>
+          </div>
+        )
+      )}
+    </div>
   );
 }
 
@@ -59,6 +135,27 @@ function DetailInner() {
     onSuccess: () => { setActionMsg(`Risk level set to ${riskLevel}`); invalidate(); },
   });
   const exportMut = useMutation({ mutationFn: () => adminApi.complianceExport(userId) });
+
+  // ---- screening (Stage 5.1) ----
+  const screeningQ = useQuery({
+    queryKey: ['compliance-screening', userId],
+    queryFn: () => adminApi.complianceScreening(userId),
+    enabled: ready && !!userId,
+    retry: false,
+  });
+  const invalidateScreening = () => {
+    qc.invalidateQueries({ queryKey: ['compliance-screening', userId] });
+    invalidate();
+  };
+  const runScreening = useMutation({
+    mutationFn: () => adminApi.complianceRunScreening(userId),
+    onSuccess: () => { setActionMsg('Screening run completed'); invalidateScreening(); },
+  });
+  const decideScreening = useMutation({
+    mutationFn: (v: { checkId: string; decision: ScreeningDecision; note?: string }) =>
+      adminApi.complianceScreeningDecision(userId, v.checkId, { decision: v.decision, note: v.note }),
+    onSuccess: () => { setActionMsg('Screening decision recorded'); invalidateScreening(); },
+  });
 
   if (!ready) return null;
   if (!userId) return <main className="mx-auto max-w-4xl px-4 py-10"><Alert>Missing user id.</Alert></main>;
@@ -137,6 +234,53 @@ function DetailInner() {
               )}
             </Section>
           </div>
+
+          <Section
+            title="Sanctions / PEP / Adverse-media screening"
+            action={
+              <div className="flex items-center gap-2">
+                {screeningQ.data?.data?.blocked && (
+                  <span className="rounded-full border border-red-500/40 bg-red-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-red-300">
+                    Approval blocked
+                  </span>
+                )}
+                {screeningQ.data?.data?.providerMode === 'mock' && <MockBadge />}
+                <Button variant="secondary" onClick={() => runScreening.mutate()} disabled={runScreening.isPending}>
+                  {runScreening.isPending ? 'Running…' : 'Run screening'}
+                </Button>
+              </div>
+            }
+          >
+            {screeningQ.isLoading && <p className="text-sm text-muted">Loading screening…</p>}
+            {screeningQ.isError && <Alert>{errorMessage(screeningQ.error)}</Alert>}
+            {decideScreening.isError && <Alert>{errorMessage(decideScreening.error)}</Alert>}
+            {runScreening.isError && <Alert>{errorMessage(runScreening.error)}</Alert>}
+            {screeningQ.data?.data && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-muted">Overall:</span>
+                  <StatusBadge status={screeningQ.data.data.overall} />
+                </div>
+                {(['SANCTIONS', 'PEP', 'ADVERSE_MEDIA'] as const).map((cat) => {
+                  const check = screeningQ.data!.data!.byCategory[cat];
+                  return check ? (
+                    <ScreeningCheckCard
+                      key={cat}
+                      check={check}
+                      pending={decideScreening.isPending}
+                      onDecide={(checkId, decision, note) =>
+                        decideScreening.mutate({ checkId, decision, note: note || undefined })
+                      }
+                    />
+                  ) : (
+                    <div key={cat} className="rounded-lg border border-line bg-panel-2 p-3 text-xs text-muted">
+                      {cat.replace('_', ' ')}: not screened yet
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Section>
 
           <Section title="Evidence">
             {d.evidence.length === 0 ? <p className="text-sm text-muted">No evidence.</p> : (
