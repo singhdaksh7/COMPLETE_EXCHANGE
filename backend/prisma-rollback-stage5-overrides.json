@@ -1,0 +1,15 @@
+{
+  "containerOverrides": [
+    {
+      "name": "api",
+      "command": [
+        "npx",
+        "prisma",
+        "migrate",
+        "resolve",
+        "--rolled-back",
+        "20260621000000_compliance_foundation"
+      ]
+    }
+  ]
+}

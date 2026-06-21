@@ -1,0 +1,12 @@
+{
+  "containerOverrides": [
+    {
+      "name": "api",
+      "command": [
+        "sh",
+        "-lc",
+        "cat > /tmp/repair-notifications.sql <<'SQL'\nDO $$\nBEGIN\n  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'NotificationType') THEN\n    CREATE TYPE \"NotificationType\" AS ENUM (\n      'KYC_APPROVED',\n      'KYC_REJECTED',\n      'KYC_NEEDS_MORE_INFO',\n      'INR_DEPOSIT_SUBMITTED',\n      'INR_DEPOSIT_APPROVED',\n      'INR_DEPOSIT_REJECTED',\n      'WITHDRAWAL_REQUESTED',\n      'WITHDRAWAL_APPROVED',\n      'WITHDRAWAL_REJECTED',\n      'WITHDRAWAL_COMPLETED',\n      'PASSWORD_CHANGED',\n      'SECURITY_SESSION_REVOKED'\n    );\n  END IF;\nEND $$;\n\nDO $$\nBEGIN\n  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'NotificationEmailStatus') THEN\n    CREATE TYPE \"NotificationEmailStatus\" AS ENUM ('SENT', 'LOGGED', 'SKIPPED', 'FAILED');\n  END IF;\nEND $$;\n\nCREATE TABLE IF NOT EXISTS \"notifications\" (\n  \"id\" UUID NOT NULL,\n  \"user_id\" UUID NOT NULL,\n  \"type\" \"NotificationType\" NOT NULL,\n  \"title\" TEXT NOT NULL,\n  \"message\" TEXT NOT NULL,\n  \"metadata\" JSONB,\n  \"email_status\" \"NotificationEmailStatus\",\n  \"read_at\" TIMESTAMP(3),\n  \"created_at\" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  CONSTRAINT \"notifications_pkey\" PRIMARY KEY (\"id\")\n);\n\nCREATE INDEX IF NOT EXISTS \"notifications_user_id_created_at_idx\" ON \"notifications\"(\"user_id\", \"created_at\");\nCREATE INDEX IF NOT EXISTS \"notifications_user_id_read_at_idx\" ON \"notifications\"(\"user_id\", \"read_at\");\nCREATE INDEX IF NOT EXISTS \"notifications_created_at_idx\" ON \"notifications\"(\"created_at\");\n\nDO $$\nBEGIN\n  IF NOT EXISTS (\n    SELECT 1 FROM pg_constraint WHERE conname = 'notifications_user_id_fkey'\n  ) THEN\n    ALTER TABLE \"notifications\" ADD CONSTRAINT \"notifications_user_id_fkey\"\n      FOREIGN KEY (\"user_id\") REFERENCES \"users\"(\"id\") ON DELETE CASCADE ON UPDATE CASCADE;\n  END IF;\nEND $$;\nSQL\nnpx prisma db execute --file /tmp/repair-notifications.sql --schema prisma/schema.prisma"
+      ]
+    }
+  ]
+}

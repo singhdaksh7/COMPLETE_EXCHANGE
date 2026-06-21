@@ -1,0 +1,13 @@
+{
+  "containerOverrides": [
+    {
+      "name": "api",
+      "command": [
+        "npx",
+        "prisma",
+        "migrate",
+        "status"
+      ]
+    }
+  ]
+}
