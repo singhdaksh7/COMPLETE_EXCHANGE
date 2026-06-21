@@ -12,6 +12,7 @@ import { adminUsersRouter } from '../modules/admin-users/admin-users.routes';
 import { adminReportsRouter } from '../modules/reports/reports.admin.routes';
 import { adminNotificationRouter } from '../modules/notification/notification.admin.routes';
 import { adminSystemRouter } from '../modules/system/system.routes';
+import { adminComplianceRouter } from '../modules/compliance/compliance.admin.routes';
 import { healthRouter } from '../modules/health/health.routes';
 
 /**
@@ -44,6 +45,7 @@ adminApiRouter.use('/operations', adminOperationsRouter);
 adminApiRouter.use('/reports', adminReportsRouter);
 adminApiRouter.use('/notifications', adminNotificationRouter);
 adminApiRouter.use('/system', adminSystemRouter);
+adminApiRouter.use('/compliance', adminComplianceRouter);
 adminApiRouter.use('/users', adminUsersRouter);
 
 // Future admin modules (each behind admin RBAC):

@@ -30,6 +30,8 @@ import type {
   SystemScanner,
   SystemMail,
   SystemRiskAlerts,
+  ComplianceQueueItem,
+  AdminComplianceDetail,
 } from './types';
 
 function buildQuery(params: Record<string, string | number | undefined>): string {
@@ -335,4 +337,29 @@ export const adminApi = {
   systemScanner: () => adminApiFetch<SystemScanner>('/system/scanner', 'GET'),
   systemMail: () => adminApiFetch<SystemMail>('/system/mail', 'GET'),
   systemRiskAlerts: () => adminApiFetch<SystemRiskAlerts>('/system/risk-alerts', 'GET'),
+
+  // ---- compliance / FIU review (Stage 5.0) ----
+  complianceUsers: (
+    params: { status?: string; riskLevel?: string; email?: string; cursor?: string; limit?: number } = {},
+  ) =>
+    adminApiFetch<{ items: ComplianceQueueItem[]; nextCursor: string | null }>(
+      `/compliance/users${buildQuery({ limit: 50, ...params })}`,
+      'GET',
+    ),
+
+  complianceDetail: (userId: string) =>
+    adminApiFetch<AdminComplianceDetail>(`/compliance/users/${userId}`, 'GET'),
+
+  complianceReview: (
+    userId: string,
+    body: { decision: 'APPROVE' | 'REJECT' | 'REQUEST_INFO'; reason?: string; complianceNote?: string; nextReviewInDays?: number },
+  ) => adminApiFetch<AdminComplianceDetail>(`/compliance/users/${userId}/review`, 'POST', { body }),
+
+  complianceSetRisk: (
+    userId: string,
+    body: { level: 'LOW' | 'MEDIUM' | 'HIGH' | 'PROHIBITED'; reason?: string; score?: number },
+  ) => adminApiFetch<AdminComplianceDetail>(`/compliance/users/${userId}/risk`, 'POST', { body }),
+
+  complianceExport: (userId: string) =>
+    adminDownload(`/compliance/users/${userId}/export`, `compliance-${userId}.json`),
 };

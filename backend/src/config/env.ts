@@ -168,6 +168,35 @@ export const envSchema = z
   // Default KYC tier granted on approval when the reviewer omits an explicit one.
   KYC_DEFAULT_APPROVED_TIER: z.coerce.number().int().min(1).max(5).default(1),
 
+  // ---- COMPLIANCE / FIU-PMLA (Stage 5.0) ----
+  // Liveness provider selection. 'mock' is a fully-offline deterministic stub
+  // (default). 'external' is reserved for a future vendor (Digilocker/HyperVerge/
+  // Signzy/IDfy/Onfido) and is not implemented yet — selecting it falls back to
+  // the mock so wiring can be exercised safely.
+  KYC_LIVENESS_PROVIDER: z.enum(['mock', 'external']).default('mock'),
+  // Gates evaluated by the compliance risk engine / approval flow. In staging
+  // these default to permissive so the mock onboarding can complete end-to-end;
+  // production should enable them and wire real screening/liveness.
+  COMPLIANCE_REQUIRE_LIVENESS: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
+  COMPLIANCE_REQUIRE_GEO_CAPTURE: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
+  COMPLIANCE_REQUIRE_SANCTIONS_BEFORE_APPROVAL: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
+  // Baseline risk grade applied when no risk signals are present.
+  COMPLIANCE_DEFAULT_RISK_LEVEL: z
+    .enum(['LOW', 'MEDIUM', 'HIGH', 'PROHIBITED'])
+    .default('MEDIUM'),
+  // Record-retention baseline (years). Compliance rows are stamped with a
+  // retentionUntil for audit; records are NEVER auto-deleted by this code.
+  COMPLIANCE_RECORD_RETENTION_YEARS: z.coerce.number().int().min(1).max(25).default(5),
+
   // ---- INR DEPOSITS / RAZORPAY ----
   // Provider selection. 'mock' is a fully-offline deterministic stub used in dev
   // and tests; 'live' talks to the real Razorpay API and REQUIRES real keys.

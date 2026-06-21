@@ -97,6 +97,15 @@ export const config = {
     defaultApprovedTier: env.KYC_DEFAULT_APPROVED_TIER,
   },
 
+  compliance: {
+    livenessProvider: env.KYC_LIVENESS_PROVIDER,
+    requireLiveness: env.COMPLIANCE_REQUIRE_LIVENESS,
+    requireGeoCapture: env.COMPLIANCE_REQUIRE_GEO_CAPTURE,
+    requireSanctionsBeforeApproval: env.COMPLIANCE_REQUIRE_SANCTIONS_BEFORE_APPROVAL,
+    defaultRiskLevel: env.COMPLIANCE_DEFAULT_RISK_LEVEL,
+    recordRetentionYears: env.COMPLIANCE_RECORD_RETENTION_YEARS,
+  },
+
   razorpay: {
     provider: env.RAZORPAY_PROVIDER,
     keyId: env.RAZORPAY_KEY_ID,

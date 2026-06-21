@@ -14,6 +14,10 @@ import type {
   KycDocument,
   KycDocumentUpload,
   KycProfile,
+  UserCompliance,
+  LivenessSessionResp,
+  LivenessVerifyResp,
+  SubmitEnhancedKycInput,
   LedgerEntry,
   LoginData,
   Market,
@@ -143,6 +147,21 @@ export const userApi = {
 
   submitDocument: (body: { docType: string; sha256: string; contentType: string }) =>
     authed<KycDocumentUpload>('/kyc/documents', { method: 'POST', body }),
+
+  // ---- enhanced compliance KYC (Stage 5.0) ----
+  complianceStatus: () => authed<UserCompliance | null>('/kyc/status'),
+
+  livenessStart: () =>
+    authed<LivenessSessionResp>('/kyc/liveness/start', { method: 'POST' }),
+
+  livenessVerify: (body: {
+    providerReference: string;
+    sessionId?: string;
+    simulateOutcome?: 'PASSED' | 'FAILED' | 'REVIEW_REQUIRED';
+  }) => authed<LivenessVerifyResp>('/kyc/liveness/verify', { method: 'POST', body }),
+
+  submitEnhancedKyc: (body: SubmitEnhancedKycInput) =>
+    authed<UserCompliance>('/kyc/submit-enhanced', { method: 'POST', body }),
 
   // ---- wallet ----
   walletOverview: () => authed<WalletOverview>('/wallets/overview'),

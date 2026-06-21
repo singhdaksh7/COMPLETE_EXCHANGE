@@ -50,6 +50,24 @@ export function buildNotification(type: NotificationType, meta?: Meta): BuiltNot
         : 'We need more information to complete your verification. Please resubmit with the requested details.';
       return { title: 'More information needed', message: body, email: email('Action needed on your Exora KYC', 'More information needed', body) };
     }
+    case 'KYC_SUBMITTED':
+      return {
+        title: 'KYC submitted',
+        message: 'We received your identity verification details. Your submission is now pending review.',
+        email: email('We received your Exora KYC', 'KYC submitted', 'We received your identity verification details. Your submission is now pending review — we will email you when the review is complete.'),
+      };
+    case 'KYC_LIVENESS_FAILED':
+      return {
+        title: 'Liveness check failed',
+        message: 'Your liveness check could not be completed. Please retry the selfie/liveness step from your KYC page.',
+        email: email('Action needed: Exora liveness check', 'Liveness check failed', 'Your liveness check could not be completed. Please retry the selfie/liveness step from your KYC page.'),
+      };
+    case 'COMPLIANCE_REVIEW_COMPLETED': {
+      const outcome = str(meta, 'outcome');
+      const body = `Your compliance review is complete${outcome ? ` (${outcome})` : ''}. See your KYC status page for details.`;
+      // In-app only — the specific approved/rejected email is sent separately.
+      return { title: 'Compliance review completed', message: body };
+    }
     case 'INR_DEPOSIT_SUBMITTED': {
       const amt = str(meta, 'amount');
       return {

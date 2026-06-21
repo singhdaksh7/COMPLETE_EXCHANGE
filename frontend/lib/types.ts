@@ -904,3 +904,185 @@ export interface SystemOverview {
     adminApiPrefix: string;
   };
 }
+
+// ---- Compliance / Enhanced KYC (Stage 5.0) ----
+export type ComplianceKycStatus =
+  | 'NOT_STARTED' | 'DRAFT' | 'SUBMITTED' | 'NEEDS_MORE_INFO'
+  | 'UNDER_REVIEW' | 'APPROVED' | 'REJECTED' | 'EXPIRED';
+export type ComplianceRiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'PROHIBITED';
+export type LivenessStatus = 'NOT_STARTED' | 'PENDING' | 'PASSED' | 'FAILED' | 'REVIEW_REQUIRED';
+export type ScreeningStatus = 'NOT_SCREENED' | 'PENDING' | 'CLEAR' | 'HIT' | 'REVIEW_REQUIRED';
+
+export interface UserCompliance {
+  status: ComplianceKycStatus;
+  customerType: 'INDIVIDUAL' | 'BUSINESS';
+  fullName: string | null;
+  countryOfResidence: string | null;
+  panMasked: string | null;
+  aadhaarMasked: string | null;
+  riskLevel: ComplianceRiskLevel;
+  livenessStatus: LivenessStatus;
+  sanctionsStatus: ScreeningStatus;
+  pepStatus: ScreeningStatus;
+  geoCaptureStatus: string;
+  submittedAt: string | null;
+  lastReviewedAt: string | null;
+  nextReviewDueAt: string | null;
+  rejectionReason: string | null;
+  providerMode: 'mock' | 'live';
+}
+
+export interface LivenessSessionResp {
+  provider: string;
+  mode: 'mock' | 'live';
+  providerReference: string;
+  sessionId: string;
+  status: string;
+  captureUrl: string;
+  expiresInSec: number;
+}
+
+export interface LivenessVerifyResp {
+  provider: string;
+  mode: 'mock' | 'live';
+  status: 'PASSED' | 'FAILED' | 'REVIEW_REQUIRED';
+  confidence: number;
+}
+
+export interface SubmitEnhancedKycInput {
+  customerType?: 'INDIVIDUAL' | 'BUSINESS';
+  fullName: string;
+  dateOfBirth: string;
+  nationality: string;
+  countryOfResidence: string;
+  address: {
+    line1: string;
+    line2?: string;
+    city: string;
+    state: string;
+    postalCode: string;
+    country: string;
+  };
+  pan: string;
+  aadhaar?: string;
+  consents: {
+    kycProcessing: true;
+    amlScreening: true;
+    dataRetention: true;
+    termsAccepted: true;
+    riskDisclosure: true;
+  };
+}
+
+export interface ComplianceQueueItem {
+  userId: string;
+  email: string;
+  status: ComplianceKycStatus;
+  riskLevel: ComplianceRiskLevel;
+  riskScore: number;
+  livenessStatus: LivenessStatus;
+  sanctionsStatus: ScreeningStatus;
+  countryOfResidence: string | null;
+  customerType: 'INDIVIDUAL' | 'BUSINESS';
+  submittedAt: string;
+  lastReviewedAt: string | null;
+  nextReviewDueAt: string | null;
+}
+
+export interface ComplianceEvidenceItem {
+  id: string;
+  type: string;
+  status: string;
+  provider: string | null;
+  referenceId: string | null;
+  storageKey: string | null;
+  documentId: string | null;
+  metadata: unknown;
+  createdAt: string;
+  reviewedAt: string | null;
+  reviewedByAdminId: string | null;
+}
+
+export interface ComplianceConsentItem {
+  id: string;
+  consentType: string;
+  version: string;
+  ip: string | null;
+  userAgent: string | null;
+  acceptedAt: string;
+}
+
+export interface RiskAssessmentItem {
+  id: string;
+  score: number;
+  level: ComplianceRiskLevel;
+  reasons: Array<{ code: string; message: string; weight: number }>;
+  source: string;
+  createdAt: string;
+  createdByAdminId: string | null;
+}
+
+export interface AdminComplianceProfile {
+  userId: string;
+  email: string;
+  accountStatus: string;
+  legacyKycStatus: string;
+  kycTier: number;
+  customerType: 'INDIVIDUAL' | 'BUSINESS';
+  status: ComplianceKycStatus;
+  fullName: string | null;
+  dateOfBirth: string | null;
+  nationality: string | null;
+  countryOfResidence: string | null;
+  address: {
+    line1: string | null;
+    line2: string | null;
+    city: string | null;
+    state: string | null;
+    postalCode: string | null;
+    country: string | null;
+  };
+  panMasked: string | null;
+  panLast4: string | null;
+  aadhaarMasked: string | null;
+  aadhaarLast4: string | null;
+  riskLevel: ComplianceRiskLevel;
+  riskScore: number;
+  riskReason: string | null;
+  onboarding: {
+    ip: string | null;
+    country: string | null;
+    region: string | null;
+    city: string | null;
+    latitude: string | null;
+    longitude: string | null;
+    userAgent: string | null;
+    geoCaptureStatus: string;
+  };
+  livenessStatus: LivenessStatus;
+  livenessProvider: string | null;
+  livenessReference: string | null;
+  livenessScore: number | null;
+  sanctionsStatus: ScreeningStatus;
+  pepStatus: ScreeningStatus;
+  adverseMediaStatus: ScreeningStatus;
+  kycProvider: string | null;
+  kycProviderReference: string | null;
+  consentVersion: string | null;
+  complianceNote: string | null;
+  verifiedAt: string | null;
+  lastReviewedAt: string | null;
+  nextReviewDueAt: string | null;
+  retentionUntil: string | null;
+  reviewedByAdminId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminComplianceDetail {
+  profile: AdminComplianceProfile;
+  evidence: ComplianceEvidenceItem[];
+  consents: ComplianceConsentItem[];
+  riskAssessments: RiskAssessmentItem[];
+  providerMode: 'mock' | 'live';
+}

@@ -173,7 +173,7 @@ export function UserNav() {
   const accountLinks = [
     { href: '/profile', label: 'Profile', icon: <ProfileIcon /> },
     { href: '/security', label: 'Security', icon: <SecurityIcon /> },
-    { href: '/kyc/status', label: 'KYC Verification', icon: <KycIcon /> },
+    { href: '/kyc/enhanced', label: 'KYC Verification', icon: <KycIcon /> },
     { href: '#referrals', label: 'Referral Program', icon: <ReferralIcon /> },
     { href: '#notifications', label: 'Notifications', icon: <BellIcon /> },
     { href: '#api', label: 'API Management', icon: <ApiIcon /> },
@@ -381,6 +381,7 @@ export function AdminNav() {
     { href: '/admin/users', label: 'Users' },
     { href: '/admin/kyc', label: 'KYC Verification' },
     { href: '/admin/compliance', label: 'Compliance' },
+    { href: '/admin/compliance/users', label: 'Compliance review' },
     { href: '/admin/deposits', label: 'Deposits queue' },
     { href: '/admin/withdrawals', label: 'Withdrawals queue' },
     { href: '/admin/conversions', label: 'Conversions ledger' },

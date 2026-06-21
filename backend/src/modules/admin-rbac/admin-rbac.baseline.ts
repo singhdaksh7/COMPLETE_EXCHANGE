@@ -26,6 +26,10 @@ export const ADMIN_PERMISSIONS: PermissionDef[] = [
   { code: 'kyc.view', description: 'View KYC submissions' },
   { code: 'kyc.review', description: 'Approve / reject / request info on KYC' },
   { code: 'compliance.view', description: 'View compliance dashboard and KYC metrics' },
+  // Compliance / FIU-PMLA review (Stage 5.0).
+  { code: 'compliance.review', description: 'Approve / reject / request-info on compliance KYC' },
+  { code: 'compliance.risk.manage', description: 'Set compliance risk level / score for a user' },
+  { code: 'compliance.export', description: 'Export a user compliance evidence summary' },
   { code: 'notifications.view', description: 'View notification delivery logs' },
   { code: 'deposit.view', description: 'View crypto/INR deposits' },
   { code: 'withdrawal.view', description: 'View withdrawals' },
@@ -109,6 +113,10 @@ export const ADMIN_ROLES: RoleDef[] = [
       'kyc.view',
       'kyc.review',
       'compliance.view',
+      // Compliance / FIU review: KYC_REVIEWER can review + export evidence.
+      // Risk-level override (compliance.risk.manage) stays SUPER_ADMIN-only.
+      'compliance.review',
+      'compliance.export',
       'user.view',
       'operations.view',
       // Compliance admin: sees the ops center + risk alerts (not health-only).

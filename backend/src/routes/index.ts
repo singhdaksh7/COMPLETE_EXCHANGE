@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authRouter } from '../modules/auth/auth.routes';
 import { kycRouter } from '../modules/kyc/kyc.routes';
+import { complianceRouter } from '../modules/compliance/compliance.routes';
 import {
   inrLedgerRouter,
   ledgerRouter,
@@ -28,6 +29,9 @@ export const apiRouter = Router();
 apiRouter.use('/', healthRouter);
 apiRouter.use('/auth', authRouter);
 apiRouter.use('/kyc', kycRouter);
+// Enhanced compliance/KYC (Stage 5.0): distinct paths (/status, /liveness/*,
+// /submit-enhanced) mounted alongside the legacy kycRouter.
+apiRouter.use('/kyc', complianceRouter);
 // Wallet-infra routes (/wallets/overview, /networks, /addresses) must be
 // registered BEFORE the ledger wallet router, whose `/:asset` would otherwise
 // shadow these specific paths. Unmatched paths fall through to walletRouter.

@@ -381,6 +381,10 @@ model User {
   makerTrades       Trade[]             @relation("TradeMaker")
   takerTrades       Trade[]             @relation("TradeTaker")
   notifications     Notification[]
+  complianceProfile ComplianceProfile?
+  complianceEvidence ComplianceEvidence[]
+  complianceConsents ComplianceConsent[]
+  riskAssessments    RiskAssessment[]
 
   @@index([status])
   @@index([kycStatus])
@@ -600,6 +604,9 @@ enum NotificationType {
   KYC_APPROVED
   KYC_REJECTED
   KYC_NEEDS_MORE_INFO
+  KYC_SUBMITTED
+  KYC_LIVENESS_FAILED
+  COMPLIANCE_REVIEW_COMPLETED
   INR_DEPOSIT_SUBMITTED
   INR_DEPOSIT_APPROVED
   INR_DEPOSIT_REJECTED
@@ -1283,6 +1290,9 @@ model Admin {
   updatedFlags          SystemFlag[]       @relation("FlagUpdater")
   reviewedInrDeposits   InrTransaction[]   @relation("InrDepositReviewer")
   firstApprovedDeposits InrTransaction[]   @relation("InrDepositFirstApprover")
+  reviewedComplianceProfiles ComplianceProfile[]  @relation("ComplianceReviewer")
+  reviewedComplianceEvidence ComplianceEvidence[] @relation("ComplianceEvidenceReviewer")
+  authoredRiskAssessments    RiskAssessment[]     @relation("RiskAssessmentAuthor")
 
   @@map("admins")
 }
@@ -1387,4 +1397,239 @@ model IdempotencyKey {
   @@unique([userId, endpoint, key])
   @@index([createdAt]) // TTL sweeper
   @@map("idempotency_keys")
+}
+
+// ============================================================================
+// COMPLIANCE / FIU-PMLA READINESS  (Stage 5.0)
+// ----------------------------------------------------------------------------
+// Additive only. These tables layer an FIU/PMLA-ready compliance record on top
+// of the existing KYC module without altering it. Sensitive identifiers are
+// stored MASKED (last-4 / masked) and, where the existing AES-256-GCM KYC
+// encryption layer is reused, sealed in *Enc Bytes columns — NEVER as plaintext.
+// This is a technical compliance layer; it does not by itself constitute legal
+// compliance (requires legal/compliance sign-off).
+// ============================================================================
+
+enum CustomerType {
+  INDIVIDUAL
+  BUSINESS
+}
+
+/// Compliance risk grade. Distinct from the lighter user-facing RiskLevel so it
+/// can carry the terminal PROHIBITED grade used to hard-block onboarding.
+enum ComplianceRiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  PROHIBITED
+}
+
+/// Enhanced KYC lifecycle for the compliance profile (Scope B). Kept separate
+/// from the legacy KycStatus enum so the existing KYC state machine is untouched.
+enum ComplianceKycStatus {
+  NOT_STARTED
+  DRAFT
+  SUBMITTED
+  NEEDS_MORE_INFO
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum GeoCaptureStatus {
+  NOT_CAPTURED
+  CAPTURED
+  PARTIAL
+  UNAVAILABLE
+}
+
+enum LivenessStatus {
+  NOT_STARTED
+  PENDING
+  PASSED
+  FAILED
+  REVIEW_REQUIRED
+}
+
+/// Normalized outcome of an AML/CFT screening dimension (sanctions / PEP /
+/// adverse-media). In staging these are driven by the mock and clearly marked.
+enum ScreeningStatus {
+  NOT_SCREENED
+  PENDING
+  CLEAR
+  HIT
+  REVIEW_REQUIRED
+}
+
+enum ComplianceEvidenceType {
+  PAN
+  AADHAAR
+  SELFIE
+  LIVENESS
+  ADDRESS
+  GEOLOCATION
+  DEVICE
+  CONSENT
+  PROVIDER_RESPONSE
+}
+
+enum ComplianceEvidenceStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+  INFO
+}
+
+enum ConsentType {
+  KYC_PROCESSING
+  AML_SCREENING
+  DATA_RETENTION
+  TERMS_ACCEPTANCE
+  RISK_DISCLOSURE
+}
+
+enum RiskAssessmentSource {
+  KYC
+  TRANSACTION
+  ADMIN
+  SCREENING
+  SYSTEM
+}
+
+/// One compliance profile per user: identity, address, masked IDs, onboarding
+/// geo/IP evidence, risk grade, screening posture, and review scheduling.
+model ComplianceProfile {
+  id                  String              @id @default(uuid()) @db.Uuid
+  userId              String              @unique @map("user_id") @db.Uuid
+  customerType        CustomerType        @default(INDIVIDUAL) @map("customer_type")
+  status              ComplianceKycStatus @default(NOT_STARTED)
+
+  // Identity
+  fullName            String?             @map("full_name")
+  dateOfBirth         DateTime?           @map("date_of_birth") @db.Date
+  nationality         String?
+  countryOfResidence  String?             @map("country_of_residence")
+
+  // Address
+  addressLine1        String?             @map("address_line1")
+  addressLine2        String?             @map("address_line2")
+  city                String?
+  state               String?
+  postalCode          String?             @map("postal_code")
+  country             String?
+
+  // Masked identifiers (raw values are NEVER stored here; optional encrypted
+  // copies reuse the existing KYC AES-256-GCM layer when supplied).
+  panLast4            String?             @map("pan_last4")
+  panMasked           String?             @map("pan_masked")
+  panEnc              Bytes?              @map("pan_enc")
+  aadhaarLast4        String?             @map("aadhaar_last4")
+  aadhaarMasked       String?             @map("aadhaar_masked")
+  aadhaarRefEnc       Bytes?              @map("aadhaar_ref_enc")
+
+  // Risk
+  riskLevel           ComplianceRiskLevel @default(MEDIUM) @map("risk_level")
+  riskScore           Int                 @default(0) @map("risk_score")
+  riskReason          String?             @map("risk_reason")
+
+  // Onboarding geo / device evidence (safe, coarse — never precise tracking)
+  onboardingIp        String?             @map("onboarding_ip")
+  onboardingCountry   String?             @map("onboarding_country")
+  onboardingRegion    String?             @map("onboarding_region")
+  onboardingCity      String?             @map("onboarding_city")
+  onboardingLatitude  String?             @map("onboarding_latitude")
+  onboardingLongitude String?             @map("onboarding_longitude")
+  onboardingUserAgent String?             @map("onboarding_user_agent")
+  geoCaptureStatus    GeoCaptureStatus    @default(NOT_CAPTURED) @map("geo_capture_status")
+
+  // Liveness
+  livenessStatus      LivenessStatus      @default(NOT_STARTED) @map("liveness_status")
+  livenessProvider    String?             @map("liveness_provider")
+  livenessReference   String?             @map("liveness_reference")
+  livenessScore       Int?                @map("liveness_score")
+
+  // AML/CFT screening posture
+  sanctionsStatus     ScreeningStatus     @default(NOT_SCREENED) @map("sanctions_status")
+  pepStatus           ScreeningStatus     @default(NOT_SCREENED) @map("pep_status")
+  adverseMediaStatus  ScreeningStatus     @default(NOT_SCREENED) @map("adverse_media_status")
+
+  // Provider linkage + review scheduling + retention
+  kycProvider          String?            @map("kyc_provider")
+  kycProviderReference String?            @map("kyc_provider_reference")
+  consentVersion       String?            @map("consent_version")
+  complianceNote       String?            @map("compliance_note")
+  verifiedAt           DateTime?          @map("verified_at")
+  reviewedByAdminId    String?            @map("reviewed_by_admin_id") @db.Uuid
+  lastReviewedAt       DateTime?          @map("last_reviewed_at")
+  nextReviewDueAt      DateTime?          @map("next_review_due_at")
+  retentionUntil       DateTime?          @map("retention_until")
+  createdAt            DateTime           @default(now()) @map("created_at")
+  updatedAt            DateTime           @updatedAt @map("updated_at")
+
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewer Admin? @relation("ComplianceReviewer", fields: [reviewedByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([riskLevel])
+  @@index([nextReviewDueAt])
+  @@map("compliance_profiles")
+}
+
+/// Audit-ready onboarding evidence. Stores LOCATORS + redacted metadata only —
+/// never raw file content or raw identifiers.
+model ComplianceEvidence {
+  id                String                   @id @default(uuid()) @db.Uuid
+  userId            String                   @map("user_id") @db.Uuid
+  type              ComplianceEvidenceType
+  status            ComplianceEvidenceStatus @default(PENDING)
+  provider          String?
+  referenceId       String?                  @map("reference_id")
+  storageKey        String?                  @map("storage_key")
+  documentId        String?                  @map("document_id") @db.Uuid
+  metadata          Json?
+  createdAt         DateTime                 @default(now()) @map("created_at")
+  reviewedAt        DateTime?                @map("reviewed_at")
+  reviewedByAdminId String?                  @map("reviewed_by_admin_id") @db.Uuid
+
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewer Admin? @relation("ComplianceEvidenceReviewer", fields: [reviewedByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([userId, type])
+  @@index([userId, createdAt])
+  @@map("compliance_evidence")
+}
+
+/// Immutable record of an explicit user consent (PMLA/DPDP audit trail).
+model ComplianceConsent {
+  id          String      @id @default(uuid()) @db.Uuid
+  userId      String      @map("user_id") @db.Uuid
+  consentType ConsentType @map("consent_type")
+  version     String
+  ip          String?
+  userAgent   String?     @map("user_agent")
+  acceptedAt  DateTime    @default(now()) @map("accepted_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, consentType])
+  @@map("compliance_consents")
+}
+
+/// Append-only history of risk scores with the reasons that produced them.
+model RiskAssessment {
+  id               String               @id @default(uuid()) @db.Uuid
+  userId           String               @map("user_id") @db.Uuid
+  score            Int
+  level            ComplianceRiskLevel
+  reasons          Json
+  source           RiskAssessmentSource
+  createdAt        DateTime             @default(now()) @map("created_at")
+  createdByAdminId String?              @map("created_by_admin_id") @db.Uuid
+
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdBy Admin? @relation("RiskAssessmentAuthor", fields: [createdByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@map("risk_assessments")
 }
