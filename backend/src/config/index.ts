@@ -105,6 +105,16 @@ export const config = {
     requireSanctionsBeforeApproval: env.COMPLIANCE_REQUIRE_SANCTIONS_BEFORE_APPROVAL,
     defaultRiskLevel: env.COMPLIANCE_DEFAULT_RISK_LEVEL,
     recordRetentionYears: env.COMPLIANCE_RECORD_RETENTION_YEARS,
+    // Suspicious-transaction monitoring (Stage 5.2). Detection-only thresholds.
+    monitoring: {
+      lookbackDays: env.COMPLIANCE_MONITORING_LOOKBACK_DAYS,
+      highValueWithdrawal: env.COMPLIANCE_MONITORING_HIGH_VALUE_WITHDRAWAL,
+      failedWithdrawalCount: env.COMPLIANCE_MONITORING_FAILED_WITHDRAWAL_COUNT,
+      rapidWindowMinutes: env.COMPLIANCE_MONITORING_RAPID_WINDOW_MINUTES,
+      structuringBand: env.COMPLIANCE_MONITORING_STRUCTURING_BAND,
+      structuringCount: env.COMPLIANCE_MONITORING_STRUCTURING_COUNT,
+      abnormalTradingVolume: env.COMPLIANCE_MONITORING_ABNORMAL_TRADING_VOLUME,
+    },
   },
 
   razorpay: {

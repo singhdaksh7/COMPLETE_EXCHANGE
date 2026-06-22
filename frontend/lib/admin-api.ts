@@ -34,6 +34,15 @@ import type {
   AdminComplianceDetail,
   AdminScreeningView,
   ScreeningDecision,
+  ComplianceCaseListItem,
+  ComplianceCaseDetail,
+  ComplianceCaseSummary,
+  ComplianceAlertItem,
+  ComplianceCaseStatus,
+  ComplianceAlertStatus,
+  ComplianceCasePriority,
+  ComplianceCaseType,
+  MonitoringRunResult,
 } from './types';
 
 function buildQuery(params: Record<string, string | number | undefined>): string {
@@ -382,4 +391,63 @@ export const adminApi = {
       'POST',
       { body },
     ),
+
+  // ---- monitoring + STR cases (Stage 5.2) ----
+  complianceCaseSummary: () =>
+    adminApiFetch<ComplianceCaseSummary>('/compliance/cases/summary', 'GET'),
+
+  complianceCases: (
+    params: {
+      status?: ComplianceCaseStatus;
+      priority?: ComplianceCasePriority;
+      type?: ComplianceCaseType;
+      cursor?: string;
+      limit?: number;
+    } = {},
+  ) =>
+    adminApiFetch<{ items: ComplianceCaseListItem[]; nextCursor: string | null }>(
+      `/compliance/cases${buildQuery({ limit: 50, ...params })}`,
+      'GET',
+    ),
+
+  complianceCase: (caseId: string) =>
+    adminApiFetch<ComplianceCaseDetail>(`/compliance/cases/${caseId}`, 'GET'),
+
+  complianceCaseCreate: (body: {
+    userId: string;
+    type?: ComplianceCaseType;
+    priority?: ComplianceCasePriority;
+    title: string;
+    summary?: string;
+    alertIds?: string[];
+  }) => adminApiFetch<ComplianceCaseDetail>('/compliance/cases', 'POST', { body }),
+
+  complianceCaseAssign: (caseId: string, adminId: string | null) =>
+    adminApiFetch<ComplianceCaseDetail>(`/compliance/cases/${caseId}/assign`, 'POST', { body: { adminId } }),
+
+  complianceCaseStatus: (caseId: string, body: { status: ComplianceCaseStatus; note?: string }) =>
+    adminApiFetch<ComplianceCaseDetail>(`/compliance/cases/${caseId}/status`, 'POST', { body }),
+
+  complianceCaseNote: (caseId: string, body: string) =>
+    adminApiFetch<ComplianceCaseDetail>(`/compliance/cases/${caseId}/note`, 'POST', { body: { body } }),
+
+  complianceCaseExportStr: (caseId: string) =>
+    adminDownload(`/compliance/cases/${caseId}/export-str-draft`, `str-draft-${caseId}.json`),
+
+  complianceAlerts: (params: { userId?: string; status?: ComplianceAlertStatus } = {}) =>
+    adminApiFetch<{ items: ComplianceAlertItem[] }>(
+      `/compliance/alerts${buildQuery({ ...params })}`,
+      'GET',
+    ),
+
+  complianceAlertLinkCase: (alertId: string, caseId: string) =>
+    adminApiFetch<ComplianceCaseDetail>(`/compliance/alerts/${alertId}/link-case`, 'POST', { body: { caseId } }),
+
+  complianceAlertStatus: (alertId: string, body: { status: ComplianceAlertStatus; note?: string }) =>
+    adminApiFetch<ComplianceAlertItem>(`/compliance/alerts/${alertId}/status`, 'POST', { body }),
+
+  complianceMonitoringRun: (userId?: string) =>
+    adminApiFetch<MonitoringRunResult>('/compliance/monitoring/run', 'POST', {
+      body: userId ? { userId } : {},
+    }),
 };

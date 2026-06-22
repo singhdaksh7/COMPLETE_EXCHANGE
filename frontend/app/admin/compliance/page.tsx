@@ -24,8 +24,17 @@ export default function AdminCompliancePage() {
     retry: false,
   });
 
+  // Stage 5.2 — monitoring case/alert counts (best-effort; needs compliance.case.view).
+  const caseQ = useQuery({
+    queryKey: ['admin-compliance-case-summary'],
+    queryFn: () => adminApi.complianceCaseSummary(),
+    enabled: ready,
+    retry: false,
+  });
+
   if (!ready) return null;
   const s = q.data?.data;
+  const cs = caseQ.data?.data;
 
   const metricCards = s
     ? [
@@ -70,6 +79,28 @@ export default function AdminCompliancePage() {
           </div>
         )}
         {q.isLoading && <p className="text-sm text-white/40">Loading compliance metrics…</p>}
+
+        {cs && (
+          <div className="rounded-2xl border border-white/5 bg-white/[0.01] p-5">
+            <div className="flex items-center justify-between border-b border-white/5 pb-2 mb-3">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-white">Transaction monitoring</h3>
+              <a href="/admin/compliance/cases" className="text-[10px] text-gold hover:underline">Open cases →</a>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {[
+                { label: 'Open cases', val: cs.openCases },
+                { label: 'High / critical', val: cs.highCriticalCases },
+                { label: 'Open alerts', val: cs.openAlerts },
+                { label: 'STR drafted', val: cs.strDrafted },
+              ].map((m) => (
+                <div key={m.label} className="rounded-xl border border-white/5 bg-white/[0.01] p-4">
+                  <span className="text-[9px] font-bold text-white/40 uppercase tracking-wider">{m.label}</span>
+                  <div className="mt-1 text-2xl font-black text-white font-mono leading-tight">{m.val}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {s && (
           <>

@@ -386,6 +386,8 @@ model User {
   complianceConsents ComplianceConsent[]
   riskAssessments    RiskAssessment[]
   screeningChecks    ScreeningCheck[]
+  complianceAlerts   ComplianceAlert[]
+  complianceCases    ComplianceCase[]
 
   @@index([status])
   @@index([kycStatus])
@@ -1711,4 +1713,154 @@ model ScreeningMatch {
 
   @@index([checkId])
   @@map("screening_matches")
+}
+
+// ============================================================================
+// COMPLIANCE MONITORING — suspicious-transaction alerts + STR case workflow
+// (Stage 5.2). Rule-based/mock only. These tables are ADDITIVE: the monitoring
+// engine READS deposits / withdrawals / trades / inr_transactions but NEVER
+// mutates ledger, trading, scanner, or withdrawal money-movement state, and it
+// never deletes records.
+// ============================================================================
+
+/// Why a suspicious-activity alert fired.
+enum ComplianceAlertType {
+  HIGH_VALUE_WITHDRAWAL
+  RAPID_DEPOSIT_WITHDRAWAL
+  STRUCTURING_PATTERN
+  ABNORMAL_TRADING_VOLUME
+  REPEATED_FAILED_WITHDRAWALS
+  HIGH_RISK_USER_ACTIVITY
+  SCREENING_RISK_ACTIVITY
+}
+
+/// Lifecycle of a single alert.
+enum ComplianceAlertStatus {
+  OPEN
+  IN_REVIEW
+  LINKED_TO_CASE
+  DISMISSED
+  RESOLVED
+}
+
+/// Lifecycle of an investigation case.
+enum ComplianceCaseStatus {
+  OPEN
+  IN_REVIEW
+  ESCALATED
+  STR_DRAFTED
+  CLOSED
+}
+
+/// Triage priority of a case.
+enum ComplianceCasePriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+/// What kind of case this is.
+enum ComplianceCaseType {
+  SUSPICIOUS_TRANSACTION
+  HIGH_RISK_USER
+  WALLET_RISK
+  SCREENING_MATCH
+  MANUAL_REVIEW
+}
+
+/// One rule-based suspicious-activity alert. Idempotent on `dedupeKey`: the
+/// monitoring engine derives a deterministic key per finding so re-running it
+/// never produces duplicates. `details` holds redacted evidence (entity ids,
+/// amounts) — never raw secrets/PII.
+model ComplianceAlert {
+  id                String                @id @default(uuid()) @db.Uuid
+  userId            String                @map("user_id") @db.Uuid
+  type              ComplianceAlertType
+  status            ComplianceAlertStatus @default(OPEN)
+  priority          ComplianceCasePriority @default(LOW)
+  score             Int                   @default(0) // 0..100 heuristic severity
+  title             String
+  description       String?
+  dedupeKey         String                @unique @map("dedupe_key")
+  details           Json?
+  caseId            String?               @map("case_id") @db.Uuid
+  resolvedByAdminId String?               @map("resolved_by_admin_id") @db.Uuid
+  resolvedAt        DateTime?             @map("resolved_at")
+  createdAt         DateTime              @default(now()) @map("created_at")
+  updatedAt         DateTime              @updatedAt @map("updated_at")
+
+  user User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  case ComplianceCase?  @relation(fields: [caseId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([status])
+  @@index([type])
+  @@index([caseId])
+  @@map("compliance_alerts")
+}
+
+/// An investigation case grouping one or more alerts for a user. Auto-opened by
+/// the monitoring engine for HIGH/CRITICAL findings (idempotent on `dedupeKey` =
+/// one auto case per user per UTC day) or created manually by an admin (no
+/// dedupeKey). Admin actor ids are stored as plain uuids (no FK) to keep the
+/// Admin model untouched, mirroring other nullable-actor columns.
+model ComplianceCase {
+  id               String                 @id @default(uuid()) @db.Uuid
+  userId           String                 @map("user_id") @db.Uuid
+  type             ComplianceCaseType     @default(SUSPICIOUS_TRANSACTION)
+  status           ComplianceCaseStatus   @default(OPEN)
+  priority         ComplianceCasePriority @default(MEDIUM)
+  title            String
+  summary          String?
+  dedupeKey        String?                @unique @map("dedupe_key")
+  assignedToAdminId String?               @map("assigned_to_admin_id") @db.Uuid
+  openedByAdminId  String?                @map("opened_by_admin_id") @db.Uuid // null = system/auto
+  closedByAdminId  String?                @map("closed_by_admin_id") @db.Uuid
+  closedAt         DateTime?              @map("closed_at")
+  createdAt        DateTime               @default(now()) @map("created_at")
+  updatedAt        DateTime               @updatedAt @map("updated_at")
+
+  user   User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alerts ComplianceAlert[]
+  notes  ComplianceCaseNote[]
+  events ComplianceCaseEvent[]
+
+  @@index([userId, createdAt])
+  @@index([status])
+  @@index([priority])
+  @@index([assignedToAdminId])
+  @@map("compliance_cases")
+}
+
+/// Free-text investigation note on a case. Append-only in practice (the service
+/// never deletes). `adminId` is the author (plain uuid, no FK).
+model ComplianceCaseNote {
+  id        String   @id @default(uuid()) @db.Uuid
+  caseId    String   @map("case_id") @db.Uuid
+  adminId   String?  @map("admin_id") @db.Uuid
+  body      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  case ComplianceCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, createdAt])
+  @@map("compliance_case_notes")
+}
+
+/// Append-only audit timeline for a case (CASE_CREATED, STATUS_CHANGED,
+/// ASSIGNED, NOTE_ADDED, ALERT_LINKED, STR_EXPORTED, RISK_APPLIED, ...).
+/// `action` is a stable string code; `metadata` holds redacted detail.
+model ComplianceCaseEvent {
+  id            String   @id @default(uuid()) @db.Uuid
+  caseId        String   @map("case_id") @db.Uuid
+  action        String
+  actorAdminId  String?  @map("actor_admin_id") @db.Uuid // null = system/auto
+  metadata      Json?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  case ComplianceCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, createdAt])
+  @@map("compliance_case_events")
 }

@@ -28,6 +28,13 @@ export interface RiskScoreInput {
   rejectionCount: number;
   adminFlag: RiskAdminFlag;
   geoCaptured: boolean;
+  /**
+   * Count of currently-open HIGH/CRITICAL compliance monitoring cases (Stage
+   * 5.2). Optional + defaults to 0 so existing call sites/tests are unaffected.
+   * Closed cases are excluded by the caller, so a resolved case stops adding
+   * risk automatically.
+   */
+  openHighRiskCaseCount?: number;
 }
 
 export interface RiskScoreConfig {
@@ -112,6 +119,19 @@ export function scoreCustomerRisk(
   // --- Admin signal (non-terminal) ------------------------------------------
   if (input.adminFlag === 'HIGH') {
     add('ADMIN_HIGH_RISK', 'Manually flagged HIGH risk by an administrator', 50);
+  }
+
+  // --- Monitoring cases (Stage 5.2) -----------------------------------------
+  // Each open HIGH/CRITICAL suspicious-transaction case raises risk; capped so
+  // it elevates but never alone forces PROHIBITED. Closed cases are excluded by
+  // the caller, so resolving a case removes its contribution on next recompute.
+  const openCases = input.openHighRiskCaseCount ?? 0;
+  if (openCases > 0) {
+    add(
+      'OPEN_COMPLIANCE_CASE',
+      `${openCases} open HIGH/CRITICAL compliance case(s)`,
+      Math.min(40, openCases * 25),
+    );
   }
 
   // --- Screening signals -----------------------------------------------------

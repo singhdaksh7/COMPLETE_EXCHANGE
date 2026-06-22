@@ -49,6 +49,52 @@ describe('admin RBAC baseline user-risk grants', () => {
     expect(readOnly?.permissions).not.toContain('kyc.review');
   });
 
+  it('grants Stage 5.2 monitoring/case permissions to the right roles', () => {
+    expect(ADMIN_PERMISSIONS.map((p) => p.code)).toEqual(
+      expect.arrayContaining([
+        'compliance.case.view',
+        'compliance.case.manage',
+        'compliance.case.assign',
+        'compliance.alert.view',
+        'compliance.alert.manage',
+        'compliance.monitoring.run',
+        'compliance.str.export',
+      ]),
+    );
+
+    const reviewer = ADMIN_ROLES.find((r) => r.name === 'KYC_REVIEWER');
+    const finance = ADMIN_ROLES.find((r) => r.name === 'FINANCE');
+    const support = ADMIN_ROLES.find((r) => r.name === 'SUPPORT');
+    const readOnly = ADMIN_ROLES.find((r) => r.name === 'READ_ONLY');
+
+    // KYC_REVIEWER fully handles cases/alerts, runs monitoring, exports STR drafts.
+    expect(reviewer?.permissions).toEqual(
+      expect.arrayContaining([
+        'compliance.case.view',
+        'compliance.case.manage',
+        'compliance.case.assign',
+        'compliance.alert.view',
+        'compliance.alert.manage',
+        'compliance.monitoring.run',
+        'compliance.str.export',
+      ]),
+    );
+    // FINANCE has read-only case/alert visibility but cannot manage or run.
+    expect(finance?.permissions).toEqual(
+      expect.arrayContaining(['compliance.case.view', 'compliance.alert.view']),
+    );
+    expect(finance?.permissions).not.toContain('compliance.case.manage');
+    expect(finance?.permissions).not.toContain('compliance.monitoring.run');
+    // Read-only roles inherit the .view grants only (VIEW_ONLY filter).
+    expect(support?.permissions).toEqual(
+      expect.arrayContaining(['compliance.case.view', 'compliance.alert.view']),
+    );
+    expect(support?.permissions).not.toContain('compliance.case.manage');
+    expect(support?.permissions).not.toContain('compliance.str.export');
+    expect(readOnly?.permissions).toContain('compliance.case.view');
+    expect(readOnly?.permissions).not.toContain('compliance.monitoring.run');
+  });
+
   it('defines system / ops-center permissions with the right role access (Stage 4.3)', () => {
     expect(ADMIN_PERMISSIONS.map((p) => p.code)).toEqual(
       expect.arrayContaining(['system.view', 'system.health.view', 'system.risk.view']),

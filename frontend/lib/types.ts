@@ -1139,3 +1139,105 @@ export interface AdminComplianceDetail {
   riskAssessments: RiskAssessmentItem[];
   providerMode: 'mock' | 'live';
 }
+
+// ---- Stage 5.2: suspicious-transaction monitoring + STR cases ----
+export type ComplianceAlertType =
+  | 'HIGH_VALUE_WITHDRAWAL'
+  | 'RAPID_DEPOSIT_WITHDRAWAL'
+  | 'STRUCTURING_PATTERN'
+  | 'ABNORMAL_TRADING_VOLUME'
+  | 'REPEATED_FAILED_WITHDRAWALS'
+  | 'HIGH_RISK_USER_ACTIVITY'
+  | 'SCREENING_RISK_ACTIVITY';
+export type ComplianceAlertStatus = 'OPEN' | 'IN_REVIEW' | 'LINKED_TO_CASE' | 'DISMISSED' | 'RESOLVED';
+export type ComplianceCaseStatus = 'OPEN' | 'IN_REVIEW' | 'ESCALATED' | 'STR_DRAFTED' | 'CLOSED';
+export type ComplianceCasePriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+export type ComplianceCaseType =
+  | 'SUSPICIOUS_TRANSACTION'
+  | 'HIGH_RISK_USER'
+  | 'WALLET_RISK'
+  | 'SCREENING_MATCH'
+  | 'MANUAL_REVIEW';
+
+export interface ComplianceAlertItem {
+  id: string;
+  userId: string;
+  type: ComplianceAlertType;
+  status: ComplianceAlertStatus;
+  priority: ComplianceCasePriority;
+  score: number;
+  title: string;
+  description: string | null;
+  details: unknown;
+  caseId: string | null;
+  resolvedByAdminId: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ComplianceCaseNoteItem {
+  id: string;
+  adminId: string | null;
+  body: string;
+  createdAt: string;
+}
+
+export interface ComplianceCaseEventItem {
+  id: string;
+  action: string;
+  actorAdminId: string | null;
+  metadata: unknown;
+  createdAt: string;
+}
+
+export interface ComplianceCaseListItem {
+  id: string;
+  userId: string;
+  email: string;
+  type: ComplianceCaseType;
+  status: ComplianceCaseStatus;
+  priority: ComplianceCasePriority;
+  title: string;
+  alertCount: number;
+  assignedToAdminId: string | null;
+  openedByAdminId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ComplianceCaseDetail {
+  id: string;
+  userId: string;
+  email: string;
+  type: ComplianceCaseType;
+  status: ComplianceCaseStatus;
+  priority: ComplianceCasePriority;
+  title: string;
+  summary: string | null;
+  dedupeKey: string | null;
+  assignedToAdminId: string | null;
+  openedByAdminId: string | null;
+  closedByAdminId: string | null;
+  closedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  alerts: ComplianceAlertItem[];
+  notes: ComplianceCaseNoteItem[];
+  events: ComplianceCaseEventItem[];
+}
+
+export interface ComplianceCaseSummary {
+  openCases: number;
+  highCriticalCases: number;
+  openAlerts: number;
+  strDrafted: number;
+}
+
+export interface MonitoringRunResult {
+  usersEvaluated: number;
+  alertsCreated: number;
+  alertsExisting: number;
+  casesCreated: number;
+  alertsLinked: number;
+}

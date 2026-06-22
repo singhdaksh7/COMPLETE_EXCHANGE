@@ -120,4 +120,26 @@ describe('scoreCustomerRisk', () => {
       expect(typeof reason.weight).toBe('number');
     }
   });
+
+  // ---- Stage 5.2: open HIGH/CRITICAL monitoring cases feed risk ----
+  it('an open HIGH/CRITICAL case adds an OPEN_COMPLIANCE_CASE reason and raises score', () => {
+    const clean = scoreCustomerRisk(base(), cfg);
+    const withCase = scoreCustomerRisk(base({ openHighRiskCaseCount: 1 }), cfg);
+    expect(withCase.reasons.map((x) => x.code)).toContain('OPEN_COMPLIANCE_CASE');
+    expect(withCase.score).toBeGreaterThan(clean.score);
+  });
+
+  it('zero / omitted open cases is a no-op (back-compat with existing callers)', () => {
+    const omitted = scoreCustomerRisk(base(), cfg);
+    const zero = scoreCustomerRisk(base({ openHighRiskCaseCount: 0 }), cfg);
+    expect(omitted.score).toBe(zero.score);
+    expect(zero.reasons.map((x) => x.code)).not.toContain('OPEN_COMPLIANCE_CASE');
+  });
+
+  it('the open-case contribution is capped and never alone forces PROHIBITED', () => {
+    const r = scoreCustomerRisk(base({ openHighRiskCaseCount: 10 }), cfg);
+    const caseReason = r.reasons.find((x) => x.code === 'OPEN_COMPLIANCE_CASE');
+    expect(caseReason?.weight).toBeLessThanOrEqual(40);
+    expect(r.level).not.toBe('PROHIBITED');
+  });
 });

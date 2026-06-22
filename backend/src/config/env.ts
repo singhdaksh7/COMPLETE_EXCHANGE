@@ -201,6 +201,25 @@ export const envSchema = z
   // retentionUntil for audit; records are NEVER auto-deleted by this code.
   COMPLIANCE_RECORD_RETENTION_YEARS: z.coerce.number().int().min(1).max(25).default(5),
 
+  // ---- COMPLIANCE MONITORING (Stage 5.2) ----
+  // Rule thresholds for the suspicious-transaction monitoring engine. These are
+  // detection-only heuristics: alerts/cases are created but trading/withdrawals
+  // are NEVER blocked by this engine. All amounts are in the asset's human unit.
+  // Lookback window (days) for the windowed rules (structuring, abnormal volume,
+  // repeated failed withdrawals, rapid deposit->withdrawal correlation).
+  COMPLIANCE_MONITORING_LOOKBACK_DAYS: z.coerce.number().int().min(1).max(90).default(7),
+  // A single crypto withdrawal at/above this human amount is high-value.
+  COMPLIANCE_MONITORING_HIGH_VALUE_WITHDRAWAL: z.coerce.number().min(0).default(10000),
+  // Repeated FAILED/REJECTED withdrawals in the window at/above this count.
+  COMPLIANCE_MONITORING_FAILED_WITHDRAWAL_COUNT: z.coerce.number().int().min(1).default(3),
+  // Rapid deposit -> withdrawal correlation window (minutes).
+  COMPLIANCE_MONITORING_RAPID_WINDOW_MINUTES: z.coerce.number().int().min(1).default(60),
+  // Structuring: >= COUNT transfers each strictly below BAND within the window.
+  COMPLIANCE_MONITORING_STRUCTURING_BAND: z.coerce.number().min(0).default(10000),
+  COMPLIANCE_MONITORING_STRUCTURING_COUNT: z.coerce.number().int().min(2).default(3),
+  // Abnormal trading: summed quote-amount in the window at/above this value.
+  COMPLIANCE_MONITORING_ABNORMAL_TRADING_VOLUME: z.coerce.number().min(0).default(100000),
+
   // ---- INR DEPOSITS / RAZORPAY ----
   // Provider selection. 'mock' is a fully-offline deterministic stub used in dev
   // and tests; 'live' talks to the real Razorpay API and REQUIRES real keys.

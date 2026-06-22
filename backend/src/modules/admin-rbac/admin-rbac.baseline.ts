@@ -35,6 +35,14 @@ export const ADMIN_PERMISSIONS: PermissionDef[] = [
   { code: 'compliance.screening.run', description: 'Run a screening check for a user' },
   { code: 'compliance.screening.review', description: 'Decide (approve / reject / false-positive) a screening check' },
   { code: 'compliance.screening.override', description: 'Approve KYC despite an unresolved screening hit' },
+  // Suspicious-transaction monitoring + STR case workflow (Stage 5.2).
+  { code: 'compliance.case.view', description: 'View compliance monitoring cases' },
+  { code: 'compliance.case.manage', description: 'Create / update / note / change status of compliance cases' },
+  { code: 'compliance.case.assign', description: 'Assign a compliance case to an admin' },
+  { code: 'compliance.alert.view', description: 'View suspicious-activity alerts' },
+  { code: 'compliance.alert.manage', description: 'Link / change status of suspicious-activity alerts' },
+  { code: 'compliance.monitoring.run', description: 'Run the suspicious-transaction monitoring engine' },
+  { code: 'compliance.str.export', description: 'Export an STR draft (internal, not filed)' },
   { code: 'notifications.view', description: 'View notification delivery logs' },
   { code: 'deposit.view', description: 'View crypto/INR deposits' },
   { code: 'withdrawal.view', description: 'View withdrawals' },
@@ -104,6 +112,9 @@ export const ADMIN_ROLES: RoleDef[] = [
       'risk.manage',
       'compliance.view',
       'compliance.screening.view',
+      // Monitoring (Stage 5.2): FINANCE has read-only case + alert visibility.
+      'compliance.case.view',
+      'compliance.alert.view',
       'operations.view',
       // Ops oversight: FINANCE acts as the operations admin and sees the full
       // Ops Center including health + risk signals.
@@ -128,6 +139,15 @@ export const ADMIN_ROLES: RoleDef[] = [
       'compliance.screening.view',
       'compliance.screening.run',
       'compliance.screening.review',
+      // Monitoring + STR cases (Stage 5.2): full case/alert handling, run the
+      // engine, export STR drafts.
+      'compliance.case.view',
+      'compliance.case.manage',
+      'compliance.case.assign',
+      'compliance.alert.view',
+      'compliance.alert.manage',
+      'compliance.monitoring.run',
+      'compliance.str.export',
       'user.view',
       'operations.view',
       // Compliance admin: sees the ops center + risk alerts (not health-only).

@@ -7,6 +7,7 @@ import { recordAudit } from '../../lib/audit';
 import { encryptPII } from '../../lib/encryption';
 import { notificationService } from '../notification/notification.service';
 import { complianceRepository } from './compliance.repository';
+import { monitoringRepository } from './monitoring.repository';
 import { getLivenessProvider } from './liveness';
 import { getScreeningProvider } from './screening';
 import {
@@ -400,7 +401,11 @@ export const complianceService = {
   ) {
     const profile = await complianceRepository.findProfile(userId);
     if (!profile) throw new NotFoundError('Compliance profile not found');
-    const rejectionCount = await complianceRepository.countRejections(userId);
+    const [rejectionCount, openHighRiskCaseCount] = await Promise.all([
+      complianceRepository.countRejections(userId),
+      // Stage 5.2: open HIGH/CRITICAL monitoring cases feed the risk score.
+      monitoringRepository.countOpenHighRiskCases(userId),
+    ]);
 
     const result = scoreCustomerRisk(
       {
@@ -415,6 +420,7 @@ export const complianceService = {
         rejectionCount,
         adminFlag: opts.adminFlag ?? 'NONE',
         geoCaptured: profile.geoCaptureStatus === 'CAPTURED' || profile.geoCaptureStatus === 'PARTIAL',
+        openHighRiskCaseCount,
       },
       {
         requireLiveness: config.compliance.requireLiveness,

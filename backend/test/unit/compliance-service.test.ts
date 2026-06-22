@@ -30,6 +30,14 @@ vi.mock('../../src/modules/compliance/screening.repository', () => ({
   },
 }));
 
+// Stage 5.2: recomputeRisk now reads open HIGH/CRITICAL case count from the
+// monitoring repository. Mock it so the existing risk path stays DB-free.
+vi.mock('../../src/modules/compliance/monitoring.repository', () => ({
+  monitoringRepository: {
+    countOpenHighRiskCases: vi.fn().mockResolvedValue(0),
+  },
+}));
+
 vi.mock('../../src/modules/notification/notification.service', () => ({
   notificationService: { notify: vi.fn() },
 }));

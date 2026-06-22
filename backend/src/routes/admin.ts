@@ -13,6 +13,7 @@ import { adminReportsRouter } from '../modules/reports/reports.admin.routes';
 import { adminNotificationRouter } from '../modules/notification/notification.admin.routes';
 import { adminSystemRouter } from '../modules/system/system.routes';
 import { adminComplianceRouter } from '../modules/compliance/compliance.admin.routes';
+import { adminComplianceCasesRouter } from '../modules/compliance/compliance.cases.admin.routes';
 import { healthRouter } from '../modules/health/health.routes';
 
 /**
@@ -46,6 +47,10 @@ adminApiRouter.use('/reports', adminReportsRouter);
 adminApiRouter.use('/notifications', adminNotificationRouter);
 adminApiRouter.use('/system', adminSystemRouter);
 adminApiRouter.use('/compliance', adminComplianceRouter);
+// Stage 5.2 — suspicious-transaction monitoring + STR case workflow. Mounted at
+// the same prefix; route paths (/cases, /alerts, /monitoring) don't collide with
+// the Stage 5.0/5.1 router (/users, /screening).
+adminApiRouter.use('/compliance', adminComplianceCasesRouter);
 adminApiRouter.use('/users', adminUsersRouter);
 
 // Future admin modules (each behind admin RBAC):

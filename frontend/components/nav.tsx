@@ -382,6 +382,7 @@ export function AdminNav() {
     { href: '/admin/kyc', label: 'KYC Verification' },
     { href: '/admin/compliance', label: 'Compliance' },
     { href: '/admin/compliance/users', label: 'Compliance review' },
+    { href: '/admin/compliance/cases', label: 'Compliance cases' },
     { href: '/admin/deposits', label: 'Deposits queue' },
     { href: '/admin/withdrawals', label: 'Withdrawals queue' },
     { href: '/admin/conversions', label: 'Conversions ledger' },
