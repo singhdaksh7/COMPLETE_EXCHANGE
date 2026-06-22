@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { tokenStore } from './tokenStore';
+import { setUnauthorizedHandler } from '@/api/client';
 import { userApi } from '@/api/userApi';
 import type { PublicUser } from '@/types/api';
 
@@ -49,6 +50,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       active = false;
     };
   }, [refreshUser]);
+
+  // A failed token refresh anywhere in the app drops us to logged-out state; the
+  // root navigator then redirects to the login screen.
+  useEffect(() => {
+    setUnauthorizedHandler(() => setUser(null));
+    return () => setUnauthorizedHandler(null);
+  }, []);
 
   const login = useCallback(async (email: string, password: string) => {
     const res = await userApi.login({ email, password });

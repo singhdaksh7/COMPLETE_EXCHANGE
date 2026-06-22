@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { AsyncBoundary, Card, H1, Muted, Screen } from '@/components/ui';
+import { useRouter } from 'expo-router';
+import { AsyncBoundary, Card, EmptyState, H1, Muted, Screen } from '@/components/ui';
 import { useApi } from '@/hooks/useApi';
 import { userApi } from '@/api/userApi';
 import { colors, font, radius, spacing } from '@/theme';
@@ -8,6 +9,7 @@ import { fmtNum } from '@/utils/format';
 import type { WalletOverview } from '@/types/api';
 
 export default function PortfolioScreen() {
+  const router = useRouter();
   const { data, loading, error, reload } = useApi<WalletOverview>(
     () => userApi.walletOverview().then((r) => r.data),
     [],
@@ -30,7 +32,13 @@ export default function PortfolioScreen() {
               <Text style={styles.count}>{ov.balances.length}</Text>
             </Card>
             {ov.balances.length === 0 ? (
-              <Muted>You have no balances yet.</Muted>
+              <EmptyState
+                icon="wallet-outline"
+                title="No balances yet"
+                hint="Deposit crypto or INR to fund your account, then start trading."
+                actionLabel="Make a deposit"
+                onAction={() => router.push('/deposit')}
+              />
             ) : (
               ov.balances.map((b) => (
                 <Card key={b.asset}>

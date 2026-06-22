@@ -6,6 +6,8 @@ import { useAuth } from '@/store/auth';
 import { actionErrorMessage } from '@/api/client';
 import { colors, spacing } from '@/theme';
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export default function RegisterScreen() {
   const { register } = useAuth();
   const router = useRouter();
@@ -15,6 +17,7 @@ export default function RegisterScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<boolean>(false);
+  const emailValid = EMAIL_RE.test(email.trim());
 
   const onSubmit = async () => {
     setError(null);
@@ -54,14 +57,29 @@ export default function RegisterScreen() {
     <Screen contentStyle={{ justifyContent: 'center', flexGrow: 1 }}>
       <H1>Create account</H1>
       <Muted>Trade crypto on EXORA staging.</Muted>
-      <Input label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" placeholder="you@example.com" />
-      <Input label="Password" value={password} onChangeText={setPassword} secureTextEntry placeholder="At least 8 characters" />
+      <Input
+        label="Email"
+        value={email}
+        onChangeText={setEmail}
+        keyboardType="email-address"
+        autoComplete="email"
+        placeholder="you@example.com"
+        error={email.length > 0 && !emailValid ? 'Enter a valid email' : null}
+      />
+      <Input
+        label="Password"
+        value={password}
+        onChangeText={setPassword}
+        secureTextEntry
+        placeholder="At least 8 characters"
+        error={password.length > 0 && password.length < 8 ? 'Minimum 8 characters' : null}
+      />
       <Input label="Phone (optional)" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="+91…" />
 
       {error ? <Text style={{ color: colors.down }}>{error}</Text> : null}
 
       <View style={{ marginTop: spacing.sm }}>
-        <Button title="Create account" onPress={onSubmit} loading={busy} disabled={!email || password.length < 8} />
+        <Button title="Create account" onPress={onSubmit} loading={busy} disabled={!emailValid || password.length < 8} icon="person-add-outline" />
       </View>
 
       <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: spacing.lg }}>

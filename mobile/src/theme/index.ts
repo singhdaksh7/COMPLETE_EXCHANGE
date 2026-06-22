@@ -13,11 +13,23 @@ export const colors = {
   muted2: '#5C6673',
   brand: '#F5C242', // EXORA gold
   brandDim: '#8a6f25',
+  brandSoft: 'rgba(245,194,66,0.12)',
   up: '#16C784',
+  upSoft: 'rgba(22,199,132,0.12)',
   down: '#EA3943',
+  downSoft: 'rgba(234,57,67,0.12)',
   info: '#3B82F6',
   warn: '#F59E0B',
   overlay: 'rgba(0,0,0,0.6)',
+} as const;
+
+/** Subtle elevation shadow used on primary cards (cross-platform). */
+export const cardShadow = {
+  shadowColor: '#000',
+  shadowOpacity: 0.25,
+  shadowRadius: 12,
+  shadowOffset: { width: 0, height: 6 },
+  elevation: 4,
 } as const;
 
 export const spacing = {

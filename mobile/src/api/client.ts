@@ -78,6 +78,16 @@ export function apiFetch<T>(path: string, opts: FetchOpts = {}): Promise<Envelop
   return rawFetch<T>(path, opts);
 }
 
+/**
+ * Global "session expired" hook. The auth store registers a handler so a failed
+ * refresh drops the user to the login screen instead of leaving a half-broken
+ * authenticated state (real-device QA fix).
+ */
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(fn: (() => void) | null): void {
+  onUnauthorized = fn;
+}
+
 /** Exchange the stored refresh token for a fresh pair. */
 async function tryRefresh(): Promise<boolean> {
   const refresh = tokenStore.getRefresh();
@@ -91,6 +101,7 @@ async function tryRefresh(): Promise<boolean> {
     return true;
   } catch {
     await tokenStore.clear();
+    onUnauthorized?.();
     return false;
   }
 }

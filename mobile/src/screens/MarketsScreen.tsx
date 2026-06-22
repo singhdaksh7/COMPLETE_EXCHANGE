@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { AsyncBoundary, Card, H1, Screen } from '@/components/ui';
+import { AsyncBoundary, Card, H1, Input, Muted, Screen, SkeletonCard } from '@/components/ui';
 import { useApi } from '@/hooks/useApi';
 import { userApi } from '@/api/userApi';
 import { colors, font, spacing } from '@/theme';
@@ -19,49 +19,69 @@ async function loadMarkets(): Promise<{ market: Market; ticker: Ticker | null }[
 
 export default function MarketsScreen() {
   const router = useRouter();
+  const [q, setQ] = useState('');
   const { data, loading, error, reload } = useApi(loadMarkets, []);
+
+  const rows = useMemo(() => {
+    if (!data) return [];
+    const term = q.trim().toUpperCase();
+    return term ? data.filter((r) => r.market.symbol.toUpperCase().includes(term)) : data;
+  }, [data, q]);
 
   return (
     <Screen refreshing={loading} onRefresh={reload}>
       <H1>Markets</H1>
+      <Input placeholder="Search pairs (e.g. USDT)" value={q} onChangeText={setQ} />
       <AsyncBoundary
         loading={loading}
         error={error}
         data={data}
         onRetry={reload}
-        empty={{ title: 'No markets', hint: 'No trading pairs are available yet.' }}
+        skeleton={
+          <>
+            <SkeletonCard />
+            <SkeletonCard />
+          </>
+        }
+        empty={{ title: 'No markets', hint: 'No trading pairs are available yet.', icon: 'stats-chart-outline' }}
       >
-        {(rows) => (
-          <Card>
-            <View style={[styles.row, styles.headRow]}>
-              <Text style={styles.headText}>Pair</Text>
-              <Text style={styles.headText}>Last / 24h</Text>
-            </View>
-            {rows.map(({ market, ticker }) => {
-              const pct = ticker ? Number(ticker.priceChangePct) : 0;
-              return (
-                <Pressable
-                  key={market.symbol}
-                  style={styles.row}
-                  onPress={() => router.push(`/market/${encodeURIComponent(market.symbol)}`)}
-                >
-                  <View>
-                    <Text style={styles.sym}>{market.symbol}</Text>
-                    <Text style={styles.sub}>
-                      {market.baseAsset}/{market.quoteAsset}
-                    </Text>
-                  </View>
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <Text style={styles.price}>{fmtNum(ticker?.lastPrice ?? null, 4)}</Text>
-                    <Text style={{ color: pct >= 0 ? colors.up : colors.down, fontSize: font.xs, fontWeight: '700' }}>
-                      {ticker ? fmtPct(ticker.priceChangePct) : '—'}
-                    </Text>
-                  </View>
-                </Pressable>
-              );
-            })}
-          </Card>
-        )}
+        {() =>
+          rows.length === 0 ? (
+            <Card style={{ alignItems: 'center', paddingVertical: spacing.xl }}>
+              <Muted>No pairs match “{q}”.</Muted>
+            </Card>
+          ) : (
+            <Card>
+              <View style={[styles.row, styles.headRow]}>
+                <Text style={styles.headText}>Pair</Text>
+                <Text style={styles.headText}>Last / 24h</Text>
+              </View>
+              {rows.map(({ market, ticker }) => {
+                const pct = ticker ? Number(ticker.priceChangePct) : 0;
+                return (
+                  <Pressable
+                    key={market.symbol}
+                    style={styles.row}
+                    onPress={() => router.push(`/market/${encodeURIComponent(market.symbol)}`)}
+                  >
+                    <View>
+                      <Text style={styles.sym}>{market.symbol}</Text>
+                      <Text style={styles.sub}>
+                        {market.baseAsset}/{market.quoteAsset}
+                      </Text>
+                    </View>
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={styles.price}>{fmtNum(ticker?.lastPrice ?? null, 4)}</Text>
+                      <Text style={{ color: pct >= 0 ? colors.up : colors.down, fontSize: font.xs, fontWeight: '700' }}>
+                        {ticker ? fmtPct(ticker.priceChangePct) : '—'}
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </Card>
+          )
+        }
       </AsyncBoundary>
     </Screen>
   );

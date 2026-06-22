@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { AsyncBoundary, Button, Card, Muted, Screen, StatusBadge } from '@/components/ui';
+import { useRouter } from 'expo-router';
+import { AsyncBoundary, Button, Card, EmptyState, Muted, Screen, StatusBadge } from '@/components/ui';
 import { useApi } from '@/hooks/useApi';
 import { userApi } from '@/api/userApi';
 import { actionErrorMessage } from '@/api/client';
@@ -11,6 +12,7 @@ import type { Order } from '@/types/api';
 type Tab = 'open' | 'history';
 
 export default function OrdersScreen() {
+  const router = useRouter();
   const [tab, setTab] = useState<Tab>('open');
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -59,7 +61,13 @@ export default function OrdersScreen() {
       >
         {(orders) =>
           orders.length === 0 ? (
-            <Muted>No {tab === 'open' ? 'open orders' : 'order history'}.</Muted>
+            <EmptyState
+              icon="list-outline"
+              title={tab === 'open' ? 'No open orders' : 'No order history'}
+              hint={tab === 'open' ? 'Your active orders will appear here.' : 'Your past orders will appear here.'}
+              actionLabel="Browse markets"
+              onAction={() => router.push('/(tabs)/markets')}
+            />
           ) : (
             <>
               {orders.map((o) => (

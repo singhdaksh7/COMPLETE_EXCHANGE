@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { AsyncBoundary, Card, Muted, Row, Screen, StatusBadge } from '@/components/ui';
+import { useRouter } from 'expo-router';
+import { AsyncBoundary, Card, EmptyState, Muted, Row, Screen, StatusBadge } from '@/components/ui';
 import { useApi } from '@/hooks/useApi';
 import { userApi } from '@/api/userApi';
 import { colors, font, radius, spacing } from '@/theme';
@@ -9,6 +10,7 @@ import { fmtAmount, fmtDate, fmtNum, shortHash } from '@/utils/format';
 type Tab = 'deposits' | 'withdrawals' | 'trades';
 
 export default function TransactionsScreen() {
+  const router = useRouter();
   const [tab, setTab] = useState<Tab>('deposits');
 
   const { data, loading, error, reload } = useApi(async () => {
@@ -45,7 +47,16 @@ export default function TransactionsScreen() {
         {(d) => {
           if (d.kind === 'deposits') {
             const empty = d.crypto.length === 0 && d.inr.length === 0;
-            if (empty) return <Muted>No deposits yet.</Muted>;
+            if (empty)
+              return (
+                <EmptyState
+                  icon="arrow-down-circle-outline"
+                  title="No deposits yet"
+                  hint="Fund your account to start trading."
+                  actionLabel="Make a deposit"
+                  onAction={() => router.push('/deposit')}
+                />
+              );
             return (
               <>
                 {d.crypto.map((x) => (
@@ -70,7 +81,16 @@ export default function TransactionsScreen() {
             );
           }
           if (d.kind === 'withdrawals') {
-            if (d.items.length === 0) return <Muted>No withdrawals yet.</Muted>;
+            if (d.items.length === 0)
+              return (
+                <EmptyState
+                  icon="arrow-up-circle-outline"
+                  title="No withdrawals yet"
+                  hint="Your withdrawal requests will appear here."
+                  actionLabel="Withdraw"
+                  onAction={() => router.push('/withdraw')}
+                />
+              );
             return (
               <>
                 {d.items.map((w) => (
@@ -86,7 +106,16 @@ export default function TransactionsScreen() {
               </>
             );
           }
-          if (d.items.length === 0) return <Muted>No trades yet.</Muted>;
+          if (d.items.length === 0)
+            return (
+              <EmptyState
+                icon="swap-horizontal-outline"
+                title="No trades yet"
+                hint="Your executed trades will appear here."
+                actionLabel="Browse markets"
+                onAction={() => router.push('/(tabs)/markets')}
+              />
+            );
           return (
             <>
               {d.items.map((t) => (

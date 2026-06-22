@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { AsyncBoundary, Button, Card, Muted, Screen } from '@/components/ui';
+import { AsyncBoundary, Button, Card, EmptyState, Muted, Screen } from '@/components/ui';
 import { useApi } from '@/hooks/useApi';
 import { userApi } from '@/api/userApi';
 import { colors, font, spacing } from '@/theme';
@@ -47,11 +47,11 @@ export default function NotificationsScreen() {
         error={error}
         data={data}
         onRetry={reload}
-        empty={{ title: 'No notifications', hint: 'Account alerts will show up here.' }}
+        empty={{ title: 'No notifications', hint: 'Account alerts will show up here.', icon: 'notifications-outline' }}
       >
         {(list) =>
           list.items.length === 0 ? (
-            <Muted>You're all caught up.</Muted>
+            <EmptyState icon="notifications-outline" title="You're all caught up" hint="New account alerts will show up here." />
           ) : (
             <>
               {list.items.map((n) => (
