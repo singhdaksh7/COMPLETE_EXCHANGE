@@ -1,0 +1,34 @@
+{
+  "expo": {
+    "name": "EXORA",
+    "slug": "exora-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "exora",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": false,
+    "splash": {
+      "backgroundColor": "#0B0E11"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.exora.app"
+    },
+    "android": {
+      "package": "com.exora.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#0B0E11"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": ["expo-router", "expo-secure-store"],
+    "extra": {
+      "router": {
+        "origin": false
+      }
+    }
+  }
+}
