@@ -220,6 +220,16 @@ export const envSchema = z
   // Abnormal trading: summed quote-amount in the window at/above this value.
   COMPLIANCE_MONITORING_ABNORMAL_TRADING_VOLUME: z.coerce.number().min(0).default(100000),
 
+  // ---- WALLET RISK + TRAVEL RULE (Stage 5.3) ----
+  // Wallet-risk screening provider. Only the offline mock is implemented;
+  // 'external' is accepted for wiring but falls back to the mock so no real paid
+  // chain-analytics vendor is ever called from staging.
+  WALLET_RISK_PROVIDER: z.enum(['mock', 'external']).default('mock'),
+  // Travel Rule threshold (human asset units). Transfers at/above this amount
+  // require Travel Rule data collection (mock lifecycle only — never a real
+  // VASP/Travel Rule message is transmitted).
+  TRAVEL_RULE_THRESHOLD: z.coerce.number().min(0).default(1000),
+
   // ---- INR DEPOSITS / RAZORPAY ----
   // Provider selection. 'mock' is a fully-offline deterministic stub used in dev
   // and tests; 'live' talks to the real Razorpay API and REQUIRES real keys.

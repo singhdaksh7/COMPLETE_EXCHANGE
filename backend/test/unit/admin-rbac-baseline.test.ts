@@ -95,6 +95,44 @@ describe('admin RBAC baseline user-risk grants', () => {
     expect(readOnly?.permissions).not.toContain('compliance.monitoring.run');
   });
 
+  it('grants Stage 5.3 wallet-risk / Travel Rule permissions to the right roles', () => {
+    expect(ADMIN_PERMISSIONS.map((p) => p.code)).toEqual(
+      expect.arrayContaining([
+        'compliance.walletRisk.view',
+        'compliance.walletRisk.run',
+        'compliance.walletRisk.review',
+        'compliance.travelRule.view',
+        'compliance.travelRule.manage',
+        'compliance.travelRule.export',
+      ]),
+    );
+
+    const reviewer = ADMIN_ROLES.find((r) => r.name === 'KYC_REVIEWER');
+    const finance = ADMIN_ROLES.find((r) => r.name === 'FINANCE');
+    const support = ADMIN_ROLES.find((r) => r.name === 'SUPPORT');
+
+    expect(reviewer?.permissions).toEqual(
+      expect.arrayContaining([
+        'compliance.walletRisk.view',
+        'compliance.walletRisk.run',
+        'compliance.walletRisk.review',
+        'compliance.travelRule.view',
+        'compliance.travelRule.manage',
+        'compliance.travelRule.export',
+      ]),
+    );
+    expect(finance?.permissions).toEqual(
+      expect.arrayContaining(['compliance.walletRisk.view', 'compliance.travelRule.view']),
+    );
+    expect(finance?.permissions).not.toContain('compliance.walletRisk.run');
+    // Read-only roles inherit only the .view grants.
+    expect(support?.permissions).toEqual(
+      expect.arrayContaining(['compliance.walletRisk.view', 'compliance.travelRule.view']),
+    );
+    expect(support?.permissions).not.toContain('compliance.walletRisk.review');
+    expect(support?.permissions).not.toContain('compliance.travelRule.manage');
+  });
+
   it('defines system / ops-center permissions with the right role access (Stage 4.3)', () => {
     expect(ADMIN_PERMISSIONS.map((p) => p.code)).toEqual(
       expect.arrayContaining(['system.view', 'system.health.view', 'system.risk.view']),

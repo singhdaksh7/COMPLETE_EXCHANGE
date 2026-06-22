@@ -43,6 +43,16 @@ import type {
   ComplianceCasePriority,
   ComplianceCaseType,
   MonitoringRunResult,
+  WalletRiskCheckItem,
+  WalletRiskProfileItem,
+  WalletRiskProfileDetail,
+  WalletRiskSummary,
+  WalletRiskLevel,
+  WalletRiskStatus,
+  TravelRuleTransferItem,
+  TravelRuleStatus,
+  TravelRuleDirection,
+  TravelRuleAction,
 } from './types';
 
 function buildQuery(params: Record<string, string | number | undefined>): string {
@@ -450,4 +460,48 @@ export const adminApi = {
     adminApiFetch<MonitoringRunResult>('/compliance/monitoring/run', 'POST', {
       body: userId ? { userId } : {},
     }),
+
+  // ---- wallet risk + Travel Rule (Stage 5.3) ----
+  walletRiskSummary: () =>
+    adminApiFetch<WalletRiskSummary>('/compliance/wallet-risk/summary', 'GET'),
+
+  walletRiskProfiles: (params: { level?: WalletRiskLevel; status?: WalletRiskStatus; cursor?: string; limit?: number } = {}) =>
+    adminApiFetch<{ items: WalletRiskProfileItem[]; nextCursor: string | null }>(
+      `/compliance/wallet-risk/profiles${buildQuery({ limit: 50, ...params })}`,
+      'GET',
+    ),
+
+  walletRiskProfile: (profileId: string) =>
+    adminApiFetch<WalletRiskProfileDetail>(`/compliance/wallet-risk/profiles/${profileId}`, 'GET'),
+
+  walletRiskChecks: (params: { userId?: string; status?: WalletRiskStatus; chain?: string; address?: string; cursor?: string; limit?: number } = {}) =>
+    adminApiFetch<{ items: WalletRiskCheckItem[]; nextCursor: string | null }>(
+      `/compliance/wallet-risk/checks${buildQuery({ limit: 50, ...params })}`,
+      'GET',
+    ),
+
+  walletRiskRun: (body: { chain: string; address: string; userId?: string; direction?: TravelRuleDirection }) =>
+    adminApiFetch<{ check: WalletRiskCheckItem; profileId: string; created: boolean }>(
+      '/compliance/wallet-risk/run',
+      'POST',
+      { body },
+    ),
+
+  walletRiskReview: (checkId: string, body: { decision: WalletRiskStatus; level?: WalletRiskLevel; note?: string }) =>
+    adminApiFetch<WalletRiskCheckItem>(`/compliance/wallet-risk/checks/${checkId}/review`, 'POST', { body }),
+
+  travelRuleTransfers: (params: { status?: TravelRuleStatus; direction?: TravelRuleDirection; userId?: string; cursor?: string; limit?: number } = {}) =>
+    adminApiFetch<{ items: TravelRuleTransferItem[]; nextCursor: string | null }>(
+      `/compliance/travel-rule${buildQuery({ limit: 50, ...params })}`,
+      'GET',
+    ),
+
+  travelRuleTransfer: (transferId: string) =>
+    adminApiFetch<TravelRuleTransferItem>(`/compliance/travel-rule/${transferId}`, 'GET'),
+
+  travelRuleAction: (transferId: string, body: { action: TravelRuleAction; note?: string; exemptedReason?: string }) =>
+    adminApiFetch<TravelRuleTransferItem>(`/compliance/travel-rule/${transferId}/status`, 'POST', { body }),
+
+  travelRuleExport: (transferId: string) =>
+    adminDownload(`/compliance/travel-rule/${transferId}/export`, `travel-rule-mock-${transferId}.json`),
 };

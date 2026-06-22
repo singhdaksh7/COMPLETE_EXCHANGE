@@ -14,6 +14,7 @@ import { adminNotificationRouter } from '../modules/notification/notification.ad
 import { adminSystemRouter } from '../modules/system/system.routes';
 import { adminComplianceRouter } from '../modules/compliance/compliance.admin.routes';
 import { adminComplianceCasesRouter } from '../modules/compliance/compliance.cases.admin.routes';
+import { adminWalletRiskRouter } from '../modules/compliance/wallet-risk.admin.routes';
 import { healthRouter } from '../modules/health/health.routes';
 
 /**
@@ -51,6 +52,9 @@ adminApiRouter.use('/compliance', adminComplianceRouter);
 // the same prefix; route paths (/cases, /alerts, /monitoring) don't collide with
 // the Stage 5.0/5.1 router (/users, /screening).
 adminApiRouter.use('/compliance', adminComplianceCasesRouter);
+// Stage 5.3 — wallet risk + Travel Rule foundation. Same prefix; route paths
+// (/wallet-risk, /travel-rule) don't collide with the earlier compliance routers.
+adminApiRouter.use('/compliance', adminWalletRiskRouter);
 adminApiRouter.use('/users', adminUsersRouter);
 
 // Future admin modules (each behind admin RBAC):

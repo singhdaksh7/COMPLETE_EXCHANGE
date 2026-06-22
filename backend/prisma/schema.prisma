@@ -388,6 +388,8 @@ model User {
   screeningChecks    ScreeningCheck[]
   complianceAlerts   ComplianceAlert[]
   complianceCases    ComplianceCase[]
+  walletRiskChecks   WalletRiskCheck[]
+  travelRuleTransfers TravelRuleTransfer[]
 
   @@index([status])
   @@index([kycStatus])
@@ -1732,6 +1734,7 @@ enum ComplianceAlertType {
   REPEATED_FAILED_WITHDRAWALS
   HIGH_RISK_USER_ACTIVITY
   SCREENING_RISK_ACTIVITY
+  WALLET_RISK_ACTIVITY
 }
 
 /// Lifecycle of a single alert.
@@ -1863,4 +1866,184 @@ model ComplianceCaseEvent {
 
   @@index([caseId, createdAt])
   @@map("compliance_case_events")
+}
+
+// ============================================================================
+// WALLET RISK + TRAVEL RULE FOUNDATION (Stage 5.3)
+//
+// Rule-based/mock only. These tables are ADDITIVE and DETECTION-ONLY: a
+// pluggable WalletRiskProvider (mock in staging) screens crypto addresses, and
+// TravelRuleTransfer records the data-collection lifecycle for transfers over a
+// threshold. NOTHING here performs real chain analytics, calls a paid vendor,
+// submits a real Travel Rule message, mutates the ledger/scanner/matching
+// engine, or changes withdrawal signing. Records are never auto-deleted.
+// ============================================================================
+
+/// Coarse wallet-risk grade returned by the (mock) provider.
+enum WalletRiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+/// Disposition of a wallet-risk check.
+enum WalletRiskStatus {
+  CLEAR
+  REVIEW_REQUIRED
+  BLOCKED
+  FAILED
+}
+
+/// Travel Rule data-collection lifecycle (mock — never a real FIU/VASP filing).
+enum TravelRuleStatus {
+  NOT_REQUIRED
+  REQUIRED
+  PENDING_INFO
+  READY
+  SENT_MOCK
+  FAILED
+  EXEMPTED
+}
+
+/// Direction of a transfer for Travel Rule / wallet-risk purposes.
+enum TravelRuleDirection {
+  INBOUND
+  OUTBOUND
+}
+
+/// Latest risk posture for a (chain,address) pair — one row per address, updated
+/// by each check. An admin may pin an `overriddenLevel`.
+model WalletRiskProfile {
+  id                  String           @id @default(uuid()) @db.Uuid
+  chain               String           @db.Citext
+  address             String
+  level               WalletRiskLevel  @default(LOW)
+  status              WalletRiskStatus @default(CLEAR)
+  score               Int              @default(0)
+  checkCount          Int              @default(0) @map("check_count")
+  categories          Json?
+  overriddenLevel     WalletRiskLevel? @map("overridden_level")
+  overriddenByAdminId String?          @map("overridden_by_admin_id") @db.Uuid
+  notes               String?
+  lastCheckId         String?          @map("last_check_id") @db.Uuid
+  firstSeenAt         DateTime         @default(now()) @map("first_seen_at")
+  lastScreenedAt      DateTime?        @map("last_screened_at")
+  createdAt           DateTime         @default(now()) @map("created_at")
+  updatedAt           DateTime         @updatedAt @map("updated_at")
+
+  checks WalletRiskCheck[]
+  events WalletRiskEvent[]
+
+  @@unique([chain, address])
+  @@index([level])
+  @@index([status])
+  @@map("wallet_risk_profiles")
+}
+
+/// One wallet-risk screening result. Idempotent on `dedupeKey`. Stores only a
+/// redacted provider summary + category labels — never raw vendor payloads.
+model WalletRiskCheck {
+  id                String              @id @default(uuid()) @db.Uuid
+  profileId         String?             @map("profile_id") @db.Uuid
+  userId            String?             @map("user_id") @db.Uuid
+  chain             String              @db.Citext
+  address           String
+  direction         TravelRuleDirection?
+  level             WalletRiskLevel     @default(LOW)
+  status            WalletRiskStatus    @default(CLEAR)
+  provider          String
+  providerMode      String              @map("provider_mode") // 'mock' | 'live'
+  score             Int                 @default(0)
+  summary           String?
+  categories        Json?
+  dedupeKey         String              @unique @map("dedupe_key")
+  withdrawalId      String?             @map("withdrawal_id") @db.Uuid
+  depositId         String?             @map("deposit_id") @db.Uuid
+  alertId           String?             @map("alert_id") @db.Uuid
+  caseId            String?             @map("case_id") @db.Uuid
+  reviewDecision    WalletRiskStatus?   @map("review_decision")
+  reviewNote        String?             @map("review_note")
+  reviewedByAdminId String?             @map("reviewed_by_admin_id") @db.Uuid
+  reviewedAt        DateTime?           @map("reviewed_at")
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+
+  profile WalletRiskProfile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  user    User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([chain, address])
+  @@index([status])
+  @@index([level])
+  @@map("wallet_risk_checks")
+}
+
+/// Append-only history of wallet-risk events for a profile (screened, reviewed,
+/// overridden, alert/case linked). Admin actor ids are plain uuids (no FK).
+model WalletRiskEvent {
+  id           String   @id @default(uuid()) @db.Uuid
+  profileId    String   @map("profile_id") @db.Uuid
+  action       String
+  actorAdminId String?  @map("actor_admin_id") @db.Uuid
+  metadata     Json?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  profile WalletRiskProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId, createdAt])
+  @@map("wallet_risk_events")
+}
+
+/// A counterparty VASP for Travel Rule purposes (mock directory).
+model TravelRuleCounterparty {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  vaspCode  String?  @map("vasp_code")
+  chain     String?  @db.Citext
+  address   String?
+  type      String?
+  notes     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  transfers TravelRuleTransfer[]
+
+  @@index([name])
+  @@map("travel_rule_counterparties")
+}
+
+/// Travel Rule data-collection record for a transfer over the threshold. This is
+/// a MOCK lifecycle: SENT_MOCK never transmits a real Travel Rule message.
+model TravelRuleTransfer {
+  id                  String              @id @default(uuid()) @db.Uuid
+  direction           TravelRuleDirection
+  status              TravelRuleStatus    @default(NOT_REQUIRED)
+  userId              String?             @map("user_id") @db.Uuid
+  chain               String              @db.Citext
+  asset               String              @db.Citext
+  amount              Decimal             @db.Decimal(38, 18)
+  thresholdAmount     Decimal?            @map("threshold_amount") @db.Decimal(38, 18)
+  counterpartyAddress String?             @map("counterparty_address")
+  counterpartyId      String?             @map("counterparty_id") @db.Uuid
+  originatorName      String?             @map("originator_name")
+  beneficiaryName     String?             @map("beneficiary_name")
+  withdrawalId        String?             @map("withdrawal_id") @db.Uuid
+  depositId           String?             @map("deposit_id") @db.Uuid
+  dedupeKey           String              @unique @map("dedupe_key")
+  infoCollectedAt     DateTime?           @map("info_collected_at")
+  sentMockAt          DateTime?           @map("sent_mock_at")
+  exemptedReason      String?             @map("exempted_reason")
+  reviewedByAdminId   String?             @map("reviewed_by_admin_id") @db.Uuid
+  notes               String?
+  createdAt           DateTime            @default(now()) @map("created_at")
+  updatedAt           DateTime            @updatedAt @map("updated_at")
+
+  user         User?                   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  counterparty TravelRuleCounterparty? @relation(fields: [counterpartyId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([direction])
+  @@index([userId, createdAt])
+  @@map("travel_rule_transfers")
 }

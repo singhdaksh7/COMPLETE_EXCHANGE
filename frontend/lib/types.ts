@@ -1241,3 +1241,98 @@ export interface MonitoringRunResult {
   casesCreated: number;
   alertsLinked: number;
 }
+
+// ---- Stage 5.3: wallet risk + Travel Rule ----
+export type WalletRiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+export type WalletRiskStatus = 'CLEAR' | 'REVIEW_REQUIRED' | 'BLOCKED' | 'FAILED';
+export type TravelRuleStatus =
+  | 'NOT_REQUIRED'
+  | 'REQUIRED'
+  | 'PENDING_INFO'
+  | 'READY'
+  | 'SENT_MOCK'
+  | 'FAILED'
+  | 'EXEMPTED';
+export type TravelRuleDirection = 'INBOUND' | 'OUTBOUND';
+
+export interface WalletRiskCheckItem {
+  id: string;
+  profileId: string | null;
+  userId: string | null;
+  chain: string;
+  address: string;
+  direction: TravelRuleDirection | null;
+  level: WalletRiskLevel;
+  status: WalletRiskStatus;
+  provider: string;
+  providerMode: string;
+  score: number;
+  summary: string | null;
+  categories: unknown;
+  alertId: string | null;
+  caseId: string | null;
+  reviewDecision: WalletRiskStatus | null;
+  reviewNote: string | null;
+  reviewedByAdminId: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+}
+
+export interface WalletRiskProfileItem {
+  id: string;
+  chain: string;
+  address: string;
+  level: WalletRiskLevel;
+  status: WalletRiskStatus;
+  score: number;
+  checkCount: number;
+  categories: unknown;
+  overriddenLevel: WalletRiskLevel | null;
+  notes: string | null;
+  lastScreenedAt: string | null;
+  createdAt: string;
+}
+
+export interface WalletRiskEventItem {
+  id: string;
+  action: string;
+  actorAdminId: string | null;
+  metadata: unknown;
+  createdAt: string;
+}
+
+export interface WalletRiskProfileDetail extends WalletRiskProfileItem {
+  checks: WalletRiskCheckItem[];
+  events: WalletRiskEventItem[];
+}
+
+export interface WalletRiskSummary {
+  highRiskProfiles: number;
+  blockedProfiles: number;
+  reviewRequiredChecks: number;
+  pendingTravelRule: number;
+}
+
+export interface TravelRuleTransferItem {
+  id: string;
+  direction: TravelRuleDirection;
+  status: TravelRuleStatus;
+  userId: string | null;
+  chain: string;
+  asset: string;
+  amount: string;
+  thresholdAmount: string | null;
+  counterpartyAddress: string | null;
+  counterpartyId: string | null;
+  originatorName: string | null;
+  beneficiaryName: string | null;
+  infoCollectedAt: string | null;
+  sentMockAt: string | null;
+  exemptedReason: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  counterparty?: { id: string; name: string } | null;
+}
+
+export type TravelRuleAction = 'COLLECTED' | 'EXEMPTED' | 'SENT_MOCK' | 'REQUEST_INFO';

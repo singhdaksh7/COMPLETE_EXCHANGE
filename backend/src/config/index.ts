@@ -115,6 +115,13 @@ export const config = {
       structuringCount: env.COMPLIANCE_MONITORING_STRUCTURING_COUNT,
       abnormalTradingVolume: env.COMPLIANCE_MONITORING_ABNORMAL_TRADING_VOLUME,
     },
+    // Wallet risk + Travel Rule foundation (Stage 5.3). Detection/mock only.
+    walletRisk: {
+      provider: env.WALLET_RISK_PROVIDER,
+    },
+    travelRule: {
+      threshold: env.TRAVEL_RULE_THRESHOLD,
+    },
   },
 
   razorpay: {

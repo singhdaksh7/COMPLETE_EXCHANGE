@@ -43,6 +43,13 @@ export const ADMIN_PERMISSIONS: PermissionDef[] = [
   { code: 'compliance.alert.manage', description: 'Link / change status of suspicious-activity alerts' },
   { code: 'compliance.monitoring.run', description: 'Run the suspicious-transaction monitoring engine' },
   { code: 'compliance.str.export', description: 'Export an STR draft (internal, not filed)' },
+  // Wallet risk + Travel Rule foundation (Stage 5.3).
+  { code: 'compliance.walletRisk.view', description: 'View wallet-risk checks and profiles' },
+  { code: 'compliance.walletRisk.run', description: 'Run a wallet-risk check for an address' },
+  { code: 'compliance.walletRisk.review', description: 'Review / override a wallet-risk result' },
+  { code: 'compliance.travelRule.view', description: 'View Travel Rule transfer records' },
+  { code: 'compliance.travelRule.manage', description: 'Change Travel Rule status (collected / exempted / mock-sent)' },
+  { code: 'compliance.travelRule.export', description: 'Export a Travel Rule mock packet (internal, not transmitted)' },
   { code: 'notifications.view', description: 'View notification delivery logs' },
   { code: 'deposit.view', description: 'View crypto/INR deposits' },
   { code: 'withdrawal.view', description: 'View withdrawals' },
@@ -115,6 +122,9 @@ export const ADMIN_ROLES: RoleDef[] = [
       // Monitoring (Stage 5.2): FINANCE has read-only case + alert visibility.
       'compliance.case.view',
       'compliance.alert.view',
+      // Wallet risk + Travel Rule (Stage 5.3): read-only visibility.
+      'compliance.walletRisk.view',
+      'compliance.travelRule.view',
       'operations.view',
       // Ops oversight: FINANCE acts as the operations admin and sees the full
       // Ops Center including health + risk signals.
@@ -148,6 +158,13 @@ export const ADMIN_ROLES: RoleDef[] = [
       'compliance.alert.manage',
       'compliance.monitoring.run',
       'compliance.str.export',
+      // Wallet risk + Travel Rule (Stage 5.3): full handling.
+      'compliance.walletRisk.view',
+      'compliance.walletRisk.run',
+      'compliance.walletRisk.review',
+      'compliance.travelRule.view',
+      'compliance.travelRule.manage',
+      'compliance.travelRule.export',
       'user.view',
       'operations.view',
       // Compliance admin: sees the ops center + risk alerts (not health-only).

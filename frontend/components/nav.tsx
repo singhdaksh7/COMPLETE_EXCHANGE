@@ -383,6 +383,8 @@ export function AdminNav() {
     { href: '/admin/compliance', label: 'Compliance' },
     { href: '/admin/compliance/users', label: 'Compliance review' },
     { href: '/admin/compliance/cases', label: 'Compliance cases' },
+    { href: '/admin/compliance/wallet-risk', label: 'Wallet risk' },
+    { href: '/admin/compliance/travel-rule', label: 'Travel Rule' },
     { href: '/admin/deposits', label: 'Deposits queue' },
     { href: '/admin/withdrawals', label: 'Withdrawals queue' },
     { href: '/admin/conversions', label: 'Conversions ledger' },
