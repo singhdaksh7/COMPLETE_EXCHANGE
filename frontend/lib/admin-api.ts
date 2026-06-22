@@ -75,6 +75,24 @@ import type {
   FiuDraftStatus,
   FiuReportScopeType,
   FiuExportEventItem,
+  AmlPolicyListItem,
+  AmlPolicyDetail,
+  AmlRule,
+  AmlRuleType,
+  AmlRuleSeverity,
+  AmlRuleAction,
+  AmlEvaluationResult,
+  WorkspaceSummary,
+  ComplianceTaskListItem,
+  ComplianceTaskDetail,
+  ComplianceTaskType,
+  ComplianceTaskStatus,
+  ComplianceTaskPriority,
+  ComplianceTaskEventItem,
+  AmlChecklistTemplate,
+  ComplianceApprovalItem,
+  ComplianceApprovalType,
+  ComplianceApprovalStatus,
 } from './types';
 
 function buildQuery(params: Record<string, string | number | undefined>): string {
@@ -593,4 +611,50 @@ export const adminApi = {
   fiuReportExport: (reportId: string) => adminDownload(`/compliance/fiu/draft-reports/${reportId}/export`, `fiu-draft-${reportId}.json`),
   fiuExportEvents: (params: { cursor?: string; limit?: number } = {}) =>
     adminApiFetch<{ items: FiuExportEventItem[]; nextCursor: string | null }>(`/compliance/fiu/exports${buildQuery({ limit: 50, ...params })}`, 'GET'),
+
+  // ---- AML policy + compliance workspace (Stage 5.7) ----
+  amlPolicies: () => adminApiFetch<{ items: AmlPolicyListItem[] }>('/compliance/aml/policies', 'GET'),
+  amlPolicy: (policyId: string) => adminApiFetch<AmlPolicyDetail>(`/compliance/aml/policies/${policyId}`, 'GET'),
+  amlPolicyCreate: (body: { version: string; name: string; description?: string }) =>
+    adminApiFetch<AmlPolicyListItem>('/compliance/aml/policies', 'POST', { body }),
+  amlPolicyActivate: (policyId: string) => adminApiFetch<AmlPolicyListItem>(`/compliance/aml/policies/${policyId}/activate`, 'POST'),
+  amlRuleCreate: (policyId: string, body: { ruleType: AmlRuleType; name: string; severity?: AmlRuleSeverity; action?: AmlRuleAction; conditionKey?: string; operator?: string; thresholdValue?: string; description?: string }) =>
+    adminApiFetch<AmlRule>(`/compliance/aml/policies/${policyId}/rules`, 'POST', { body }),
+  amlRulePatch: (ruleId: string, body: Partial<{ name: string; severity: AmlRuleSeverity; action: AmlRuleAction; conditionKey: string; operator: string; thresholdValue: string; enabled: boolean }>) =>
+    adminApiFetch<AmlRule>(`/compliance/aml/rules/${ruleId}`, 'PATCH', { body }),
+  amlEvaluate: (body: { policyId?: string; context: Record<string, unknown> }) =>
+    adminApiFetch<AmlEvaluationResult>('/compliance/aml/evaluate', 'POST', { body }),
+
+  workspaceSummary: () => adminApiFetch<WorkspaceSummary>('/compliance/workspace/summary', 'GET'),
+  workspaceTasks: (params: { status?: ComplianceTaskStatus; type?: ComplianceTaskType; assignedToAdminId?: string; cursor?: string; limit?: number } = {}) =>
+    adminApiFetch<{ items: ComplianceTaskListItem[]; nextCursor: string | null }>(`/compliance/workspace/tasks${buildQuery({ limit: 50, ...params })}`, 'GET'),
+  workspaceTask: (taskId: string) => adminApiFetch<ComplianceTaskDetail>(`/compliance/workspace/tasks/${taskId}`, 'GET'),
+  workspaceTaskCreate: (body: { type: ComplianceTaskType; title: string; description?: string; priority?: ComplianceTaskPriority; slaMinutes?: number; scopeUserId?: string; caseId?: string; alertId?: string; walletRiskCheckId?: string; fiuReportId?: string; evidencePackId?: string }) =>
+    adminApiFetch<ComplianceTaskDetail>('/compliance/workspace/tasks', 'POST', { body }),
+  workspaceTaskAssign: (taskId: string, adminId: string | null) =>
+    adminApiFetch<ComplianceTaskDetail>(`/compliance/workspace/tasks/${taskId}/assign`, 'POST', { body: { adminId } }),
+  workspaceTaskStatus: (taskId: string, body: { status: ComplianceTaskStatus; note?: string }) =>
+    adminApiFetch<ComplianceTaskDetail>(`/compliance/workspace/tasks/${taskId}/status`, 'POST', { body }),
+  workspaceTaskComment: (taskId: string, body: string) =>
+    adminApiFetch<ComplianceTaskDetail>(`/compliance/workspace/tasks/${taskId}/comment`, 'POST', { body: { body } }),
+  workspaceTaskEvents: (taskId: string) => adminApiFetch<{ items: ComplianceTaskEventItem[] }>(`/compliance/workspace/tasks/${taskId}/events`, 'GET'),
+
+  checklistTemplates: (taskType?: ComplianceTaskType) =>
+    adminApiFetch<{ items: AmlChecklistTemplate[] }>(`/compliance/workspace/checklists/templates${taskType ? `?taskType=${taskType}` : ''}`, 'GET'),
+  checklistTemplateCreate: (body: { taskType: ComplianceTaskType; name: string; version?: string; items: Array<{ key: string; label: string; required?: boolean }>; requiredForCompletion?: boolean }) =>
+    adminApiFetch<AmlChecklistTemplate>('/compliance/workspace/checklists/templates', 'POST', { body }),
+  taskChecklist: (taskId: string) =>
+    adminApiFetch<{ taskId: string; templates: AmlChecklistTemplate[]; responses: Array<{ id: string; templateId: string | null; answers: unknown; completed: boolean }> }>(`/compliance/workspace/tasks/${taskId}/checklist`, 'GET'),
+  taskChecklistSave: (taskId: string, body: { templateId?: string; answers: Array<{ key: string; value: unknown; note?: string }>; complete?: boolean }) =>
+    adminApiFetch<unknown>(`/compliance/workspace/tasks/${taskId}/checklist`, 'POST', { body }),
+
+  approvals: (params: { status?: ComplianceApprovalStatus; approvalType?: ComplianceApprovalType; cursor?: string; limit?: number } = {}) =>
+    adminApiFetch<{ items: ComplianceApprovalItem[]; nextCursor: string | null }>(`/compliance/workspace/approvals${buildQuery({ limit: 50, ...params })}`, 'GET'),
+  approval: (approvalId: string) => adminApiFetch<ComplianceApprovalItem>(`/compliance/workspace/approvals/${approvalId}`, 'GET'),
+  approvalCreate: (body: { approvalType: ComplianceApprovalType; title: string; reason?: string; targetType?: string; targetId?: string; taskId?: string }) =>
+    adminApiFetch<ComplianceApprovalItem>('/compliance/workspace/approvals', 'POST', { body }),
+  approvalApprove: (approvalId: string, note?: string) =>
+    adminApiFetch<ComplianceApprovalItem>(`/compliance/workspace/approvals/${approvalId}/approve`, 'POST', { body: { note } }),
+  approvalReject: (approvalId: string, note?: string) =>
+    adminApiFetch<ComplianceApprovalItem>(`/compliance/workspace/approvals/${approvalId}/reject`, 'POST', { body: { note } }),
 };

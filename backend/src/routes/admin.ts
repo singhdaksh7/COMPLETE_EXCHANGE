@@ -17,6 +17,7 @@ import { adminComplianceCasesRouter } from '../modules/compliance/compliance.cas
 import { adminWalletRiskRouter } from '../modules/compliance/wallet-risk.admin.routes';
 import { adminEvidenceRouter } from '../modules/compliance/evidence.admin.routes';
 import { adminFiuRouter } from '../modules/compliance/fiu.admin.routes';
+import { adminAmlRouter } from '../modules/compliance/aml.admin.routes';
 import { adminTaxRouter } from '../modules/tax/tax.admin.routes';
 import { adminLegalRouter } from '../modules/legal/legal.admin.routes';
 import { healthRouter } from '../modules/health/health.routes';
@@ -65,6 +66,9 @@ adminApiRouter.use('/compliance', adminWalletRiskRouter);
 adminApiRouter.use('/compliance', adminEvidenceRouter);
 // Stage 5.6 — FIU draft reporting (paths under /compliance/fiu).
 adminApiRouter.use('/compliance', adminFiuRouter);
+// Stage 5.7 — AML policy engine + compliance-officer workspace (paths under
+// /compliance/aml and /compliance/workspace).
+adminApiRouter.use('/compliance', adminAmlRouter);
 // Stage 5.5 — tax/TDS (calculation-only) + legal document admin.
 adminApiRouter.use('/tax', adminTaxRouter);
 adminApiRouter.use('/legal', adminLegalRouter);

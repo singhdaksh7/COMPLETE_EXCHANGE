@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense } from 'react';
+import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -25,6 +25,12 @@ function DetailInner() {
   const validateMut = useMutation({ mutationFn: () => adminApi.fiuReportValidate(reportId), onSuccess: invalidate });
   const exportMut = useMutation({ mutationFn: () => adminApi.fiuReportExport(reportId) });
   const archiveMut = useMutation({ mutationFn: () => adminApi.fiuReportStatus(reportId, { status: 'ARCHIVED' }), onSuccess: invalidate });
+  const [taskMsg, setTaskMsg] = useState<string | null>(null);
+  const taskMut = useMutation({
+    mutationFn: (scopeUserId: string | null) =>
+      adminApi.workspaceTaskCreate({ type: 'FIU_DRAFT_REVIEW', title: 'Review FIU draft report', fiuReportId: reportId, scopeUserId: scopeUserId ?? undefined, slaMinutes: 1440, priority: 'HIGH' }),
+    onSuccess: () => setTaskMsg('Review task created in the compliance workspace.'),
+  });
 
   if (!ready) return null;
 
@@ -60,7 +66,9 @@ function DetailInner() {
                 <Button onClick={() => validateMut.mutate()} disabled={validateMut.isPending}>Validate</Button>
                 <Button variant="secondary" onClick={() => exportMut.mutate()} disabled={exportMut.isPending || !canExport}>Export draft JSON</Button>
                 <Button variant="danger" onClick={() => archiveMut.mutate()} disabled={archiveMut.isPending}>Archive</Button>
+                <Button variant="secondary" onClick={() => taskMut.mutate(r.scope.userId)} disabled={taskMut.isPending}>Create review task</Button>
               </div>
+              {taskMsg && <p className="mt-2 text-[11px] text-up">{taskMsg} <Link href="/admin/compliance/workspace" className="underline">Open workspace</Link></p>}
               {!canExport && <p className="mt-2 text-[11px] text-muted">Validate with zero ERROR issues before export.</p>}
             </Card>
 

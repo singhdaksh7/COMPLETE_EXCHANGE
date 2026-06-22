@@ -72,6 +72,20 @@ export const ADMIN_PERMISSIONS: PermissionDef[] = [
   { code: 'compliance.fiuReport.validate', description: 'Validate an FIU draft report' },
   { code: 'compliance.fiuReport.export', description: 'Export an FIU draft report (internal, not submitted)' },
   { code: 'compliance.fiuReport.manage', description: 'Change FIU draft report status' },
+  // AML policy engine + compliance-officer workspace (Stage 5.7).
+  { code: 'compliance.amlPolicy.view', description: 'View AML policies and rules' },
+  { code: 'compliance.amlPolicy.manage', description: 'Create / edit AML policies and rules' },
+  { code: 'compliance.amlPolicy.activate', description: 'Activate an AML policy version' },
+  { code: 'compliance.workspace.view', description: 'View the compliance officer workspace' },
+  { code: 'compliance.task.view', description: 'View compliance tasks' },
+  { code: 'compliance.task.manage', description: 'Create / update compliance tasks' },
+  { code: 'compliance.task.assign', description: 'Assign compliance tasks' },
+  { code: 'compliance.checklist.view', description: 'View AML review checklists' },
+  { code: 'compliance.checklist.manage', description: 'Create checklist templates / save responses' },
+  { code: 'compliance.approval.view', description: 'View maker-checker approval requests' },
+  { code: 'compliance.approval.create', description: 'Create a maker-checker approval request' },
+  { code: 'compliance.approval.decide', description: 'Approve / reject a maker-checker request' },
+  { code: 'compliance.sla.view', description: 'View compliance SLA tracking' },
   { code: 'notifications.view', description: 'View notification delivery logs' },
   { code: 'deposit.view', description: 'View crypto/INR deposits' },
   { code: 'withdrawal.view', description: 'View withdrawals' },
@@ -156,6 +170,10 @@ export const ADMIN_ROLES: RoleDef[] = [
       'tax.tds.view',
       'tax.statement.view',
       'tax.statement.generate',
+      // AML workspace (Stage 5.7): FINANCE gets read-only dashboard + SLA oversight,
+      // no AML policy management.
+      'compliance.workspace.view',
+      'compliance.sla.view',
       'operations.view',
       // Ops oversight: FINANCE acts as the operations admin and sees the full
       // Ops Center including health + risk signals.
@@ -212,6 +230,19 @@ export const ADMIN_ROLES: RoleDef[] = [
       'compliance.fiuReport.validate',
       'compliance.fiuReport.export',
       'compliance.fiuReport.manage',
+      // AML workspace (Stage 5.7): compliance officer handles tasks/checklists and
+      // is the MAKER for approvals. Policy activate + approval decide stay
+      // SUPER_ADMIN-only (the senior/checker role) for maker-checker separation.
+      'compliance.amlPolicy.view',
+      'compliance.workspace.view',
+      'compliance.task.view',
+      'compliance.task.manage',
+      'compliance.task.assign',
+      'compliance.checklist.view',
+      'compliance.checklist.manage',
+      'compliance.approval.view',
+      'compliance.approval.create',
+      'compliance.sla.view',
       'user.view',
       'operations.view',
       // Compliance admin: sees the ops center + risk alerts (not health-only).

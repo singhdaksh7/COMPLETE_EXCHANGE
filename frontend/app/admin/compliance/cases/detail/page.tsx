@@ -70,6 +70,12 @@ function DetailInner() {
     mutationFn: () => adminApi.complianceCaseExportStr(caseId),
     onError: (e) => setMsg(errorMessage(e)),
   });
+  const taskMut = useMutation({
+    mutationFn: (scopeUserId: string) =>
+      adminApi.workspaceTaskCreate({ type: 'STR_CASE_REVIEW', title: 'Review STR case', caseId, scopeUserId, slaMinutes: 1440, priority: 'HIGH' }),
+    onSuccess: () => setMsg('Review task created in the compliance workspace.'),
+    onError: (e) => setMsg(errorMessage(e)),
+  });
 
   if (!ready) return null;
 
@@ -91,9 +97,12 @@ function DetailInner() {
             <Section
               title="Case"
               action={
-                <Button variant="secondary" onClick={() => exportMut.mutate()} disabled={exportMut.isPending}>
-                  {exportMut.isPending ? 'Exporting…' : 'Export STR draft (JSON)'}
-                </Button>
+                <div className="flex gap-2">
+                  <Button variant="secondary" onClick={() => taskMut.mutate(c.userId)} disabled={taskMut.isPending}>Create review task</Button>
+                  <Button variant="secondary" onClick={() => exportMut.mutate()} disabled={exportMut.isPending}>
+                    {exportMut.isPending ? 'Exporting…' : 'Export STR draft (JSON)'}
+                  </Button>
+                </div>
               }
             >
               <div className="grid grid-cols-2 gap-y-2 text-sm sm:grid-cols-3">

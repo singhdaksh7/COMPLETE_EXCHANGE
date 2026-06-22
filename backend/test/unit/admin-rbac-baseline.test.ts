@@ -211,6 +211,40 @@ describe('admin RBAC baseline user-risk grants', () => {
     expect(support?.permissions).not.toContain('tax.statement.generate');
   });
 
+  it('grants Stage 5.7 AML policy / workspace permissions to the right roles', () => {
+    expect(ADMIN_PERMISSIONS.map((p) => p.code)).toEqual(
+      expect.arrayContaining([
+        'compliance.amlPolicy.view', 'compliance.amlPolicy.manage', 'compliance.amlPolicy.activate',
+        'compliance.workspace.view', 'compliance.task.view', 'compliance.task.manage', 'compliance.task.assign',
+        'compliance.checklist.view', 'compliance.checklist.manage',
+        'compliance.approval.view', 'compliance.approval.create', 'compliance.approval.decide', 'compliance.sla.view',
+      ]),
+    );
+
+    const reviewer = ADMIN_ROLES.find((r) => r.name === 'KYC_REVIEWER');
+    const finance = ADMIN_ROLES.find((r) => r.name === 'FINANCE');
+    const support = ADMIN_ROLES.find((r) => r.name === 'SUPPORT');
+
+    // KYC_REVIEWER is the MAKER: task manage + approval create, but NOT decide and
+    // NOT policy activate/manage (maker-checker separation; senior = SUPER_ADMIN).
+    expect(reviewer?.permissions).toEqual(
+      expect.arrayContaining(['compliance.workspace.view', 'compliance.task.manage', 'compliance.task.assign', 'compliance.checklist.manage', 'compliance.approval.create']),
+    );
+    expect(reviewer?.permissions).not.toContain('compliance.approval.decide');
+    expect(reviewer?.permissions).not.toContain('compliance.amlPolicy.activate');
+    expect(reviewer?.permissions).not.toContain('compliance.amlPolicy.manage');
+
+    // FINANCE: read-only workspace + SLA oversight only.
+    expect(finance?.permissions).toEqual(expect.arrayContaining(['compliance.workspace.view', 'compliance.sla.view']));
+    expect(finance?.permissions).not.toContain('compliance.task.manage');
+    expect(finance?.permissions).not.toContain('compliance.amlPolicy.manage');
+
+    // Read-only roles inherit only .view grants.
+    expect(support?.permissions).toEqual(expect.arrayContaining(['compliance.amlPolicy.view', 'compliance.task.view', 'compliance.approval.view', 'compliance.sla.view']));
+    expect(support?.permissions).not.toContain('compliance.task.manage');
+    expect(support?.permissions).not.toContain('compliance.approval.decide');
+  });
+
   it('defines system / ops-center permissions with the right role access (Stage 4.3)', () => {
     expect(ADMIN_PERMISSIONS.map((p) => p.code)).toEqual(
       expect.arrayContaining(['system.view', 'system.health.view', 'system.risk.view']),

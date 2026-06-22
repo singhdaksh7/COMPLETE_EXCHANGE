@@ -390,6 +390,8 @@ export function AdminNav() {
     { href: '/admin/compliance/evidence-packs', label: 'Evidence packs' },
     { href: '/admin/compliance/retention', label: 'Retention' },
     { href: '/admin/compliance/fiu', label: 'FIU drafts' },
+    { href: '/admin/compliance/aml', label: 'AML policies' },
+    { href: '/admin/compliance/workspace', label: 'Workspace' },
     { href: '/admin/tax', label: 'Tax / TDS' },
     { href: '/admin/legal', label: 'Legal docs' },
     { href: '/admin/deposits', label: 'Deposits queue' },

@@ -396,6 +396,7 @@ model User {
   taxStatements      TaxStatement[]
   legalAcceptances   UserLegalAcceptance[]
   fiuDraftReports    FiuDraftReport[]
+  complianceTasks    ComplianceTask[]
 
   @@index([status])
   @@index([kycStatus])
@@ -2530,4 +2531,273 @@ model FiuReportExportEvent {
   @@index([reportId])
   @@index([reportType, createdAt])
   @@map("fiu_report_export_events")
+}
+
+// ============================================================================
+// AML POLICY ENGINE + COMPLIANCE OFFICER WORKSPACE (Stage 5.7)
+//
+// Internal-only AML policy configuration + a compliance-officer task workspace,
+// review checklists, and maker-checker approvals. ADDITIVE and staging-safe: the
+// policy engine is REVIEW-ONLY (it returns recommended actions and may create
+// internal tasks/alerts idempotently — it never moves money, submits a report,
+// or deletes a record). Admin actor ids are plain uuids (no FK to Admin).
+// ============================================================================
+
+enum AmlPolicyStatus {
+  DRAFT
+  ACTIVE
+  DISABLED
+  ARCHIVED
+}
+
+enum AmlRuleType {
+  TRANSACTION_MONITORING
+  WALLET_RISK
+  USER_RISK
+  KYC
+  FIU_DRAFT
+  TAX_LEGAL
+  MANUAL
+}
+
+enum AmlRuleSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum AmlRuleAction {
+  FLAG_ONLY
+  CREATE_ALERT
+  CREATE_CASE
+  REQUIRE_REVIEW
+  ESCALATE
+}
+
+enum ComplianceTaskType {
+  KYC_REVIEW
+  SCREENING_REVIEW
+  STR_CASE_REVIEW
+  WALLET_RISK_REVIEW
+  TRAVEL_RULE_REVIEW
+  FIU_DRAFT_REVIEW
+  TAX_LEGAL_REVIEW
+  GENERAL_AML_REVIEW
+}
+
+enum ComplianceTaskStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_INFO
+  ESCALATED
+  COMPLETED
+  CANCELLED
+}
+
+enum ComplianceTaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ComplianceApprovalType {
+  FIU_DRAFT_EXPORT
+  CASE_STATUS_CHANGE
+  RISK_OVERRIDE
+  SCREENING_OVERRIDE
+  WALLET_RISK_OVERRIDE
+  LEGAL_POLICY_PUBLISH
+}
+
+enum ComplianceApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum SlaStatus {
+  ON_TRACK
+  AT_RISK
+  BREACHED
+  COMPLETED
+}
+
+/// A versioned AML policy. At most one row is ACTIVE at a time (enforced in the
+/// service). Holds the rule set the (review-only) engine evaluates.
+model AmlPolicyVersion {
+  id                 String          @id @default(uuid()) @db.Uuid
+  version            String          @unique
+  name               String
+  status             AmlPolicyStatus @default(DRAFT)
+  description        String?
+  activatedAt        DateTime?       @map("activated_at")
+  activatedByAdminId String?         @map("activated_by_admin_id") @db.Uuid
+  createdByAdminId   String?         @map("created_by_admin_id") @db.Uuid
+  createdAt          DateTime        @default(now()) @map("created_at")
+  updatedAt          DateTime        @updatedAt @map("updated_at")
+
+  rules AmlPolicyRule[]
+
+  @@index([status])
+  @@map("aml_policy_versions")
+}
+
+/// One AML rule: when `conditionKey <operator> thresholdValue` holds in the
+/// evaluation context, the engine RECOMMENDS `action` at `severity`.
+model AmlPolicyRule {
+  id             String          @id @default(uuid()) @db.Uuid
+  policyId       String          @map("policy_id") @db.Uuid
+  ruleType       AmlRuleType     @map("rule_type")
+  name           String
+  severity       AmlRuleSeverity @default(MEDIUM)
+  action         AmlRuleAction   @default(FLAG_ONLY)
+  conditionKey   String?         @map("condition_key") // dotted path into the context, e.g. "screening.sanctions"
+  operator       String?         // eq | neq | gte | lte | gt | lt | in | contains | exists
+  thresholdValue String?         @map("threshold_value")
+  enabled        Boolean         @default(true)
+  description    String?
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  policy AmlPolicyVersion @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@index([policyId])
+  @@index([ruleType])
+  @@map("aml_policy_rules")
+}
+
+/// A compliance-officer task. Links (by id, no hard FK) to the entity under
+/// review. SLA is tracked separately.
+model ComplianceTask {
+  id                String                 @id @default(uuid()) @db.Uuid
+  type              ComplianceTaskType
+  status            ComplianceTaskStatus   @default(OPEN)
+  priority          ComplianceTaskPriority @default(MEDIUM)
+  title             String
+  description       String?
+  assignedToAdminId String?                @map("assigned_to_admin_id") @db.Uuid
+  createdByAdminId  String?                @map("created_by_admin_id") @db.Uuid
+  dueAt             DateTime?              @map("due_at")
+  slaMinutes        Int?                   @map("sla_minutes")
+  scopeUserId       String?                @map("scope_user_id") @db.Uuid
+  caseId            String?                @map("case_id") @db.Uuid
+  alertId           String?                @map("alert_id") @db.Uuid
+  walletRiskCheckId String?                @map("wallet_risk_check_id") @db.Uuid
+  fiuReportId       String?                @map("fiu_report_id") @db.Uuid
+  evidencePackId    String?                @map("evidence_pack_id") @db.Uuid
+  dedupeKey         String?                @unique @map("dedupe_key")
+  completedAt       DateTime?              @map("completed_at")
+  createdAt         DateTime               @default(now()) @map("created_at")
+  updatedAt         DateTime               @updatedAt @map("updated_at")
+
+  user              User?                 @relation(fields: [scopeUserId], references: [id], onDelete: SetNull)
+  events            ComplianceTaskEvent[]
+  checklistResponses AmlChecklistResponse[]
+  sla               ComplianceSlaTracker?
+
+  @@index([status])
+  @@index([priority])
+  @@index([assignedToAdminId])
+  @@index([scopeUserId, createdAt])
+  @@map("compliance_tasks")
+}
+
+/// Append-only timeline for a compliance task.
+model ComplianceTaskEvent {
+  id           String   @id @default(uuid()) @db.Uuid
+  taskId       String   @map("task_id") @db.Uuid
+  action       String
+  actorAdminId String?  @map("actor_admin_id") @db.Uuid
+  metadata     Json?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  task ComplianceTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, createdAt])
+  @@map("compliance_task_events")
+}
+
+/// A reusable AML review checklist template per task type.
+model AmlChecklistTemplate {
+  id                     String             @id @default(uuid()) @db.Uuid
+  taskType               ComplianceTaskType @map("task_type")
+  name                   String
+  version                String             @default("v1")
+  items                  Json // [{ key, label, required }]
+  requiredForCompletion  Boolean            @default(false) @map("required_for_completion")
+  active                 Boolean            @default(true)
+  createdByAdminId       String?            @map("created_by_admin_id") @db.Uuid
+  createdAt              DateTime           @default(now()) @map("created_at")
+  updatedAt              DateTime           @updatedAt @map("updated_at")
+
+  responses AmlChecklistResponse[]
+
+  @@index([taskType, active])
+  @@map("aml_checklist_templates")
+}
+
+/// A reviewer's saved answers to a checklist for a task.
+model AmlChecklistResponse {
+  id                String   @id @default(uuid()) @db.Uuid
+  taskId            String   @map("task_id") @db.Uuid
+  templateId        String?  @map("template_id") @db.Uuid
+  answers           Json // [{ key, value, note? }]
+  completed         Boolean  @default(false)
+  completedByAdminId String? @map("completed_by_admin_id") @db.Uuid
+  completedAt       DateTime? @map("completed_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  task     ComplianceTask        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  template AmlChecklistTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@index([taskId])
+  @@map("aml_checklist_responses")
+}
+
+/// A maker-checker approval request for a sensitive compliance action. The maker
+/// (creator) can NEVER be the checker (decider) — enforced in the service.
+model ComplianceApprovalRequest {
+  id            String                   @id @default(uuid()) @db.Uuid
+  approvalType  ComplianceApprovalType   @map("approval_type")
+  status        ComplianceApprovalStatus @default(PENDING)
+  title         String
+  reason        String?
+  targetType    String?                  @map("target_type")
+  targetId      String?                  @map("target_id")
+  taskId        String?                  @map("task_id") @db.Uuid
+  makerAdminId  String                   @map("maker_admin_id") @db.Uuid
+  checkerAdminId String?                 @map("checker_admin_id") @db.Uuid
+  decisionNote  String?                  @map("decision_note")
+  decidedAt     DateTime?                @map("decided_at")
+  metadata      Json?
+  createdAt     DateTime                 @default(now()) @map("created_at")
+  updatedAt     DateTime                 @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([approvalType])
+  @@index([makerAdminId])
+  @@map("compliance_approval_requests")
+}
+
+/// SLA tracker for a task (review-only timing posture; never blocks anything).
+model ComplianceSlaTracker {
+  id          String    @id @default(uuid()) @db.Uuid
+  taskId      String    @unique @map("task_id") @db.Uuid
+  slaMinutes  Int       @map("sla_minutes")
+  startedAt   DateTime  @default(now()) @map("started_at")
+  dueAt       DateTime  @map("due_at")
+  status      SlaStatus @default(ON_TRACK)
+  breachedAt  DateTime? @map("breached_at")
+  completedAt DateTime? @map("completed_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  task ComplianceTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("compliance_sla_trackers")
 }

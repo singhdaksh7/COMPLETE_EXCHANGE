@@ -1603,3 +1603,137 @@ export interface FiuExportEventItem {
   adminId: string | null;
   createdAt: string;
 }
+
+// ---- Stage 5.7: AML policy + compliance workspace ----
+export type AmlPolicyStatus = 'DRAFT' | 'ACTIVE' | 'DISABLED' | 'ARCHIVED';
+export type AmlRuleType = 'TRANSACTION_MONITORING' | 'WALLET_RISK' | 'USER_RISK' | 'KYC' | 'FIU_DRAFT' | 'TAX_LEGAL' | 'MANUAL';
+export type AmlRuleSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+export type AmlRuleAction = 'FLAG_ONLY' | 'CREATE_ALERT' | 'CREATE_CASE' | 'REQUIRE_REVIEW' | 'ESCALATE';
+export type ComplianceTaskType = 'KYC_REVIEW' | 'SCREENING_REVIEW' | 'STR_CASE_REVIEW' | 'WALLET_RISK_REVIEW' | 'TRAVEL_RULE_REVIEW' | 'FIU_DRAFT_REVIEW' | 'TAX_LEGAL_REVIEW' | 'GENERAL_AML_REVIEW';
+export type ComplianceTaskStatus = 'OPEN' | 'IN_PROGRESS' | 'WAITING_INFO' | 'ESCALATED' | 'COMPLETED' | 'CANCELLED';
+export type ComplianceTaskPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+export type ComplianceApprovalType = 'FIU_DRAFT_EXPORT' | 'CASE_STATUS_CHANGE' | 'RISK_OVERRIDE' | 'SCREENING_OVERRIDE' | 'WALLET_RISK_OVERRIDE' | 'LEGAL_POLICY_PUBLISH';
+export type ComplianceApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+export type SlaStatus = 'ON_TRACK' | 'AT_RISK' | 'BREACHED' | 'COMPLETED';
+
+export interface AmlPolicyListItem {
+  id: string;
+  version: string;
+  name: string;
+  status: AmlPolicyStatus;
+  description: string | null;
+  activatedAt: string | null;
+  createdAt: string;
+  _count?: { rules: number };
+}
+
+export interface AmlRule {
+  id: string;
+  policyId: string;
+  ruleType: AmlRuleType;
+  name: string;
+  severity: AmlRuleSeverity;
+  action: AmlRuleAction;
+  conditionKey: string | null;
+  operator: string | null;
+  thresholdValue: string | null;
+  enabled: boolean;
+  description: string | null;
+}
+
+export interface AmlPolicyDetail extends AmlPolicyListItem {
+  rules: AmlRule[];
+}
+
+export interface AmlEvaluationResult {
+  policyId: string;
+  policyVersion: string;
+  reviewOnly: true;
+  context: unknown;
+  matchedCount: number;
+  highestSeverity: AmlRuleSeverity | null;
+  recommendedActions: AmlRuleAction[];
+  recommendations: Array<{ ruleId: string; ruleType: AmlRuleType; name: string; severity: AmlRuleSeverity; action: AmlRuleAction; matchedValue: unknown }>;
+}
+
+export interface WorkspaceSummary {
+  openTasks: number;
+  assignedToMe: number;
+  breachedSla: number;
+  highCritical: number;
+  pendingApprovals: number;
+  fiuNeedingReview: number;
+}
+
+export interface ComplianceTaskListItem {
+  id: string;
+  type: ComplianceTaskType;
+  status: ComplianceTaskStatus;
+  priority: ComplianceTaskPriority;
+  title: string;
+  assignedToAdminId: string | null;
+  scopeUserId: string | null;
+  email: string | null;
+  slaStatus: SlaStatus | null;
+  dueAt: string | null;
+  createdAt: string;
+}
+
+export interface ComplianceTaskEventItem {
+  id: string;
+  action: string;
+  actorAdminId: string | null;
+  metadata: unknown;
+  createdAt: string;
+}
+
+export interface ComplianceTaskDetail {
+  id: string;
+  type: ComplianceTaskType;
+  status: ComplianceTaskStatus;
+  priority: ComplianceTaskPriority;
+  title: string;
+  description: string | null;
+  assignedToAdminId: string | null;
+  scopeUserId: string | null;
+  caseId: string | null;
+  alertId: string | null;
+  walletRiskCheckId: string | null;
+  fiuReportId: string | null;
+  evidencePackId: string | null;
+  dueAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  liveSlaStatus: SlaStatus | null;
+  events: ComplianceTaskEventItem[];
+  checklistResponses: Array<{ id: string; templateId: string | null; answers: unknown; completed: boolean; createdAt: string }>;
+  sla: { slaMinutes: number; dueAt: string; status: SlaStatus } | null;
+  user: { email: string } | null;
+}
+
+export interface AmlChecklistTemplate {
+  id: string;
+  taskType: ComplianceTaskType;
+  name: string;
+  version: string;
+  items: Array<{ key: string; label: string; required?: boolean }>;
+  requiredForCompletion: boolean;
+  active: boolean;
+  createdAt: string;
+}
+
+export interface ComplianceApprovalItem {
+  id: string;
+  approvalType: ComplianceApprovalType;
+  status: ComplianceApprovalStatus;
+  title: string;
+  reason: string | null;
+  targetType: string | null;
+  targetId: string | null;
+  taskId: string | null;
+  makerAdminId: string;
+  checkerAdminId: string | null;
+  decisionNote: string | null;
+  decidedAt: string | null;
+  createdAt: string;
+}
