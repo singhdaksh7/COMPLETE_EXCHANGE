@@ -390,6 +390,7 @@ model User {
   complianceCases    ComplianceCase[]
   walletRiskChecks   WalletRiskCheck[]
   travelRuleTransfers TravelRuleTransfer[]
+  complianceEvidencePacks ComplianceEvidencePack[]
 
   @@index([status])
   @@index([kycStatus])
@@ -2046,4 +2047,168 @@ model TravelRuleTransfer {
   @@index([direction])
   @@index([userId, createdAt])
   @@map("travel_rule_transfers")
+}
+
+// ============================================================================
+// RECORD RETENTION + COMPLIANCE EVIDENCE PACK (Stage 5.4)
+//
+// Audit-ready, JSON-first evidence packs that AGGREGATE existing compliance data
+// (Stage 5.0 KYC/risk, 5.1 screening, 5.2 alerts/cases, 5.3 wallet-risk/Travel
+// Rule) plus a record-retention review foundation. Everything is ADDITIVE and
+// READ-ONLY over the source tables: nothing here files an FIU report, deletes a
+// record, or mutates ledger / scanner / matching / withdrawal-signing state.
+// Packs store masked/minimized snapshots only — never secrets or raw PAN/Aadhaar.
+// ============================================================================
+
+/// What a compliance evidence pack covers.
+enum EvidencePackType {
+  USER_KYC
+  STR_CASE
+  WALLET_RISK
+  TRAVEL_RULE
+  FULL_USER_COMPLIANCE
+}
+
+/// Build lifecycle of an evidence pack.
+enum EvidencePackStatus {
+  QUEUED
+  BUILDING
+  READY
+  FAILED
+  EXPIRED
+}
+
+/// Output format. PDF is a labelled placeholder only (no real PDF rendering).
+enum EvidencePackFormat {
+  JSON
+  PDF_PLACEHOLDER
+}
+
+/// Whether a retention policy is currently in force.
+enum RetentionPolicyStatus {
+  ACTIVE
+  DISABLED
+}
+
+/// Lifecycle of a (review-only, non-destructive) retention review.
+enum RetentionReviewStatus {
+  PENDING
+  REVIEWED
+  ESCALATED
+}
+
+/// What kind of export an export-event records.
+enum ComplianceExportType {
+  EVIDENCE_PACK
+  USER_COMPLIANCE_EXPORT
+  CASE_EXPORT
+  RETENTION_REVIEW_EXPORT
+}
+
+/// One audit-ready evidence pack. `payload` holds the masked, secrets-free pack
+/// JSON; `checksum` is a SHA-256 over the canonical payload for tamper-evidence.
+model ComplianceEvidencePack {
+  id                 String             @id @default(uuid()) @db.Uuid
+  packType           EvidencePackType
+  status             EvidencePackStatus @default(QUEUED)
+  format             EvidencePackFormat @default(JSON)
+  label              String             @default("INTERNAL_COMPLIANCE_EVIDENCE_PACK_STAGING_ONLY")
+  title              String
+  summary            String?
+  scopeUserId        String?            @map("scope_user_id") @db.Uuid
+  scopeCaseId        String?            @map("scope_case_id") @db.Uuid
+  scopeRef           String?            @map("scope_ref") // wallet-risk profile id / travel-rule id / etc.
+  itemCount          Int                @default(0) @map("item_count")
+  checksum           String?
+  payload            Json?
+  error              String?
+  generatedByAdminId String?            @map("generated_by_admin_id") @db.Uuid
+  expiresAt          DateTime?          @map("expires_at")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+
+  user  User?                        @relation(fields: [scopeUserId], references: [id], onDelete: SetNull)
+  items ComplianceEvidencePackItem[]
+
+  @@index([packType])
+  @@index([status])
+  @@index([scopeUserId, createdAt])
+  @@map("compliance_evidence_packs")
+}
+
+/// A single masked snapshot inside a pack (one per source record/group).
+model ComplianceEvidencePackItem {
+  id        String   @id @default(uuid()) @db.Uuid
+  packId    String   @map("pack_id") @db.Uuid
+  itemType  String   @map("item_type") // KYC_PROFILE | SCREENING_CHECK | RISK_ASSESSMENT | ALERT | CASE | WALLET_RISK_CHECK | TRAVEL_RULE | AUDIT_LOG | ...
+  refId     String?  @map("ref_id")
+  title     String
+  data      Json
+  createdAt DateTime @default(now()) @map("created_at")
+
+  pack ComplianceEvidencePack @relation(fields: [packId], references: [id], onDelete: Cascade)
+
+  @@index([packId])
+  @@map("compliance_evidence_pack_items")
+}
+
+/// Record-retention policy per record type (review-only; NEVER auto-deletes).
+model RecordRetentionPolicy {
+  id                 String                @id @default(uuid()) @db.Uuid
+  recordType         String                @unique @map("record_type") // KYC | COMPLIANCE_EVIDENCE | STR_CASE | WALLET_RISK | TRAVEL_RULE | AUDIT_LOG | TAX_LEGAL
+  retentionYears     Int                   @map("retention_years")
+  status             RetentionPolicyStatus @default(ACTIVE)
+  description        String?
+  createdByAdminId   String?               @map("created_by_admin_id") @db.Uuid
+  createdAt          DateTime              @default(now()) @map("created_at")
+  updatedAt          DateTime              @updatedAt @map("updated_at")
+
+  reviews RecordRetentionReview[]
+
+  @@map("record_retention_policies")
+}
+
+/// A review pass over records under a policy. Counts only — no deletion. Status
+/// transitions PENDING -> REVIEWED / ESCALATED.
+model RecordRetentionReview {
+  id                   String                @id @default(uuid()) @db.Uuid
+  policyId             String?               @map("policy_id") @db.Uuid
+  recordType           String                @map("record_type")
+  status               RetentionReviewStatus @default(PENDING)
+  periodStart          DateTime?             @map("period_start")
+  periodEnd            DateTime?             @map("period_end")
+  eligibleCount        Int                   @default(0) @map("eligible_count")
+  retainedCount        Int                   @default(0) @map("retained_count")
+  nearingBoundaryCount Int                   @default(0) @map("nearing_boundary_count")
+  notes                String?
+  reviewedByAdminId    String?               @map("reviewed_by_admin_id") @db.Uuid
+  reviewedAt           DateTime?             @map("reviewed_at")
+  createdAt            DateTime              @default(now()) @map("created_at")
+  updatedAt            DateTime              @updatedAt @map("updated_at")
+
+  policy RecordRetentionPolicy? @relation(fields: [policyId], references: [id], onDelete: SetNull)
+
+  @@index([recordType])
+  @@index([status])
+  @@map("record_retention_reviews")
+}
+
+/// Append-only log of every compliance export (pack download, case export, etc.)
+/// for accountability. Carries references + checksum — never the payload.
+model ComplianceExportEvent {
+  id          String               @id @default(uuid()) @db.Uuid
+  exportType  ComplianceExportType
+  packId      String?              @map("pack_id") @db.Uuid
+  scopeUserId String?              @map("scope_user_id") @db.Uuid
+  scopeRef    String?              @map("scope_ref")
+  format      String?
+  checksum    String?
+  label       String               @default("INTERNAL_COMPLIANCE_EVIDENCE_PACK_STAGING_ONLY")
+  adminId     String?              @map("admin_id") @db.Uuid
+  createdAt   DateTime             @default(now()) @map("created_at")
+
+  @@index([exportType, createdAt])
+  @@index([packId])
+  @@index([scopeUserId, createdAt])
+  @@map("compliance_export_events")
 }

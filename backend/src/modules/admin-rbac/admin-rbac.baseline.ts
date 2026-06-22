@@ -50,6 +50,13 @@ export const ADMIN_PERMISSIONS: PermissionDef[] = [
   { code: 'compliance.travelRule.view', description: 'View Travel Rule transfer records' },
   { code: 'compliance.travelRule.manage', description: 'Change Travel Rule status (collected / exempted / mock-sent)' },
   { code: 'compliance.travelRule.export', description: 'Export a Travel Rule mock packet (internal, not transmitted)' },
+  // Record retention + compliance evidence packs (Stage 5.4).
+  { code: 'compliance.evidencePack.view', description: 'View compliance evidence packs' },
+  { code: 'compliance.evidencePack.generate', description: 'Generate a compliance evidence pack' },
+  { code: 'compliance.evidencePack.export', description: 'Export a compliance evidence pack (internal, not filed)' },
+  { code: 'compliance.retention.view', description: 'View record-retention policies and reviews' },
+  { code: 'compliance.retention.manage', description: 'Manage retention policies and review status' },
+  { code: 'compliance.exportEvent.view', description: 'View compliance export audit events' },
   { code: 'notifications.view', description: 'View notification delivery logs' },
   { code: 'deposit.view', description: 'View crypto/INR deposits' },
   { code: 'withdrawal.view', description: 'View withdrawals' },
@@ -125,6 +132,9 @@ export const ADMIN_ROLES: RoleDef[] = [
       // Wallet risk + Travel Rule (Stage 5.3): read-only visibility.
       'compliance.walletRisk.view',
       'compliance.travelRule.view',
+      // Retention oversight (Stage 5.4): read-only — no broad compliance export.
+      'compliance.retention.view',
+      'compliance.exportEvent.view',
       'operations.view',
       // Ops oversight: FINANCE acts as the operations admin and sees the full
       // Ops Center including health + risk signals.
@@ -165,6 +175,13 @@ export const ADMIN_ROLES: RoleDef[] = [
       'compliance.travelRule.view',
       'compliance.travelRule.manage',
       'compliance.travelRule.export',
+      // Evidence packs + retention (Stage 5.4): full compliance-reviewer handling.
+      'compliance.evidencePack.view',
+      'compliance.evidencePack.generate',
+      'compliance.evidencePack.export',
+      'compliance.retention.view',
+      'compliance.retention.manage',
+      'compliance.exportEvent.view',
       'user.view',
       'operations.view',
       // Compliance admin: sees the ops center + risk alerts (not health-only).

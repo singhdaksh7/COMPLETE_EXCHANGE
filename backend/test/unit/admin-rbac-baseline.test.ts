@@ -133,6 +133,47 @@ describe('admin RBAC baseline user-risk grants', () => {
     expect(support?.permissions).not.toContain('compliance.travelRule.manage');
   });
 
+  it('grants Stage 5.4 evidence-pack / retention permissions to the right roles', () => {
+    expect(ADMIN_PERMISSIONS.map((p) => p.code)).toEqual(
+      expect.arrayContaining([
+        'compliance.evidencePack.view',
+        'compliance.evidencePack.generate',
+        'compliance.evidencePack.export',
+        'compliance.retention.view',
+        'compliance.retention.manage',
+        'compliance.exportEvent.view',
+      ]),
+    );
+
+    const reviewer = ADMIN_ROLES.find((r) => r.name === 'KYC_REVIEWER');
+    const finance = ADMIN_ROLES.find((r) => r.name === 'FINANCE');
+    const support = ADMIN_ROLES.find((r) => r.name === 'SUPPORT');
+
+    // KYC_REVIEWER: full evidence-pack + retention handling.
+    expect(reviewer?.permissions).toEqual(
+      expect.arrayContaining([
+        'compliance.evidencePack.view',
+        'compliance.evidencePack.generate',
+        'compliance.evidencePack.export',
+        'compliance.retention.view',
+        'compliance.retention.manage',
+        'compliance.exportEvent.view',
+      ]),
+    );
+    // FINANCE: read-only retention oversight, NO broad compliance export/generate.
+    expect(finance?.permissions).toEqual(
+      expect.arrayContaining(['compliance.retention.view', 'compliance.exportEvent.view']),
+    );
+    expect(finance?.permissions).not.toContain('compliance.evidencePack.generate');
+    expect(finance?.permissions).not.toContain('compliance.evidencePack.export');
+    // Read-only roles inherit only the .view grants (VIEW_ONLY filter).
+    expect(support?.permissions).toEqual(
+      expect.arrayContaining(['compliance.evidencePack.view', 'compliance.retention.view', 'compliance.exportEvent.view']),
+    );
+    expect(support?.permissions).not.toContain('compliance.evidencePack.generate');
+    expect(support?.permissions).not.toContain('compliance.retention.manage');
+  });
+
   it('defines system / ops-center permissions with the right role access (Stage 4.3)', () => {
     expect(ADMIN_PERMISSIONS.map((p) => p.code)).toEqual(
       expect.arrayContaining(['system.view', 'system.health.view', 'system.risk.view']),

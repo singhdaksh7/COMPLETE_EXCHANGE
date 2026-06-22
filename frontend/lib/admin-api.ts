@@ -53,6 +53,14 @@ import type {
   TravelRuleStatus,
   TravelRuleDirection,
   TravelRuleAction,
+  EvidencePackListItem,
+  EvidencePackDetail,
+  EvidencePackType,
+  EvidencePackStatus,
+  RetentionPolicy,
+  RetentionReview,
+  RetentionReviewStatus,
+  ComplianceExportEventItem,
 } from './types';
 
 function buildQuery(params: Record<string, string | number | undefined>): string {
@@ -504,4 +512,41 @@ export const adminApi = {
 
   travelRuleExport: (transferId: string) =>
     adminDownload(`/compliance/travel-rule/${transferId}/export`, `travel-rule-mock-${transferId}.json`),
+
+  // ---- evidence packs + retention (Stage 5.4) ----
+  evidencePacks: (params: { packType?: EvidencePackType; status?: EvidencePackStatus; scopeUserId?: string; cursor?: string; limit?: number } = {}) =>
+    adminApiFetch<{ items: EvidencePackListItem[]; nextCursor: string | null }>(
+      `/compliance/evidence-packs${buildQuery({ limit: 50, ...params })}`,
+      'GET',
+    ),
+
+  evidencePack: (packId: string) =>
+    adminApiFetch<EvidencePackDetail>(`/compliance/evidence-packs/${packId}`, 'GET'),
+
+  evidencePackCreate: (body: { packType: EvidencePackType; userId?: string; caseId?: string; ref?: string; format?: 'JSON' | 'PDF_PLACEHOLDER' }) =>
+    adminApiFetch<EvidencePackDetail>('/compliance/evidence-packs', 'POST', { body }),
+
+  evidencePackExport: (packId: string) =>
+    adminDownload(`/compliance/evidence-packs/${packId}/export`, `evidence-pack-${packId}.json`),
+
+  retentionPolicies: () =>
+    adminApiFetch<{ items: RetentionPolicy[] }>('/compliance/retention/policies', 'GET'),
+
+  retentionPolicyUpsert: (body: { recordType: string; retentionYears: number; status?: 'ACTIVE' | 'DISABLED'; description?: string }) =>
+    adminApiFetch<RetentionPolicy>('/compliance/retention/policies', 'POST', { body }),
+
+  retentionReviews: (params: { recordType?: string; status?: RetentionReviewStatus; cursor?: string; limit?: number } = {}) =>
+    adminApiFetch<{ items: RetentionReview[]; nextCursor: string | null }>(
+      `/compliance/retention/reviews${buildQuery({ limit: 50, ...params })}`,
+      'GET',
+    ),
+
+  retentionReviewStatus: (reviewId: string, body: { status: 'REVIEWED' | 'ESCALATED'; notes?: string }) =>
+    adminApiFetch<RetentionReview>(`/compliance/retention/reviews/${reviewId}/status`, 'POST', { body }),
+
+  complianceExportEvents: (params: { cursor?: string; limit?: number } = {}) =>
+    adminApiFetch<{ items: ComplianceExportEventItem[]; nextCursor: string | null }>(
+      `/compliance/exports/events${buildQuery({ limit: 50, ...params })}`,
+      'GET',
+    ),
 };

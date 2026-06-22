@@ -15,6 +15,7 @@ import { adminSystemRouter } from '../modules/system/system.routes';
 import { adminComplianceRouter } from '../modules/compliance/compliance.admin.routes';
 import { adminComplianceCasesRouter } from '../modules/compliance/compliance.cases.admin.routes';
 import { adminWalletRiskRouter } from '../modules/compliance/wallet-risk.admin.routes';
+import { adminEvidenceRouter } from '../modules/compliance/evidence.admin.routes';
 import { healthRouter } from '../modules/health/health.routes';
 
 /**
@@ -55,6 +56,10 @@ adminApiRouter.use('/compliance', adminComplianceCasesRouter);
 // Stage 5.3 — wallet risk + Travel Rule foundation. Same prefix; route paths
 // (/wallet-risk, /travel-rule) don't collide with the earlier compliance routers.
 adminApiRouter.use('/compliance', adminWalletRiskRouter);
+// Stage 5.4 — compliance evidence packs + record retention. Same prefix; route
+// paths (/evidence-packs, /retention, /exports) don't collide with the earlier
+// compliance routers.
+adminApiRouter.use('/compliance', adminEvidenceRouter);
 adminApiRouter.use('/users', adminUsersRouter);
 
 // Future admin modules (each behind admin RBAC):

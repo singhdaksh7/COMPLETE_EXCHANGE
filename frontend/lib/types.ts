@@ -1336,3 +1336,96 @@ export interface TravelRuleTransferItem {
 }
 
 export type TravelRuleAction = 'COLLECTED' | 'EXEMPTED' | 'SENT_MOCK' | 'REQUEST_INFO';
+
+// ---- Stage 5.4: evidence packs + record retention ----
+export type EvidencePackType = 'USER_KYC' | 'STR_CASE' | 'WALLET_RISK' | 'TRAVEL_RULE' | 'FULL_USER_COMPLIANCE';
+export type EvidencePackStatus = 'QUEUED' | 'BUILDING' | 'READY' | 'FAILED' | 'EXPIRED';
+export type EvidencePackFormat = 'JSON' | 'PDF_PLACEHOLDER';
+export type RetentionPolicyStatus = 'ACTIVE' | 'DISABLED';
+export type RetentionReviewStatus = 'PENDING' | 'REVIEWED' | 'ESCALATED';
+export type ComplianceExportType = 'EVIDENCE_PACK' | 'USER_COMPLIANCE_EXPORT' | 'CASE_EXPORT' | 'RETENTION_REVIEW_EXPORT';
+
+export interface EvidencePackListItem {
+  id: string;
+  packType: EvidencePackType;
+  status: EvidencePackStatus;
+  format: EvidencePackFormat;
+  title: string;
+  summary: string | null;
+  label: string;
+  scopeUserId: string | null;
+  scopeCaseId: string | null;
+  scopeRef: string | null;
+  itemCount: number;
+  checksum: string | null;
+  createdAt: string;
+}
+
+export interface EvidencePackItem {
+  id: string;
+  itemType: string;
+  refId: string | null;
+  title: string;
+  data: unknown;
+  createdAt: string;
+}
+
+export interface EvidencePackDetail {
+  id: string;
+  packType: EvidencePackType;
+  status: EvidencePackStatus;
+  format: EvidencePackFormat;
+  label: string;
+  title: string;
+  summary: string | null;
+  scope: { userId: string | null; caseId: string | null; ref: string | null };
+  itemCount: number;
+  checksum: string | null;
+  error: string | null;
+  generatedByAdminId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  payload: unknown;
+  items: EvidencePackItem[];
+}
+
+export interface RetentionPolicy {
+  id: string;
+  recordType: string;
+  retentionYears: number;
+  status: RetentionPolicyStatus;
+  description: string | null;
+  createdByAdminId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RetentionReview {
+  id: string;
+  policyId: string | null;
+  recordType: string;
+  status: RetentionReviewStatus;
+  periodStart: string | null;
+  periodEnd: string | null;
+  eligibleCount: number;
+  retainedCount: number;
+  nearingBoundaryCount: number;
+  notes: string | null;
+  reviewedByAdminId: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ComplianceExportEventItem {
+  id: string;
+  exportType: ComplianceExportType;
+  packId: string | null;
+  scopeUserId: string | null;
+  scopeRef: string | null;
+  format: string | null;
+  checksum: string | null;
+  label: string;
+  adminId: string | null;
+  createdAt: string;
+}

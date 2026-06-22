@@ -9,7 +9,9 @@
     "icon": "./assets/icon.png",
     "newArchEnabled": false,
     "backgroundColor": "#0B0E11",
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.exora.mobile",
@@ -43,6 +45,9 @@
     "extra": {
       "router": {
         "origin": false
+      },
+      "eas": {
+        "projectId": "b073e686-38df-4a2f-a2a1-4b7cde726c92"
       }
     }
   }
