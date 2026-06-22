@@ -61,6 +61,20 @@ import type {
   RetentionReview,
   RetentionReviewStatus,
   ComplianceExportEventItem,
+  TaxRule,
+  TaxRuleStatus,
+  TaxEventType,
+  TdsRecordItem,
+  TaxStatementItem,
+  LegalDocument,
+  LegalDocumentType,
+  LegalAcceptanceItem,
+  FiuReportListItem,
+  FiuReportDetail,
+  FiuReportType,
+  FiuDraftStatus,
+  FiuReportScopeType,
+  FiuExportEventItem,
 } from './types';
 
 function buildQuery(params: Record<string, string | number | undefined>): string {
@@ -549,4 +563,34 @@ export const adminApi = {
       `/compliance/exports/events${buildQuery({ limit: 50, ...params })}`,
       'GET',
     ),
+
+  // ---- tax / legal (Stage 5.5) ----
+  taxRules: () => adminApiFetch<{ items: TaxRule[] }>('/tax/rules', 'GET'),
+  taxRuleUpsert: (body: { eventType: TaxEventType; name: string; rateBps: number; thresholdAmount?: number; status?: TaxRuleStatus; description?: string }) =>
+    adminApiFetch<TaxRule>('/tax/rules', 'POST', { body }),
+  taxTdsRecords: (params: { userId?: string; eventType?: TaxEventType; financialYear?: string; cursor?: string; limit?: number } = {}) =>
+    adminApiFetch<{ items: TdsRecordItem[]; nextCursor: string | null }>(`/tax/tds-records${buildQuery({ limit: 50, ...params })}`, 'GET'),
+  taxStatementsAdmin: (params: { userId?: string; cursor?: string; limit?: number } = {}) =>
+    adminApiFetch<{ items: TaxStatementItem[]; nextCursor: string | null }>(`/tax/statements${buildQuery({ limit: 50, ...params })}`, 'GET'),
+  taxStatementGenerate: (body: { userId: string; financialYear?: string; events?: Array<{ eventType: TaxEventType; grossAmount: number; asset?: string; sourceRef?: string }> }) =>
+    adminApiFetch<TaxStatementItem>('/tax/statements/generate', 'POST', { body }),
+  legalDocuments: (params: { type?: LegalDocumentType } = {}) =>
+    adminApiFetch<{ items: LegalDocument[] }>(`/legal/documents${buildQuery({ ...params })}`, 'GET'),
+  legalDocumentCreate: (body: { type: LegalDocumentType; version: string; title: string; content: string }) =>
+    adminApiFetch<LegalDocument>('/legal/documents', 'POST', { body }),
+  legalAcceptancesAdmin: (params: { userId?: string; documentType?: LegalDocumentType; cursor?: string; limit?: number } = {}) =>
+    adminApiFetch<{ items: LegalAcceptanceItem[]; nextCursor: string | null }>(`/legal/acceptances${buildQuery({ limit: 50, ...params })}`, 'GET'),
+
+  // ---- FIU draft reporting (Stage 5.6) ----
+  fiuReports: (params: { reportType?: FiuReportType; status?: FiuDraftStatus; scopeUserId?: string; cursor?: string; limit?: number } = {}) =>
+    adminApiFetch<{ items: FiuReportListItem[]; nextCursor: string | null }>(`/compliance/fiu/draft-reports${buildQuery({ limit: 50, ...params })}`, 'GET'),
+  fiuReport: (reportId: string) => adminApiFetch<FiuReportDetail>(`/compliance/fiu/draft-reports/${reportId}`, 'GET'),
+  fiuReportCreate: (body: { reportType: FiuReportType; scopeType: FiuReportScopeType; userId?: string; caseId?: string; evidencePackId?: string; narrative?: string }) =>
+    adminApiFetch<FiuReportDetail>('/compliance/fiu/draft-reports', 'POST', { body }),
+  fiuReportValidate: (reportId: string) => adminApiFetch<FiuReportDetail>(`/compliance/fiu/draft-reports/${reportId}/validate`, 'POST'),
+  fiuReportStatus: (reportId: string, body: { status: FiuDraftStatus }) =>
+    adminApiFetch<FiuReportListItem>(`/compliance/fiu/draft-reports/${reportId}/status`, 'POST', { body }),
+  fiuReportExport: (reportId: string) => adminDownload(`/compliance/fiu/draft-reports/${reportId}/export`, `fiu-draft-${reportId}.json`),
+  fiuExportEvents: (params: { cursor?: string; limit?: number } = {}) =>
+    adminApiFetch<{ items: FiuExportEventItem[]; nextCursor: string | null }>(`/compliance/fiu/exports${buildQuery({ limit: 50, ...params })}`, 'GET'),
 };

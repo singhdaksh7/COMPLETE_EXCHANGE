@@ -18,6 +18,8 @@ import {
   tradeRouter,
 } from '../modules/trading/trading.routes';
 import { notificationRouter } from '../modules/notification/notification.routes';
+import { legalRouter } from '../modules/legal/legal.routes';
+import { taxRouter } from '../modules/tax/tax.routes';
 import { healthRouter } from '../modules/health/health.routes';
 
 /**
@@ -50,3 +52,6 @@ apiRouter.use('/markets', marketRouter);
 apiRouter.use('/orders', orderRouter);
 apiRouter.use('/trades', tradeRouter);
 apiRouter.use('/notifications', notificationRouter);
+// Legal acceptance + tax/TDS calculation-only foundation (Stage 5.5).
+apiRouter.use('/legal', legalRouter);
+apiRouter.use('/tax', taxRouter);

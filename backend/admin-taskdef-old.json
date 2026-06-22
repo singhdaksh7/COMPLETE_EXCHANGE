@@ -1,9 +1,9 @@
 ﻿{
-    "taskDefinitionArn": "arn:aws:ecs:ap-south-1:279115897513:task-definition/cex-staging-admin:30",
+    "taskDefinitionArn": "arn:aws:ecs:ap-south-1:279115897513:task-definition/cex-staging-admin:31",
     "containerDefinitions": [
         {
             "name": "admin",
-            "image": "279115897513.dkr.ecr.ap-south-1.amazonaws.com/cex-staging-backend:stage-5-2-transaction-monitoring-v1",
+            "image": "279115897513.dkr.ecr.ap-south-1.amazonaws.com/cex-staging-backend:stage-5-3-wallet-risk-travel-rule-v1",
             "cpu": 0,
             "portMappings": [
                 {
@@ -286,7 +286,7 @@
     "taskRoleArn": "arn:aws:iam::279115897513:role/cex-staging-ecs-task",
     "executionRoleArn": "arn:aws:iam::279115897513:role/cex-staging-ecs-exec",
     "networkMode": "awsvpc",
-    "revision": 30,
+    "revision": 31,
     "volumes": [],
     "status": "ACTIVE",
     "requiresAttributes": [
@@ -335,6 +335,6 @@
     ],
     "cpu": "512",
     "memory": "1024",
-    "registeredAt": "2026-06-22T10:47:07.937000+05:30",
+    "registeredAt": "2026-06-22T12:30:26.954000+05:30",
     "registeredBy": "arn:aws:iam::279115897513:user/Devloper"
 }

@@ -1,0 +1,17 @@
+{
+    "containerOverrides":  [
+                               {
+                                   "environment":  [
+                                                       {
+                                                           "value":  "YES",
+                                                           "name":  "ALLOW_STAGING_RBAC_SEED"
+                                                       }
+                                                   ],
+                                   "command":  [
+                                                   "node",
+                                                   "dist/scripts/ensure-admin-rbac.js"
+                                               ],
+                                   "name":  "admin"
+                               }
+                           ]
+}

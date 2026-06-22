@@ -1,0 +1,12 @@
+{
+    "containerOverrides":  [
+                               {
+                                   "command":  [
+                                                   "sh",
+                                                   "-lc",
+                                                   "npx prisma migrate deploy"
+                                               ],
+                                   "name":  "api"
+                               }
+                           ]
+}

@@ -57,6 +57,21 @@ export const ADMIN_PERMISSIONS: PermissionDef[] = [
   { code: 'compliance.retention.view', description: 'View record-retention policies and reviews' },
   { code: 'compliance.retention.manage', description: 'Manage retention policies and review status' },
   { code: 'compliance.exportEvent.view', description: 'View compliance export audit events' },
+  // Tax / TDS + legal acceptance (Stage 5.5).
+  { code: 'tax.rule.view', description: 'View tax/TDS rules' },
+  { code: 'tax.rule.manage', description: 'Manage tax/TDS rules' },
+  { code: 'tax.tds.view', description: 'View TDS calculation records' },
+  { code: 'tax.statement.view', description: 'View tax statements' },
+  { code: 'tax.statement.generate', description: 'Generate a tax statement (calculation-only)' },
+  { code: 'legal.document.view', description: 'View legal document versions' },
+  { code: 'legal.document.manage', description: 'Publish legal document versions' },
+  { code: 'legal.acceptance.view', description: 'View user legal acceptance records' },
+  // FIU draft reporting (Stage 5.6).
+  { code: 'compliance.fiuReport.view', description: 'View FIU draft reports' },
+  { code: 'compliance.fiuReport.generate', description: 'Generate an FIU draft report' },
+  { code: 'compliance.fiuReport.validate', description: 'Validate an FIU draft report' },
+  { code: 'compliance.fiuReport.export', description: 'Export an FIU draft report (internal, not submitted)' },
+  { code: 'compliance.fiuReport.manage', description: 'Change FIU draft report status' },
   { code: 'notifications.view', description: 'View notification delivery logs' },
   { code: 'deposit.view', description: 'View crypto/INR deposits' },
   { code: 'withdrawal.view', description: 'View withdrawals' },
@@ -135,6 +150,12 @@ export const ADMIN_ROLES: RoleDef[] = [
       // Retention oversight (Stage 5.4): read-only — no broad compliance export.
       'compliance.retention.view',
       'compliance.exportEvent.view',
+      // Tax/TDS (Stage 5.5): FINANCE views rules + TDS, views/generates statements
+      // (calculation-only). Rule.manage stays SUPER_ADMIN-only.
+      'tax.rule.view',
+      'tax.tds.view',
+      'tax.statement.view',
+      'tax.statement.generate',
       'operations.view',
       // Ops oversight: FINANCE acts as the operations admin and sees the full
       // Ops Center including health + risk signals.
@@ -182,6 +203,15 @@ export const ADMIN_ROLES: RoleDef[] = [
       'compliance.retention.view',
       'compliance.retention.manage',
       'compliance.exportEvent.view',
+      // Legal (Stage 5.5): compliance reviewer reads documents + acceptances.
+      'legal.document.view',
+      'legal.acceptance.view',
+      // FIU draft reporting (Stage 5.6): view / generate / validate / export.
+      'compliance.fiuReport.view',
+      'compliance.fiuReport.generate',
+      'compliance.fiuReport.validate',
+      'compliance.fiuReport.export',
+      'compliance.fiuReport.manage',
       'user.view',
       'operations.view',
       // Compliance admin: sees the ops center + risk alerts (not health-only).

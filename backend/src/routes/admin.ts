@@ -16,6 +16,9 @@ import { adminComplianceRouter } from '../modules/compliance/compliance.admin.ro
 import { adminComplianceCasesRouter } from '../modules/compliance/compliance.cases.admin.routes';
 import { adminWalletRiskRouter } from '../modules/compliance/wallet-risk.admin.routes';
 import { adminEvidenceRouter } from '../modules/compliance/evidence.admin.routes';
+import { adminFiuRouter } from '../modules/compliance/fiu.admin.routes';
+import { adminTaxRouter } from '../modules/tax/tax.admin.routes';
+import { adminLegalRouter } from '../modules/legal/legal.admin.routes';
 import { healthRouter } from '../modules/health/health.routes';
 
 /**
@@ -60,6 +63,11 @@ adminApiRouter.use('/compliance', adminWalletRiskRouter);
 // paths (/evidence-packs, /retention, /exports) don't collide with the earlier
 // compliance routers.
 adminApiRouter.use('/compliance', adminEvidenceRouter);
+// Stage 5.6 — FIU draft reporting (paths under /compliance/fiu).
+adminApiRouter.use('/compliance', adminFiuRouter);
+// Stage 5.5 — tax/TDS (calculation-only) + legal document admin.
+adminApiRouter.use('/tax', adminTaxRouter);
+adminApiRouter.use('/legal', adminLegalRouter);
 adminApiRouter.use('/users', adminUsersRouter);
 
 // Future admin modules (each behind admin RBAC):

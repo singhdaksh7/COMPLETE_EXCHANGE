@@ -174,6 +174,43 @@ describe('admin RBAC baseline user-risk grants', () => {
     expect(support?.permissions).not.toContain('compliance.retention.manage');
   });
 
+  it('grants Stage 5.5/5.6 tax / legal / FIU permissions to the right roles', () => {
+    expect(ADMIN_PERMISSIONS.map((p) => p.code)).toEqual(
+      expect.arrayContaining([
+        'tax.rule.view', 'tax.rule.manage', 'tax.tds.view', 'tax.statement.view', 'tax.statement.generate',
+        'legal.document.view', 'legal.document.manage', 'legal.acceptance.view',
+        'compliance.fiuReport.view', 'compliance.fiuReport.generate', 'compliance.fiuReport.validate', 'compliance.fiuReport.export', 'compliance.fiuReport.manage',
+      ]),
+    );
+
+    const reviewer = ADMIN_ROLES.find((r) => r.name === 'KYC_REVIEWER');
+    const finance = ADMIN_ROLES.find((r) => r.name === 'FINANCE');
+    const support = ADMIN_ROLES.find((r) => r.name === 'SUPPORT');
+
+    // FINANCE owns tax view/statements (calc-only) but no FIU export and not rule.manage.
+    expect(finance?.permissions).toEqual(
+      expect.arrayContaining(['tax.rule.view', 'tax.tds.view', 'tax.statement.view', 'tax.statement.generate']),
+    );
+    expect(finance?.permissions).not.toContain('tax.rule.manage');
+    expect(finance?.permissions).not.toContain('compliance.fiuReport.export');
+    expect(finance?.permissions).not.toContain('compliance.fiuReport.generate');
+
+    // KYC_REVIEWER (compliance) handles FIU drafts + sees legal acceptances.
+    expect(reviewer?.permissions).toEqual(
+      expect.arrayContaining([
+        'legal.acceptance.view',
+        'compliance.fiuReport.view', 'compliance.fiuReport.generate', 'compliance.fiuReport.validate', 'compliance.fiuReport.export',
+      ]),
+    );
+
+    // Read-only roles inherit only .view grants.
+    expect(support?.permissions).toEqual(
+      expect.arrayContaining(['tax.rule.view', 'legal.document.view', 'legal.acceptance.view', 'compliance.fiuReport.view']),
+    );
+    expect(support?.permissions).not.toContain('compliance.fiuReport.generate');
+    expect(support?.permissions).not.toContain('tax.statement.generate');
+  });
+
   it('defines system / ops-center permissions with the right role access (Stage 4.3)', () => {
     expect(ADMIN_PERMISSIONS.map((p) => p.code)).toEqual(
       expect.arrayContaining(['system.view', 'system.health.view', 'system.risk.view']),

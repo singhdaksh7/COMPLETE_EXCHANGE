@@ -288,4 +288,16 @@ export const userApi = {
     authed<Page<Trade>>(
       `/trades?limit=${limit}${symbol ? `&symbol=${encodeURIComponent(symbol)}` : ''}`,
     ),
+
+  // ---- legal + tax (Stage 5.5) ----
+  legalCurrent: () => apiFetch<{ items: unknown[] }>(USER_API_URL, '/legal/documents/current'),
+  legalAccept: (body: { documentType: string; version?: string }) =>
+    authed<unknown>('/legal/accept', { method: 'POST', body }),
+  legalMyAcceptances: () => authed<{ items: unknown[] }>('/legal/acceptances/me'),
+  taxProfile: () => authed<unknown>('/tax/profile'),
+  setTaxProfile: (body: { panAvailable?: boolean; residentStatus?: 'RESIDENT' | 'NON_RESIDENT' }) =>
+    authed<unknown>('/tax/profile', { method: 'POST', body }),
+  taxSummary: (financialYear?: string) =>
+    authed<unknown>(`/tax/summary${financialYear ? `?financialYear=${encodeURIComponent(financialYear)}` : ''}`),
+  taxStatements: () => authed<{ items: unknown[] }>('/tax/statements'),
 };

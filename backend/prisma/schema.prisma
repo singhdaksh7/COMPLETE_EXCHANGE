@@ -391,6 +391,11 @@ model User {
   walletRiskChecks   WalletRiskCheck[]
   travelRuleTransfers TravelRuleTransfer[]
   complianceEvidencePacks ComplianceEvidencePack[]
+  userTaxProfile     UserTaxProfile?
+  tdsRecords         TdsRecord[]
+  taxStatements      TaxStatement[]
+  legalAcceptances   UserLegalAcceptance[]
+  fiuDraftReports    FiuDraftReport[]
 
   @@index([status])
   @@index([kycStatus])
@@ -2127,8 +2132,9 @@ model ComplianceEvidencePack {
   createdAt          DateTime           @default(now()) @map("created_at")
   updatedAt          DateTime           @updatedAt @map("updated_at")
 
-  user  User?                        @relation(fields: [scopeUserId], references: [id], onDelete: SetNull)
-  items ComplianceEvidencePackItem[]
+  user       User?                        @relation(fields: [scopeUserId], references: [id], onDelete: SetNull)
+  items      ComplianceEvidencePackItem[]
+  fiuReports FiuDraftReport[]
 
   @@index([packType])
   @@index([status])
@@ -2211,4 +2217,317 @@ model ComplianceExportEvent {
   @@index([packId])
   @@index([scopeUserId, createdAt])
   @@map("compliance_export_events")
+}
+
+// ============================================================================
+// TAX / TDS + LEGAL ACCEPTANCE (Stage 5.5)
+//
+// India-focused tax/TDS CALCULATION-ONLY foundation + versioned legal documents
+// and user acceptance. Everything is ADDITIVE and staging-safe: TDS is computed
+// and recorded but NEVER deducted from the ledger, nothing is filed with Income
+// Tax / GST / any government system, and no money-movement logic changes.
+// Outputs are labelled TAX_TDS_STAGING_CALCULATION_ONLY.
+// ============================================================================
+
+enum TaxRuleStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum TaxEventType {
+  TRADE_SELL
+  WITHDRAWAL
+  CONVERSION
+  FEE
+  OTHER
+}
+
+enum TdsRecordStatus {
+  CALCULATED
+  WAIVED
+  REVERSED
+  FAILED
+}
+
+enum TaxStatementStatus {
+  DRAFT
+  GENERATED
+  EXPIRED
+}
+
+enum LegalDocumentType {
+  TERMS_OF_SERVICE
+  PRIVACY_POLICY
+  RISK_DISCLOSURE
+  AML_POLICY_NOTICE
+  FEE_POLICY
+  TAX_DISCLOSURE
+}
+
+enum LegalAcceptanceStatus {
+  ACCEPTED
+  REVOKED
+  SUPERSEDED
+}
+
+/// Configurable TDS/tax rule per taxable event type (one active config per type).
+model TaxRule {
+  id               String        @id @default(uuid()) @db.Uuid
+  eventType        TaxEventType  @unique @map("event_type")
+  name             String
+  rateBps          Int           @map("rate_bps") // TDS rate in basis points (e.g. 100 = 1%)
+  thresholdAmount  Decimal?      @map("threshold_amount") @db.Decimal(38, 18)
+  status           TaxRuleStatus @default(ACTIVE)
+  description      String?
+  createdByAdminId String?       @map("created_by_admin_id") @db.Uuid
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+
+  tdsRecords TdsRecord[]
+
+  @@map("tax_rules")
+}
+
+/// Per-user tax posture (PAN availability drives higher-TDS flagging).
+model UserTaxProfile {
+  id                  String   @id @default(uuid()) @db.Uuid
+  userId              String   @unique @map("user_id") @db.Uuid
+  panAvailable        Boolean  @default(false) @map("pan_available")
+  panStatus           String?  @map("pan_status") // PROVIDED | MASKED_ONLY | MISSING
+  residentStatus      String?  @map("resident_status") // RESIDENT | NON_RESIDENT
+  taxJurisdiction     String   @default("IN") @map("tax_jurisdiction")
+  higherTdsApplicable Boolean  @default(false) @map("higher_tds_applicable")
+  notes               String?
+  updatedByAdminId    String?  @map("updated_by_admin_id") @db.Uuid
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_tax_profiles")
+}
+
+/// A CALCULATION-ONLY TDS record for a taxable event. Never deducts from ledger.
+model TdsRecord {
+  id               String          @id @default(uuid()) @db.Uuid
+  userId           String          @map("user_id") @db.Uuid
+  eventType        TaxEventType    @map("event_type")
+  ruleId           String?         @map("rule_id") @db.Uuid
+  sourceType       String?         @map("source_type") // TRADE | WITHDRAWAL | CONVERSION | ...
+  sourceRef        String?         @map("source_ref")
+  grossAmount      Decimal         @map("gross_amount") @db.Decimal(38, 18)
+  asset            String?
+  rateBps          Int             @map("rate_bps")
+  tdsAmount        Decimal         @map("tds_amount") @db.Decimal(38, 18)
+  status           TdsRecordStatus @default(CALCULATED)
+  label            String          @default("TAX_TDS_STAGING_CALCULATION_ONLY")
+  financialYear    String?         @map("financial_year")
+  notes            String?
+  createdByAdminId String?         @map("created_by_admin_id") @db.Uuid
+  createdAt        DateTime        @default(now()) @map("created_at")
+
+  user User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rule TaxRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([eventType])
+  @@index([status])
+  @@map("tds_records")
+}
+
+/// A JSON-first internal tax statement per user + financial year.
+model TaxStatement {
+  id               String             @id @default(uuid()) @db.Uuid
+  userId           String             @map("user_id") @db.Uuid
+  financialYear    String             @map("financial_year")
+  status           TaxStatementStatus @default(DRAFT)
+  label            String             @default("TAX_TDS_STAGING_CALCULATION_ONLY")
+  totalGross       Decimal            @default(0) @map("total_gross") @db.Decimal(38, 18)
+  totalTds         Decimal            @default(0) @map("total_tds") @db.Decimal(38, 18)
+  recordCount      Int                @default(0) @map("record_count")
+  checksum         String?
+  payload          Json?
+  generatedByAdminId String?          @map("generated_by_admin_id") @db.Uuid
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, financialYear])
+  @@index([status])
+  @@map("tax_statements")
+}
+
+/// A versioned legal document (content + checksum). `isCurrent` marks the live
+/// version of each type.
+model LegalDocumentVersion {
+  id               String            @id @default(uuid()) @db.Uuid
+  type             LegalDocumentType
+  version          String
+  title            String
+  content          String
+  checksum         String
+  isCurrent        Boolean           @default(false) @map("is_current")
+  effectiveAt      DateTime          @default(now()) @map("effective_at")
+  createdByAdminId String?           @map("created_by_admin_id") @db.Uuid
+  createdAt        DateTime          @default(now()) @map("created_at")
+
+  acceptances UserLegalAcceptance[]
+
+  @@unique([type, version])
+  @@index([type, isCurrent])
+  @@map("legal_document_versions")
+}
+
+/// An immutable record that a user accepted a specific legal document version.
+model UserLegalAcceptance {
+  id                String                @id @default(uuid()) @db.Uuid
+  userId            String                @map("user_id") @db.Uuid
+  documentType      LegalDocumentType     @map("document_type")
+  documentVersionId String?               @map("document_version_id") @db.Uuid
+  version           String
+  checksum          String?
+  status            LegalAcceptanceStatus @default(ACCEPTED)
+  ip                String?
+  userAgent         String?               @map("user_agent")
+  acceptedAt        DateTime              @default(now()) @map("accepted_at")
+  revokedAt         DateTime?             @map("revoked_at")
+
+  user            User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documentVersion LegalDocumentVersion? @relation(fields: [documentVersionId], references: [id], onDelete: SetNull)
+
+  @@index([userId, documentType])
+  @@map("user_legal_acceptances")
+}
+
+// ============================================================================
+// FIU DRAFT REPORTING (Stage 5.6)
+//
+// DRAFT-ONLY internal STR/CTR/NTR report generation from existing compliance
+// data (5.2 cases/alerts, 5.3 wallet-risk, 5.4 evidence packs). ADDITIVE and
+// staging-safe: every draft is labelled FIU_DRAFT_REPORT_STAGING_ONLY with a
+// NOT_SUBMITTED_TO_FIU state. NOTHING here calls an FIU API/portal, transmits a
+// report, mutates money-movement state, or deletes records.
+// ============================================================================
+
+enum FiuReportType {
+  STR
+  CTR
+  NTR
+  CBWTR
+  INTERNAL_SUSPICIOUS_ACTIVITY_SUMMARY
+}
+
+enum FiuDraftStatus {
+  DRAFT
+  VALIDATING
+  READY_FOR_INTERNAL_REVIEW
+  EXPORTED_DRAFT
+  FAILED
+  ARCHIVED
+}
+
+enum FiuReportFormat {
+  JSON_DRAFT
+  XML_PLACEHOLDER
+  CSV_PLACEHOLDER
+}
+
+enum FiuValidationSeverity {
+  INFO
+  WARNING
+  ERROR
+}
+
+enum FiuReportScopeType {
+  USER
+  CASE
+  DATE_RANGE
+  TRANSACTION_SET
+}
+
+/// One FIU draft report. `payload` holds the masked draft JSON; `checksum` is a
+/// SHA-256 over it. Never submitted — see `submissionState`.
+model FiuDraftReport {
+  id                 String             @id @default(uuid()) @db.Uuid
+  reportType         FiuReportType      @map("report_type")
+  status             FiuDraftStatus     @default(DRAFT)
+  scopeType          FiuReportScopeType @map("scope_type")
+  format             FiuReportFormat    @default(JSON_DRAFT)
+  label              String             @default("FIU_DRAFT_REPORT_STAGING_ONLY")
+  submissionState    String             @default("NOT_SUBMITTED_TO_FIU") @map("submission_state")
+  title              String
+  narrative          String?
+  scopeUserId        String?            @map("scope_user_id") @db.Uuid
+  scopeCaseId        String?            @map("scope_case_id") @db.Uuid
+  evidencePackId     String?            @map("evidence_pack_id") @db.Uuid
+  periodStart        DateTime?          @map("period_start")
+  periodEnd          DateTime?          @map("period_end")
+  sourceRefs         Json?              @map("source_refs")
+  checksum           String?
+  payload            Json?
+  errorCount         Int                @default(0) @map("error_count")
+  warningCount       Int                @default(0) @map("warning_count")
+  generatedByAdminId String?            @map("generated_by_admin_id") @db.Uuid
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+
+  user         User?                   @relation(fields: [scopeUserId], references: [id], onDelete: SetNull)
+  evidencePack ComplianceEvidencePack? @relation(fields: [evidencePackId], references: [id], onDelete: SetNull)
+  items        FiuDraftReportItem[]
+  issues       FiuReportValidationIssue[]
+
+  @@index([reportType])
+  @@index([status])
+  @@index([scopeUserId, createdAt])
+  @@map("fiu_draft_reports")
+}
+
+/// A masked snapshot inside an FIU draft report (subject, case, alert, etc.).
+model FiuDraftReportItem {
+  id        String   @id @default(uuid()) @db.Uuid
+  reportId  String   @map("report_id") @db.Uuid
+  itemType  String   @map("item_type")
+  refId     String?  @map("ref_id")
+  title     String
+  data      Json
+  createdAt DateTime @default(now()) @map("created_at")
+
+  report FiuDraftReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+  @@map("fiu_draft_report_items")
+}
+
+/// A validation finding for an FIU draft report (INFO / WARNING / ERROR).
+model FiuReportValidationIssue {
+  id        String                @id @default(uuid()) @db.Uuid
+  reportId  String                @map("report_id") @db.Uuid
+  severity  FiuValidationSeverity
+  code      String
+  field     String?
+  message   String
+  createdAt DateTime              @default(now()) @map("created_at")
+
+  report FiuDraftReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+  @@map("fiu_report_validation_issues")
+}
+
+/// Append-only log of FIU draft exports (download). Never an FIU submission.
+model FiuReportExportEvent {
+  id              String        @id @default(uuid()) @db.Uuid
+  reportId        String        @map("report_id") @db.Uuid
+  reportType      FiuReportType @map("report_type")
+  format          String?
+  checksum        String?
+  label           String        @default("FIU_DRAFT_REPORT_STAGING_ONLY")
+  submissionState String        @default("NOT_SUBMITTED_TO_FIU") @map("submission_state")
+  adminId         String?       @map("admin_id") @db.Uuid
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  @@index([reportId])
+  @@index([reportType, createdAt])
+  @@map("fiu_report_export_events")
 }

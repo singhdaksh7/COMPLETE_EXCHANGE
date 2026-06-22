@@ -1429,3 +1429,177 @@ export interface ComplianceExportEventItem {
   adminId: string | null;
   createdAt: string;
 }
+
+// ---- Stage 5.5: tax / TDS + legal ----
+export type TaxEventType = 'TRADE_SELL' | 'WITHDRAWAL' | 'CONVERSION' | 'FEE' | 'OTHER';
+export type TaxRuleStatus = 'ACTIVE' | 'DISABLED';
+export type TdsRecordStatus = 'CALCULATED' | 'WAIVED' | 'REVERSED' | 'FAILED';
+export type TaxStatementStatus = 'DRAFT' | 'GENERATED' | 'EXPIRED';
+export type LegalDocumentType =
+  | 'TERMS_OF_SERVICE'
+  | 'PRIVACY_POLICY'
+  | 'RISK_DISCLOSURE'
+  | 'AML_POLICY_NOTICE'
+  | 'FEE_POLICY'
+  | 'TAX_DISCLOSURE';
+export type LegalAcceptanceStatus = 'ACCEPTED' | 'REVOKED' | 'SUPERSEDED';
+
+export interface TaxRule {
+  id: string;
+  eventType: TaxEventType;
+  name: string;
+  rateBps: number;
+  thresholdAmount: string | null;
+  status: TaxRuleStatus;
+  description: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UserTaxProfile {
+  id?: string;
+  userId: string;
+  panAvailable: boolean;
+  panStatus: string | null;
+  residentStatus: string | null;
+  taxJurisdiction: string;
+  higherTdsApplicable: boolean;
+  notes?: string | null;
+}
+
+export interface TdsRecordItem {
+  id: string;
+  userId: string;
+  eventType: TaxEventType;
+  sourceType: string | null;
+  sourceRef: string | null;
+  grossAmount: string;
+  asset: string | null;
+  rateBps: number;
+  tdsAmount: string;
+  status: TdsRecordStatus;
+  label: string;
+  financialYear: string | null;
+  createdAt: string;
+}
+
+export interface TaxSummary {
+  label: string;
+  financialYear: string;
+  recordCount: number;
+  totalGross: number;
+  totalTds: number;
+  byEvent: Record<string, { count: number; gross: number; tds: number }>;
+}
+
+export interface TaxStatementItem {
+  id: string;
+  userId: string;
+  financialYear: string;
+  status: TaxStatementStatus;
+  label: string;
+  totalGross: string;
+  totalTds: string;
+  recordCount: number;
+  checksum: string | null;
+  createdAt: string;
+}
+
+export interface LegalDocument {
+  id: string;
+  type: LegalDocumentType;
+  version: string;
+  title: string;
+  content: string;
+  checksum: string;
+  isCurrent: boolean;
+  effectiveAt: string;
+  createdAt: string;
+}
+
+export interface LegalAcceptanceItem {
+  id: string;
+  userId: string;
+  documentType: LegalDocumentType;
+  version: string;
+  checksum: string | null;
+  status: LegalAcceptanceStatus;
+  ip: string | null;
+  acceptedAt: string;
+}
+
+// ---- Stage 5.6: FIU draft reporting ----
+export type FiuReportType = 'STR' | 'CTR' | 'NTR' | 'CBWTR' | 'INTERNAL_SUSPICIOUS_ACTIVITY_SUMMARY';
+export type FiuDraftStatus = 'DRAFT' | 'VALIDATING' | 'READY_FOR_INTERNAL_REVIEW' | 'EXPORTED_DRAFT' | 'FAILED' | 'ARCHIVED';
+export type FiuReportScopeType = 'USER' | 'CASE' | 'DATE_RANGE' | 'TRANSACTION_SET';
+export type FiuValidationSeverity = 'INFO' | 'WARNING' | 'ERROR';
+
+export interface FiuReportListItem {
+  id: string;
+  reportType: FiuReportType;
+  status: FiuDraftStatus;
+  scopeType: FiuReportScopeType;
+  format: string;
+  label: string;
+  submissionState: string;
+  title: string;
+  scopeUserId: string | null;
+  scopeCaseId: string | null;
+  evidencePackId: string | null;
+  checksum: string | null;
+  errorCount: number;
+  warningCount: number;
+  createdAt: string;
+}
+
+export interface FiuReportIssue {
+  id: string;
+  severity: FiuValidationSeverity;
+  code: string;
+  field: string | null;
+  message: string;
+  createdAt: string;
+}
+
+export interface FiuReportItem {
+  id: string;
+  itemType: string;
+  refId: string | null;
+  title: string;
+  data: unknown;
+  createdAt: string;
+}
+
+export interface FiuReportDetail {
+  id: string;
+  reportType: FiuReportType;
+  status: FiuDraftStatus;
+  scopeType: FiuReportScopeType;
+  format: string;
+  label: string;
+  submissionState: string;
+  title: string;
+  narrative: string | null;
+  scope: { userId: string | null; caseId: string | null; evidencePackId: string | null };
+  sourceRefs: unknown;
+  checksum: string | null;
+  errorCount: number;
+  warningCount: number;
+  createdAt: string;
+  updatedAt: string;
+  payload: unknown;
+  items: FiuReportItem[];
+  issues: FiuReportIssue[];
+}
+
+export interface FiuExportEventItem {
+  id: string;
+  reportId: string;
+  reportType: FiuReportType;
+  format: string | null;
+  checksum: string | null;
+  label: string;
+  submissionState: string;
+  adminId: string | null;
+  createdAt: string;
+}
