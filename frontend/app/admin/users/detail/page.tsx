@@ -8,7 +8,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '@/lib/admin-api';
 import { errorMessage } from '@/lib/api';
 import { useGuard } from '@/components/guards';
-import { AdminNav } from '@/components/nav';
 import { Alert, Button, Card, EmptyState, Row, Select, StatusBadge } from '@/components/ui';
 
 function ShortId({ id }: { id: string }) {
@@ -103,7 +102,6 @@ function AdminUserDetailInner() {
 
   return (
     <>
-      <AdminNav />
       <main className="mx-auto max-w-6xl px-4 pb-16">
         <div className="mb-5 flex items-end justify-between gap-3">
           <div>

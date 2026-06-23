@@ -5,7 +5,6 @@ import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '@/lib/admin-api';
 import { errorMessage } from '@/lib/api';
 import { useGuard } from '@/components/guards';
-import { AdminNav } from '@/components/nav';
 import { Card, Button, Alert, Input } from '@/components/ui';
 
 interface Filters {
@@ -42,7 +41,6 @@ export default function AdminAuditPage() {
 
   return (
     <>
-      <AdminNav />
       <main className="mx-auto max-w-6xl px-4 pb-16">
         <h1 className="mb-4 text-xl font-semibold">Audit Log</h1>
 

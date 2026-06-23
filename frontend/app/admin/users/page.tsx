@@ -6,7 +6,6 @@ import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '@/lib/admin-api';
 import { errorMessage } from '@/lib/api';
 import { useGuard } from '@/components/guards';
-import { AdminNav } from '@/components/nav';
 import { Alert, Button, Card, EmptyState, Input, Select, StatusBadge } from '@/components/ui';
 
 const KYC = ['', 'NOT_STARTED', 'PENDING', 'IN_REVIEW', 'MANUAL_REVIEW', 'APPROVED', 'REJECTED'];
@@ -61,16 +60,17 @@ export default function AdminUsersPage() {
 
   return (
     <>
-      <AdminNav />
       <main className="mx-auto max-w-6xl px-4 pb-16">
-        <div className="mb-5 flex items-end justify-between gap-3">
-          <div>
+        <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
             <h1 className="text-xl font-semibold text-ink">Users</h1>
             <p className="mt-0.5 text-sm text-muted">
               Search accounts, inspect KYC and risk status, and open user-level controls.
             </p>
           </div>
-          <Button onClick={() => q.refetch()} variant="secondary">Refresh</Button>
+          <div className="flex flex-wrap gap-2 shrink-0">
+            <Button onClick={() => q.refetch()} variant="secondary">Refresh</Button>
+          </div>
         </div>
 
         <Card>

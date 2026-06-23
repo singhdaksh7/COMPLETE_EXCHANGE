@@ -4,7 +4,6 @@ import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '@/lib/admin-api';
 import { errorMessage } from '@/lib/api';
 import { useGuard } from '@/components/guards';
-import { AdminNav } from '@/components/nav';
 import { Card, Button, Alert, Row, StatusBadge } from '@/components/ui';
 
 export default function AdminScannerPage() {
@@ -21,7 +20,6 @@ export default function AdminScannerPage() {
 
   return (
     <>
-      <AdminNav />
       <main className="mx-auto max-w-2xl px-4 pb-16">
         <div className="mb-4 flex items-center justify-between">
           <h1 className="text-xl font-semibold">Scanner Health</h1>

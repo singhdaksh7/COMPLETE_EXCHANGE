@@ -5,7 +5,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '@/lib/admin-api';
 import { errorMessage } from '@/lib/api';
 import { useGuard } from '@/components/guards';
-import { AdminNav } from '@/components/nav';
 import { StatusBadge } from '@/components/ui';
 import type { KycDecisionBody, KycQueueFilters } from '@/lib/types';
 
@@ -93,7 +92,6 @@ export default function AdminKycPage() {
         header nav a:hover { color: #F5C242 !important; }
         header button { color: #f6465d !important; }
       `}} />
-      <AdminNav />
       <BackdropGlow />
 
       <main className="relative z-10 flex-1 mx-auto w-full max-w-[1500px] px-6 pt-6 flex flex-col gap-6">

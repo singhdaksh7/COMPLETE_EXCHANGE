@@ -5,7 +5,6 @@ import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '@/lib/admin-api';
 import { errorMessage } from '@/lib/api';
 import { useGuard } from '@/components/guards';
-import { AdminNav } from '@/components/nav';
 import type { FeeAssetTotal } from '@/lib/types';
 
 function BackdropGlow() {
@@ -82,7 +81,6 @@ export default function AdminFeeReportsPage() {
         header nav a:hover { color: #F5C242 !important; }
         header button { color: #f6465d !important; }
       `}} />
-      <AdminNav />
       <BackdropGlow />
 
       <main className="relative z-10 mx-auto max-w-[1300px] px-6 pt-6 space-y-6">

@@ -5,7 +5,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '@/lib/admin-api';
 import { errorMessage } from '@/lib/api';
 import { useGuard } from '@/components/guards';
-import { AdminNav } from '@/components/nav';
 import { Alert, Button, Card, EmptyState, Input, Select, StatusBadge } from '@/components/ui';
 import type { LegalDocumentType } from '@/lib/types';
 
@@ -35,7 +34,6 @@ export default function AdminLegalPage() {
 
   return (
     <>
-      <AdminNav />
       <main className="mx-auto max-w-6xl px-4 pb-16">
         <h1 className="mb-1 text-xl font-semibold text-ink">Legal Documents</h1>
         <p className="mb-4 text-xs text-muted">Versioned legal documents (checksummed) and user acceptance records.</p>

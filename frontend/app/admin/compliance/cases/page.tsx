@@ -6,7 +6,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '@/lib/admin-api';
 import { errorMessage } from '@/lib/api';
 import { useGuard } from '@/components/guards';
-import { AdminNav } from '@/components/nav';
 import { Alert, Button, Card, EmptyState, Select, StatusBadge } from '@/components/ui';
 import type {
   ComplianceCasePriority,
@@ -65,7 +64,6 @@ export default function AdminComplianceCasesPage() {
 
   return (
     <>
-      <AdminNav />
       <main className="mx-auto max-w-6xl px-4 pb-16">
         <div className="mb-2 flex items-center justify-between">
           <h1 className="text-xl font-semibold text-ink">Compliance Cases</h1>

@@ -7,7 +7,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '@/lib/admin-api';
 import { errorMessage } from '@/lib/api';
 import { useGuard } from '@/components/guards';
-import { AdminNav } from '@/components/nav';
 import { Alert, Button, Card, Input, Select, StatusBadge } from '@/components/ui';
 import type { AmlEvaluationResult, AmlRuleAction, AmlRuleSeverity, AmlRuleType } from '@/lib/types';
 
@@ -125,7 +124,6 @@ function DetailInner() {
 export default function AdminAmlDetailPage() {
   return (
     <>
-      <AdminNav />
       <Suspense fallback={<main className="mx-auto max-w-4xl px-4 py-10"><p className="text-sm text-muted">Loading…</p></main>}>
         <DetailInner />
       </Suspense>

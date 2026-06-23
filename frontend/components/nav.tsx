@@ -1,12 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { tokenStore } from '@/lib/auth';
 import { disconnectSocket } from '@/lib/socket';
 import { userApi } from '@/lib/user-api';
+import { adminApi } from '@/lib/admin-api';
 
 // SVG Icons
 function DashboardIcon() {
@@ -369,64 +370,241 @@ export function UserNav() {
   );
 }
 
-export function AdminNav() {
+// All admin destinations, grouped logically. This is the single source of
+// truth for admin navigation — every existing admin route is represented here.
+const ADMIN_GROUPS: { title: string; links: { href: string; label: string }[] }[] = [
+  {
+    title: 'Overview',
+    links: [{ href: '/admin/dashboard', label: 'Dashboard' }],
+  },
+  {
+    title: 'Users & KYC',
+    links: [
+      { href: '/admin/users', label: 'Users' },
+      { href: '/admin/kyc', label: 'KYC Verification' },
+    ],
+  },
+  {
+    title: 'Compliance',
+    links: [
+      { href: '/admin/compliance', label: 'Compliance overview' },
+      { href: '/admin/compliance/users', label: 'Compliance review' },
+      { href: '/admin/compliance/cases', label: 'Compliance cases' },
+      { href: '/admin/compliance/wallet-risk', label: 'Wallet risk' },
+      { href: '/admin/compliance/travel-rule', label: 'Travel Rule' },
+      { href: '/admin/compliance/evidence-packs', label: 'Evidence packs' },
+      { href: '/admin/compliance/retention', label: 'Retention' },
+      { href: '/admin/compliance/fiu', label: 'FIU drafts' },
+      { href: '/admin/compliance/aml', label: 'AML policies' },
+      { href: '/admin/compliance/workspace', label: 'Workspace' },
+    ],
+  },
+  {
+    title: 'INR & Wallets',
+    links: [
+      { href: '/admin/deposits', label: 'INR Deposits' },
+      { href: '/admin/withdrawals', label: 'Withdrawals' },
+      { href: '/admin/conversions', label: 'Conversions ledger' },
+    ],
+  },
+  {
+    title: 'Tax & Legal',
+    links: [
+      { href: '/admin/tax', label: 'Tax / TDS' },
+      { href: '/admin/legal', label: 'Legal docs' },
+    ],
+  },
+  {
+    title: 'Risk & Monitoring',
+    links: [
+      { href: '/admin/reports', label: 'Fee reports' },
+      { href: '/admin/notifications', label: 'Notifications' },
+      { href: '/admin/scanner', label: 'Blockchain scan' },
+      { href: '/admin/system', label: 'System / Ops Center' },
+    ],
+  },
+  {
+    title: 'Administration',
+    links: [
+      { href: '/admin/admins', label: 'Admin management' },
+      { href: '/admin/audit', label: 'Audit log' },
+    ],
+  },
+];
+
+const ADMIN_HREFS = ADMIN_GROUPS.flatMap((g) => g.links.map((l) => l.href));
+
+/** Resolve the most specific (longest-prefix) nav link for the current path. */
+function activeAdminHref(pathname: string): string {
+  return (
+    ADMIN_HREFS.filter((h) => pathname === h || pathname.startsWith(`${h}/`)).sort(
+      (a, b) => b.length - a.length,
+    )[0] ?? ''
+  );
+}
+
+/** Grouped link list + admin identity + logout — shared by sidebar and drawer. */
+function AdminSidebarBody({
+  activeHref,
+  onNavigate,
+  onLogout,
+  identity,
+}: {
+  activeHref: string;
+  onNavigate: () => void;
+  onLogout: () => void;
+  identity?: { email: string; status: string; roles: string[] };
+}) {
+  return (
+    <>
+      <nav className="flex-1 space-y-5 overflow-y-auto pr-1">
+        {ADMIN_GROUPS.map((group) => (
+          <div key={group.title} className="space-y-1">
+            <span className="block px-3 text-[10px] font-bold uppercase tracking-widest text-white/30">
+              {group.title}
+            </span>
+            {group.links.map((l) => (
+              <Link
+                key={l.href}
+                href={l.href}
+                onClick={onNavigate}
+                className={`block rounded-lg px-3 py-2 text-xs font-semibold tracking-wide transition-all duration-200 ${
+                  l.href === activeHref
+                    ? 'border-l-2 border-gold bg-gradient-to-r from-gold/15 to-transparent text-gold'
+                    : 'text-white/50 hover:bg-white/[0.02] hover:text-white'
+                }`}
+              >
+                {l.label}
+              </Link>
+            ))}
+          </div>
+        ))}
+      </nav>
+
+      <div className="mt-auto space-y-2 border-t border-white/5 pt-4">
+        {identity && (
+          <div className="px-3">
+            <span className="block truncate text-[11px] font-semibold text-white/70">{identity.email}</span>
+            <span className="block font-mono text-[9px] uppercase tracking-wider text-white/30">
+              {(identity.roles.join(', ') || 'admin')} · {identity.status}
+            </span>
+          </div>
+        )}
+        <button
+          onClick={onLogout}
+          className="w-full rounded-lg px-3 py-2 text-left text-xs font-bold uppercase tracking-wide text-down transition hover:bg-red-500/5"
+        >
+          Logout
+        </button>
+      </div>
+    </>
+  );
+}
+
+/**
+ * Responsive admin shell: a fixed scrollable sidebar on desktop and a
+ * slide-out drawer on mobile/tablet. Rendered once by app/admin/layout.tsx so
+ * every admin page inherits it — pages must NOT render their own nav.
+ */
+export function AdminShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  // The login page has no authenticated session, so it renders bare.
+  const isLogin = pathname === '/admin/login';
+
+  const meQ = useQuery({
+    queryKey: ['admin-me'],
+    queryFn: () => adminApi.me(),
+    enabled: !isLogin,
+    retry: false,
+  });
+
+  if (isLogin) return <>{children}</>;
 
   const handleLogout = () => {
     tokenStore.clearAdmin();
     router.replace('/admin/login');
   };
 
-  const adminLinks = [
-    { href: '/admin/dashboard', label: 'Dashboard' },
-    { href: '/admin/users', label: 'Users' },
-    { href: '/admin/kyc', label: 'KYC Verification' },
-    { href: '/admin/compliance', label: 'Compliance' },
-    { href: '/admin/compliance/users', label: 'Compliance review' },
-    { href: '/admin/compliance/cases', label: 'Compliance cases' },
-    { href: '/admin/compliance/wallet-risk', label: 'Wallet risk' },
-    { href: '/admin/compliance/travel-rule', label: 'Travel Rule' },
-    { href: '/admin/compliance/evidence-packs', label: 'Evidence packs' },
-    { href: '/admin/compliance/retention', label: 'Retention' },
-    { href: '/admin/compliance/fiu', label: 'FIU drafts' },
-    { href: '/admin/compliance/aml', label: 'AML policies' },
-    { href: '/admin/compliance/workspace', label: 'Workspace' },
-    { href: '/admin/tax', label: 'Tax / TDS' },
-    { href: '/admin/legal', label: 'Legal docs' },
-    { href: '/admin/deposits', label: 'Deposits queue' },
-    { href: '/admin/withdrawals', label: 'Withdrawals queue' },
-    { href: '/admin/conversions', label: 'Conversions ledger' },
-    { href: '/admin/reports', label: 'Fee reports' },
-    { href: '/admin/notifications', label: 'Notifications' },
-    { href: '/admin/scanner', label: 'Blockchain scan' },
-    { href: '/admin/system', label: 'System / Ops Center' },
-    { href: '/admin/admins', label: 'Admin management' },
-    { href: '/admin/audit', label: 'Audit log' },
-  ];
+  const me = meQ.data?.data;
+  const identity = me
+    ? { email: me.admin.email, status: me.admin.status, roles: me.roles }
+    : undefined;
+  const activeHref = activeAdminHref(pathname);
+
+  const brand = (
+    <Link href="/admin/dashboard" onClick={() => setMobileOpen(false)} className="flex items-center gap-2.5">
+      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-gold to-gold-glow text-sm font-black text-noir shadow-gold-glow">
+        A
+      </span>
+      <div>
+        <span className="block text-sm font-bold tracking-tight text-white">Exora Admin</span>
+        <span className="block text-[9px] font-semibold uppercase tracking-wider text-white/30">Compliance Console</span>
+      </div>
+    </Link>
+  );
 
   return (
-    <header className="mb-6 border-b border-gold/15 bg-noir-2">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-        <div className="flex items-center gap-6">
-          <Link href="/admin/dashboard" className="flex items-center gap-2">
-            <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-gradient-to-br from-gold to-gold-glow text-noir font-black text-xs shadow-gold-glow">
-              A
-            </span>
-            <span className="text-xs font-black tracking-wider uppercase text-white">Exora Compliance</span>
-          </Link>
-          <nav className="flex gap-4 text-xs font-semibold tracking-wider uppercase text-white/50">
-            {adminLinks.map((l) => (
-              <Link key={l.href} href={l.href} className={`hover:text-gold transition ${pathname === l.href ? 'text-gold' : ''}`}>
-                {l.label}
-              </Link>
-            ))}
-          </nav>
-        </div>
-        <button onClick={handleLogout} className="text-xs font-bold text-down hover:underline">
-          Logout
+    <div className="relative min-h-screen w-full bg-noir text-white">
+      {/* Desktop sidebar (fixed, vertically scrollable) */}
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-white/5 bg-noir px-4 py-5 lg:flex">
+        <div className="mb-6 px-2">{brand}</div>
+        <AdminSidebarBody
+          activeHref={activeHref}
+          onNavigate={() => {}}
+          onLogout={handleLogout}
+          identity={identity}
+        />
+      </aside>
+
+      {/* Mobile/tablet top bar */}
+      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-white/5 bg-noir px-4 py-3 lg:hidden">
+        {brand}
+        <button
+          onClick={() => setMobileOpen(true)}
+          aria-label="Open admin menu"
+          className="p-1 text-white/70 hover:text-white"
+        >
+          <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
         </button>
+      </header>
+
+      {/* Mobile drawer */}
+      {mobileOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden"
+            onClick={() => setMobileOpen(false)}
+          />
+          <aside className="fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col border-r border-white/5 bg-noir px-4 py-5 lg:hidden">
+            <div className="mb-6 flex items-center justify-between">
+              {brand}
+              <button
+                onClick={() => setMobileOpen(false)}
+                aria-label="Close menu"
+                className="p-1 text-white/60 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+            <AdminSidebarBody
+              activeHref={activeHref}
+              onNavigate={() => setMobileOpen(false)}
+              onLogout={handleLogout}
+              identity={identity}
+            />
+          </aside>
+        </>
+      )}
+
+      {/* Main content — guarded against horizontal overflow, offset for sidebar */}
+      <div className="min-w-0 w-full max-w-full overflow-x-clip lg:pl-64">
+        {children}
       </div>
-    </header>
+    </div>
   );
 }

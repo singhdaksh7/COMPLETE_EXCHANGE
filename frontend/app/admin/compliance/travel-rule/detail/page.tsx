@@ -7,7 +7,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '@/lib/admin-api';
 import { errorMessage } from '@/lib/api';
 import { useGuard } from '@/components/guards';
-import { AdminNav } from '@/components/nav';
 import { Alert, Button, Card, Row, StatusBadge } from '@/components/ui';
 import type { TravelRuleAction } from '@/lib/types';
 
@@ -88,7 +87,6 @@ function DetailInner() {
 export default function AdminTravelRuleDetailPage() {
   return (
     <>
-      <AdminNav />
       <Suspense fallback={<main className="mx-auto max-w-3xl px-4 py-10"><p className="text-sm text-muted">Loading…</p></main>}>
         <DetailInner />
       </Suspense>

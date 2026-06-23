@@ -1,0 +1,58 @@
+{
+  "_comment": [
+    "SANITIZED EXAMPLE ECS task definition (Stage 7.0B). Placeholders only — never commit a real task definition.",
+    "Replace <AWS_ACCOUNT_ID>, <REGION>, and every secret ARN with the values for the target environment.",
+    "Secrets are ALWAYS injected via `secrets[].valueFrom` (AWS Secrets Manager). Never put a secret VALUE in `environment[]`.",
+    "Pull the live definition locally with: aws ecs describe-task-definition --task-definition cex-<env>-api --query taskDefinition",
+    "The pulled file is git-ignored (see backend/.gitignore: *taskdef*.json)."
+  ],
+  "family": "cex-<env>-api",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "taskRoleArn": "arn:aws:iam::<AWS_ACCOUNT_ID>:role/cex-<env>-ecs-task",
+  "executionRoleArn": "arn:aws:iam::<AWS_ACCOUNT_ID>:role/cex-<env>-ecs-exec",
+  "containerDefinitions": [
+    {
+      "name": "api",
+      "image": "<AWS_ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/cex-<env>-backend:<IMAGE_TAG>",
+      "essential": true,
+      "command": ["node", "dist/server.js"],
+      "portMappings": [{ "containerPort": 4000, "protocol": "tcp" }],
+      "environment": [
+        { "name": "NODE_ENV", "value": "production" },
+        { "name": "PORT", "value": "4000" },
+        { "name": "API_PREFIX", "value": "/api/v1" },
+        { "name": "CORS_ORIGINS", "value": "https://<your-frontend-domain>" },
+        { "name": "BODY_LIMIT", "value": "100kb" },
+        { "name": "LOG_LEVEL", "value": "info" },
+        { "name": "LOG_PRETTY", "value": "false" },
+        { "name": "AWS_REGION", "value": "<REGION>" }
+      ],
+      "secrets": [
+        { "name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:<REGION>:<AWS_ACCOUNT_ID>:secret:cex/<env>/DATABASE_URL" },
+        { "name": "REDIS_URL", "valueFrom": "arn:aws:secretsmanager:<REGION>:<AWS_ACCOUNT_ID>:secret:cex/<env>/REDIS_URL" },
+        { "name": "JWT_ACCESS_SECRET", "valueFrom": "arn:aws:secretsmanager:<REGION>:<AWS_ACCOUNT_ID>:secret:cex/<env>/JWT_ACCESS_SECRET" },
+        { "name": "JWT_REFRESH_SECRET", "valueFrom": "arn:aws:secretsmanager:<REGION>:<AWS_ACCOUNT_ID>:secret:cex/<env>/JWT_REFRESH_SECRET" },
+        { "name": "KYC_ENCRYPTION_KEY", "valueFrom": "arn:aws:secretsmanager:<REGION>:<AWS_ACCOUNT_ID>:secret:cex/<env>/KYC_ENCRYPTION_KEY" },
+        { "name": "KYC_WEBHOOK_SECRET", "valueFrom": "arn:aws:secretsmanager:<REGION>:<AWS_ACCOUNT_ID>:secret:cex/<env>/KYC_WEBHOOK_SECRET" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/cex-<env>/api",
+          "awslogs-region": "<REGION>",
+          "awslogs-stream-prefix": "api"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/health || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 20
+      }
+    }
+  ]
+}

@@ -5,7 +5,6 @@ import type { ReactNode } from 'react';
 import { adminApi } from '@/lib/admin-api';
 import { errorMessage } from '@/lib/api';
 import { useGuard } from '@/components/guards';
-import { AdminNav } from '@/components/nav';
 
 /* ------------------------------------------------------------------ */
 /* Small presentational helpers (match the admin dashboard styling).  */
@@ -158,7 +157,6 @@ export default function AdminSystemPage() {
         header nav a:hover { color: #F5C242 !important; }
         header button { color: #f6465d !important; }
       `}} />
-      <AdminNav />
       <BackdropGlow />
 
       <main className="relative z-10 mx-auto max-w-[1500px] px-6 pt-6 space-y-6">

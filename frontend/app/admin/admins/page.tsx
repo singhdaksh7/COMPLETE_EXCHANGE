@@ -5,7 +5,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '@/lib/admin-api';
 import { errorMessage } from '@/lib/api';
 import { useGuard } from '@/components/guards';
-import { AdminNav } from '@/components/nav';
 import { Card, Field, Input, Button, Alert, Select, StatusBadge } from '@/components/ui';
 import type { AdminListItem } from '@/lib/types';
 
@@ -130,7 +129,6 @@ export default function AdminAdminsPage() {
 
   return (
     <>
-      <AdminNav />
       <main className="mx-auto max-w-6xl px-4 pb-16">
         <h1 className="mb-4 text-xl font-semibold">Admin Management</h1>
 

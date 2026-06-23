@@ -5,7 +5,6 @@ import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '@/lib/admin-api';
 import { errorMessage } from '@/lib/api';
 import { useGuard } from '@/components/guards';
-import { AdminNav } from '@/components/nav';
 import { Card, Button, Alert, Select } from '@/components/ui';
 
 const SIDES = ['', 'INR_TO_USDT', 'USDT_TO_INR'];
@@ -25,7 +24,6 @@ export default function AdminConversionsPage() {
 
   return (
     <>
-      <AdminNav />
       <main className="mx-auto max-w-4xl px-4 pb-16">
         <h1 className="mb-4 text-xl font-semibold">Conversion Monitoring</h1>
 

@@ -5,7 +5,6 @@ import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '@/lib/admin-api';
 import { errorMessage } from '@/lib/api';
 import { useGuard } from '@/components/guards';
-import { AdminNav } from '@/components/nav';
 import { Alert, Card, EmptyState } from '@/components/ui';
 
 export default function AdminComplianceExportsPage() {
@@ -22,7 +21,6 @@ export default function AdminComplianceExportsPage() {
 
   return (
     <>
-      <AdminNav />
       <main className="mx-auto max-w-5xl px-4 pb-16">
         <div className="mb-2 flex items-center justify-between">
           <h1 className="text-xl font-semibold text-ink">Compliance Export Log</h1>
