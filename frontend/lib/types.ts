@@ -52,6 +52,18 @@ export interface MeData {
   permissions: string[];
 }
 
+/** Generic, enumeration-safe result of requesting/resending an email OTP. */
+export interface OtpRequestData {
+  sent: true;
+  expiresInSeconds: number;
+  resendCooldownSeconds: number;
+}
+
+/** Result of verifying an email OTP (login, or a just-created signup). */
+export interface OtpVerifyData extends LoginData {
+  isNewUser: boolean;
+}
+
 export interface KycProfile {
   status: string;
   tier: number;

@@ -9,6 +9,7 @@ import { userApi } from '@/lib/user-api';
 import { tokenStore } from '@/lib/auth';
 import { errorMessage } from '@/lib/api';
 import { USER_API_URL } from '@/lib/config';
+import { OtpAuthForm } from '@/components/otp-auth-form';
 
 /** Map a backend OAuth error code (?error=) to a safe, user-facing message. */
 function oauthErrorMessage(code: string | null): string | null {
@@ -47,6 +48,8 @@ function LoginPageContent() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(true);
+  // Branded password login (default, deployed) or passwordless one-time email code.
+  const [authMode, setAuthMode] = useState<'password' | 'otp'>('password');
 
   const m = useMutation({
     mutationFn: () => userApi.login({ email: email.trim(), password }),
@@ -89,6 +92,9 @@ function LoginPageContent() {
             onToggleShow={() => setShowPassword((s) => !s)}
             onToggleRemember={() => setRemember((r) => !r)}
             onSubmit={() => m.mutate()}
+            authMode={authMode}
+            onUseOtp={() => setAuthMode('otp')}
+            onUsePassword={() => setAuthMode('password')}
           />
         </div>
       </div>
@@ -205,6 +211,9 @@ function LoginCard(props: {
   onToggleShow: () => void;
   onToggleRemember: () => void;
   onSubmit: () => void;
+  authMode: 'password' | 'otp';
+  onUseOtp: () => void;
+  onUsePassword: () => void;
 }) {
   return (
     <div className="mx-auto w-full min-w-0 max-w-md">
@@ -241,6 +250,8 @@ function LoginCard(props: {
             </div>
           )}
 
+          {props.authMode === 'password' ? (
+            <>
           <form
             className="mt-6 space-y-4"
             onSubmit={(e) => {
@@ -339,6 +350,32 @@ function LoginCard(props: {
             </SocialButton>
             <SocialButton icon={<AppleIcon className="h-5 w-5" />}>Apple</SocialButton>
           </div>
+
+              <button
+                type="button"
+                onClick={props.onUseOtp}
+                className="mt-4 w-full rounded-lg border border-gold/30 bg-transparent px-4 py-2.5 text-sm font-medium text-gold transition hover:bg-gold/10"
+              >
+                Sign in with a one-time email code
+              </button>
+            </>
+          ) : (
+            <div className="mt-6">
+              {/* Passwordless one-time email code (Stage 3B). Rendered on a light
+                  surface so the shared OTP component reads correctly inside the
+                  dark branded card. */}
+              <div className="rounded-xl bg-white p-5 text-gray-900">
+                <OtpAuthForm mode="login" />
+              </div>
+              <button
+                type="button"
+                onClick={props.onUsePassword}
+                className="mt-4 text-sm font-medium text-gold transition hover:text-gold-glow"
+              >
+                &larr; Back to password login
+              </button>
+            </div>
+          )}
 
           <p className="mt-6 text-center text-sm text-white/50">
             Don&rsquo;t have an account?{' '}

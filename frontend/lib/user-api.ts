@@ -23,6 +23,8 @@ import type {
   Market,
   MeData,
   NotificationList,
+  OtpRequestData,
+  OtpVerifyData,
   Order,
   OrderBook,
   OrderStatus,
@@ -111,6 +113,25 @@ export const userApi = {
 
   resendVerification: (body: { email: string }) =>
     apiFetch<void>(USER_API_URL, '/auth/resend-verification', { method: 'POST', body }),
+
+  // ---- passwordless email OTP (Stage 3B) ----
+  requestEmailOtp: (email: string, purpose?: 'LOGIN' | 'SIGNUP') =>
+    apiFetch<OtpRequestData>(USER_API_URL, '/auth/request-email-otp', {
+      method: 'POST',
+      body: { email, ...(purpose ? { purpose } : {}) },
+    }),
+
+  resendEmailOtp: (email: string, purpose?: 'LOGIN' | 'SIGNUP') =>
+    apiFetch<OtpRequestData>(USER_API_URL, '/auth/resend-email-otp', {
+      method: 'POST',
+      body: { email, ...(purpose ? { purpose } : {}) },
+    }),
+
+  verifyEmailOtp: (email: string, otp: string) =>
+    apiFetch<OtpVerifyData>(USER_API_URL, '/auth/verify-email-otp', {
+      method: 'POST',
+      body: { email, otp },
+    }),
 
   me: () => authed<MeData>('/auth/me'),
 
