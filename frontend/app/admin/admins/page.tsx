@@ -35,6 +35,8 @@ export default function AdminAdminsPage() {
   // SUPER_ADMIN may not be created via the sub-admin form.
   const assignableRoles =
     roles.data?.data.items.filter((r) => r.name !== 'SUPER_ADMIN') ?? [];
+  const rolesLoaded = roles.isSuccess;
+  const noAssignableRoles = rolesLoaded && assignableRoles.length === 0;
 
   const create = useMutation({
     mutationFn: () => adminApi.createAdmin({ email: email.trim(), roleId }),
@@ -172,8 +174,21 @@ export default function AdminAdminsPage() {
             </div>
             <div className="w-56">
               <Field label="Role">
-                <Select value={roleId} onChange={(e) => setRoleId(e.target.value)} required>
-                  <option value="">Select role…</option>
+                <Select
+                  value={roleId}
+                  onChange={(e) => setRoleId(e.target.value)}
+                  required
+                  disabled={roles.isLoading || roles.isError || noAssignableRoles}
+                >
+                  <option value="">
+                    {roles.isLoading
+                      ? 'Loading roles…'
+                      : roles.isError
+                        ? 'Failed to load roles'
+                        : noAssignableRoles
+                          ? 'No roles available'
+                          : 'Select role…'}
+                  </option>
                   {assignableRoles.map((r) => (
                     <option key={r.id} value={r.id}>
                       {r.name}
@@ -182,10 +197,27 @@ export default function AdminAdminsPage() {
                 </Select>
               </Field>
             </div>
-            <Button type="submit" disabled={create.isPending || !email.trim() || !roleId}>
+            <Button
+              type="submit"
+              disabled={create.isPending || !email.trim() || !roleId || noAssignableRoles}
+            >
               {create.isPending ? 'Creating…' : 'Create'}
             </Button>
           </form>
+
+          {roles.isError && (
+            <div className="mt-3">
+              <Alert>Failed to load roles. {errorMessage(roles.error)}</Alert>
+            </div>
+          )}
+          {noAssignableRoles && (
+            <div className="mt-3">
+              <Alert>
+                No roles found. Run RBAC setup (rbac:ensure-staging) or contact a super
+                admin.
+              </Alert>
+            </div>
+          )}
           <p className="mt-2 text-xs text-gray-500">
             Sub-admins start ACTIVE with TOTP disabled (they enroll on first login)
             and never receive SUPER_ADMIN by default.

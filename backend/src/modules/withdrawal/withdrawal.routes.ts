@@ -4,6 +4,7 @@ import { authenticate } from '../../middleware/authenticate';
 import { validate } from '../../middleware/validate';
 import { idempotency } from '../../middleware/idempotency';
 import { sensitiveRateLimiter } from '../../middleware/rate-limit';
+import { requireUserFeature } from '../../middleware/require-user-feature';
 import { withdrawalController } from './withdrawal.controller';
 import {
   addAddressSchema,
@@ -38,6 +39,12 @@ withdrawalRouter.post(
   authenticate,
   sensitiveRateLimiter,
   validate({ body: createWithdrawalSchema }),
+  // Per-user feature controls: crypto withdrawal + high-risk gates. The
+  // existing freeze / KYC / withdrawals-block checks in the service still apply
+  // on top of these. `manualReviewBeforeWithdrawal` is intentionally NOT a hard
+  // block here — crypto withdrawals already enter PENDING_APPROVAL dual-control
+  // review, which satisfies the "manual review before withdrawal" requirement.
+  requireUserFeature('canWithdrawCrypto', 'blockHighRiskActivity'),
   idempotency(),
   asyncHandler(withdrawalController.create),
 );

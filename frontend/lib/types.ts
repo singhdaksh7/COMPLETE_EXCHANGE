@@ -247,6 +247,59 @@ export interface AdminUserListItem {
   balances: AdminUserBalance[];
 }
 
+/** Per-user operational feature controls (User Control Center). */
+export interface UserFeatureControls {
+  userId: string;
+  exists: boolean;
+  // Trading
+  canTradeSpot: boolean;
+  canPlaceBuyOrders: boolean;
+  canPlaceSellOrders: boolean;
+  canCancelOrders: boolean;
+  // INR
+  canDepositInr: boolean;
+  canWithdrawInr: boolean;
+  // Crypto
+  canDepositCrypto: boolean;
+  canWithdrawCrypto: boolean;
+  // Compliance
+  forceKycReview: boolean;
+  requireEnhancedKyc: boolean;
+  underComplianceReview: boolean;
+  // Risk
+  blockHighRiskActivity: boolean;
+  manualReviewBeforeWithdrawal: boolean;
+  notes: string | null;
+  updatedByAdminId: string | null;
+  updatedAt: string | null;
+}
+
+/** A single control flag (keys of UserFeatureControls that are booleans). */
+export type UserControlFlag =
+  | 'canTradeSpot'
+  | 'canPlaceBuyOrders'
+  | 'canPlaceSellOrders'
+  | 'canCancelOrders'
+  | 'canDepositInr'
+  | 'canWithdrawInr'
+  | 'canDepositCrypto'
+  | 'canWithdrawCrypto'
+  | 'forceKycReview'
+  | 'requireEnhancedKyc'
+  | 'underComplianceReview'
+  | 'blockHighRiskActivity'
+  | 'manualReviewBeforeWithdrawal';
+
+export interface UserControlAuditEntry {
+  id: string;
+  adminId: string;
+  action: string;
+  reason: string | null;
+  beforeState: unknown;
+  afterState: unknown;
+  occurredAt: string;
+}
+
 export interface AdminUserDetail extends AdminUserListItem {
   phone: string | null;
   phoneVerifiedAt: string | null;

@@ -25,6 +25,7 @@
  */
 import { PrismaClient } from '@prisma/client';
 import { hash } from '@node-rs/argon2';
+import { ensureAdminRbacBaseline } from '../modules/admin-rbac/admin-rbac.baseline';
 
 const ADMIN_EMAIL = 'admin@exchange.local';
 const SUPER_ADMIN = 'SUPER_ADMIN';
@@ -93,6 +94,13 @@ async function main(): Promise<void> {
       },
     });
     adminId = admin.id;
+
+    // 1b. GUARANTEE the full canonical RBAC baseline exists (all admin roles +
+    // permissions). On a freshly-reset DB this is what populates the Admin
+    // Management "add admin" role dropdown — without it only SUPER_ADMIN exists
+    // and the (SUPER_ADMIN-filtered) dropdown is empty. Upsert-only; never
+    // deletes or downgrades.
+    await ensureAdminRbacBaseline(prisma);
 
     // 2. GUARANTEE the SUPER_ADMIN role exists (upsert, not find).
     const role = await prisma.role.upsert({

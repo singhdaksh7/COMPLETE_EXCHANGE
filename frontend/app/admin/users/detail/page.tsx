@@ -9,6 +9,7 @@ import { adminApi } from '@/lib/admin-api';
 import { errorMessage } from '@/lib/api';
 import { useGuard } from '@/components/guards';
 import { Alert, Button, Card, EmptyState, Row, Select, StatusBadge } from '@/components/ui';
+import { FeatureControls } from './FeatureControls';
 
 function ShortId({ id }: { id: string }) {
   return <span className="font-mono text-xs">{id.slice(0, 8)}</span>;
@@ -47,6 +48,9 @@ function AdminUserDetailInner() {
   const roles = me.data?.data.roles ?? [];
   const canManageUsers = roles.includes('SUPER_ADMIN') || permissions.includes('users.manage');
   const canManageRisk = roles.includes('SUPER_ADMIN') || permissions.includes('risk.manage');
+  const isSuper = roles.includes('SUPER_ADMIN');
+  const canViewControls = isSuper || permissions.includes('users.controls.view');
+  const canUpdateControls = isSuper || permissions.includes('users.controls.update');
 
   useEffect(() => {
     const user = q.data?.data;
@@ -122,6 +126,14 @@ function AdminUserDetailInner() {
         {user && (
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
             <div className="space-y-4 lg:col-span-2">
+              {canViewControls && (
+                <FeatureControls
+                  userId={user.id}
+                  canView={canViewControls}
+                  canUpdate={canUpdateControls}
+                />
+              )}
+
               <Section title="Profile">
                 <Row label="User ID" value={<span className="font-mono text-xs">{user.id}</span>} />
                 <Row label="Email" value={user.email} />

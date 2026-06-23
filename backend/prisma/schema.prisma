@@ -397,10 +397,57 @@ model User {
   legalAcceptances   UserLegalAcceptance[]
   fiuDraftReports    FiuDraftReport[]
   complianceTasks    ComplianceTask[]
+  featureControls    UserFeatureControls?
 
   @@index([status])
   @@index([kycStatus])
   @@map("users")
+}
+
+/// Per-user operational feature controls (User Control Center, Stage 7.x).
+///
+/// One optional row per user. When a row is absent the user is treated as
+/// fully enabled (all positive flags ON, all block/review flags OFF) — the
+/// existing account-status / KYC / risk checks still apply independently. When
+/// present, the booleans are enforced in the user-facing APIs (order placement,
+/// INR deposit, crypto deposit, crypto withdrawal). This model NEVER moves
+/// money and does not relax any existing compliance check; it can only add
+/// further restrictions on top of them.
+model UserFeatureControls {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @unique @map("user_id") @db.Uuid
+
+  // Trading controls
+  canTradeSpot       Boolean @default(true) @map("can_trade_spot")
+  canPlaceBuyOrders  Boolean @default(true) @map("can_place_buy_orders")
+  canPlaceSellOrders Boolean @default(true) @map("can_place_sell_orders")
+  canCancelOrders    Boolean @default(true) @map("can_cancel_orders")
+
+  // INR controls
+  canDepositInr  Boolean @default(true) @map("can_deposit_inr")
+  canWithdrawInr Boolean @default(true) @map("can_withdraw_inr")
+
+  // Crypto controls
+  canDepositCrypto  Boolean @default(true) @map("can_deposit_crypto")
+  canWithdrawCrypto Boolean @default(true) @map("can_withdraw_crypto")
+
+  // Compliance controls
+  forceKycReview        Boolean @default(false) @map("force_kyc_review")
+  requireEnhancedKyc    Boolean @default(false) @map("require_enhanced_kyc")
+  underComplianceReview Boolean @default(false) @map("under_compliance_review")
+
+  // Risk controls
+  blockHighRiskActivity        Boolean @default(false) @map("block_high_risk_activity")
+  manualReviewBeforeWithdrawal Boolean @default(false) @map("manual_review_before_withdrawal")
+
+  notes            String?  @map("notes")
+  updatedByAdminId String?  @map("updated_by_admin_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_feature_controls")
 }
 
 /// Links an external identity provider (e.g. Google) to a local User.

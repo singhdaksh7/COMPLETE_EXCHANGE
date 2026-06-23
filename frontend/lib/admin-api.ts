@@ -7,6 +7,9 @@ import type {
   AdminUserDetail,
   AdminUserListItem,
   AdminListItem,
+  UserFeatureControls,
+  UserControlFlag,
+  UserControlAuditEntry,
   AdminLoginData,
   AdminMeData,
   AdminRoleOption,
@@ -269,6 +272,24 @@ export const adminApi = {
     userId: string,
     body: { riskLevel?: 'LOW' | 'MEDIUM' | 'HIGH'; riskNote?: string | null },
   ) => adminApiFetch<AdminUserListItem>(`/users/${userId}/risk`, 'PATCH', { body }),
+
+  // ---- per-user feature controls (User Control Center) ----
+  userControls: (userId: string) =>
+    adminApiFetch<UserFeatureControls>(`/users/${userId}/controls`, 'GET'),
+
+  updateUserControls: (
+    userId: string,
+    body: Partial<Record<UserControlFlag, boolean>> & { reason: string },
+  ) =>
+    adminApiFetch<UserFeatureControls>(`/users/${userId}/controls`, 'PATCH', {
+      body,
+    }),
+
+  userControlsAudit: (userId: string) =>
+    adminApiFetch<{ items: UserControlAuditEntry[] }>(
+      `/users/${userId}/controls/audit`,
+      'GET',
+    ),
 
   // ---- INR deposit monitoring + manual approval ----
   deposits: (

@@ -139,7 +139,8 @@ export default function AdminUsersPage() {
                     <th className="pr-3 font-medium">Risk</th>
                     <th className="pr-3 font-medium">Balances</th>
                     <th className="pr-3 font-medium">Last login</th>
-                    <th className="font-medium">Created</th>
+                    <th className="pr-3 font-medium">Created</th>
+                    <th className="font-medium">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -170,7 +171,15 @@ export default function AdminUsersPage() {
                       <td className="pr-3 text-muted">
                         {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : '—'}
                       </td>
-                      <td className="text-muted">{new Date(u.createdAt).toLocaleString()}</td>
+                      <td className="pr-3 text-muted">{new Date(u.createdAt).toLocaleString()}</td>
+                      <td>
+                        <Link
+                          href={`/admin/users/detail?id=${u.id}`}
+                          className="text-brand hover:underline"
+                        >
+                          View / Controls
+                        </Link>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

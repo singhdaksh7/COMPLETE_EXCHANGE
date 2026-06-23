@@ -23,6 +23,9 @@ export const ADMIN_PERMISSIONS: PermissionDef[] = [
   { code: 'users.view', description: 'View user accounts and risk summaries' },
   { code: 'users.manage', description: 'Freeze / unfreeze user accounts' },
   { code: 'risk.manage', description: 'Manage user withdrawal blocks and risk notes' },
+  // Per-user operational feature controls (User Control Center).
+  { code: 'users.controls.view', description: 'View a user\'s per-account feature controls' },
+  { code: 'users.controls.update', description: 'Enable / disable a user\'s per-account feature controls' },
   { code: 'kyc.view', description: 'View KYC submissions' },
   { code: 'kyc.review', description: 'Approve / reject / request info on KYC' },
   { code: 'compliance.view', description: 'View compliance dashboard and KYC metrics' },
@@ -153,6 +156,7 @@ export const ADMIN_ROLES: RoleDef[] = [
       'deposit.view',
       'users.view',
       'risk.manage',
+      'users.controls.view',
       'compliance.view',
       'compliance.screening.view',
       // Monitoring (Stage 5.2): FINANCE has read-only case + alert visibility.
@@ -244,6 +248,8 @@ export const ADMIN_ROLES: RoleDef[] = [
       'compliance.approval.create',
       'compliance.sla.view',
       'user.view',
+      'users.view',
+      'users.controls.view',
       'operations.view',
       // Compliance admin: sees the ops center + risk alerts (not health-only).
       'system.view',
@@ -258,6 +264,74 @@ export const ADMIN_ROLES: RoleDef[] = [
   {
     name: 'READ_ONLY',
     description: 'Read-only / auditor access',
+    permissions: VIEW_ONLY,
+  },
+  // ---------------------------------------------------------------------------
+  // Additional canonical roles surfaced by the Admin Management UI. They are
+  // upserted on a clean DB so the "add admin" role dropdown is never empty.
+  // ---------------------------------------------------------------------------
+  {
+    name: 'COMPLIANCE_OFFICER',
+    description: 'Compliance review + per-user control management',
+    permissions: [
+      'users.view',
+      'users.controls.view',
+      // The compliance officer is the role trusted to gate a user's operational
+      // features (trading / INR / crypto / risk) from the User Control Center.
+      'users.controls.update',
+      'risk.manage',
+      'kyc.view',
+      'kyc.review',
+      'compliance.view',
+      'compliance.review',
+      'compliance.export',
+      'compliance.screening.view',
+      'compliance.screening.run',
+      'compliance.screening.review',
+      'compliance.case.view',
+      'compliance.case.manage',
+      'compliance.case.assign',
+      'compliance.alert.view',
+      'compliance.alert.manage',
+      'compliance.monitoring.run',
+      'compliance.walletRisk.view',
+      'compliance.travelRule.view',
+      'compliance.evidencePack.view',
+      'compliance.retention.view',
+      'compliance.fiuReport.view',
+      'compliance.amlPolicy.view',
+      'compliance.workspace.view',
+      'compliance.task.view',
+      'compliance.task.manage',
+      'compliance.approval.view',
+      'compliance.approval.create',
+      'compliance.sla.view',
+      'operations.view',
+      'system.view',
+      'system.risk.view',
+    ],
+  },
+  {
+    name: 'INR_OPERATOR',
+    description: 'INR deposit / payout operations',
+    permissions: [
+      'inr.view',
+      'inr.approve',
+      'deposit.view',
+      'withdrawal.view',
+      'withdrawals.view',
+      'treasury.view',
+      'reports.view',
+      'ledger.view',
+      'users.view',
+      'users.controls.view',
+      'operations.view',
+      'system.view',
+    ],
+  },
+  {
+    name: 'SUPPORT_ADMIN',
+    description: 'Read-only support across modules (alias of SUPPORT)',
     permissions: VIEW_ONLY,
   },
 ];

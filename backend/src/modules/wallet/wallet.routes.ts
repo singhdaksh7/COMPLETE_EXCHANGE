@@ -3,6 +3,7 @@ import { asyncHandler } from '../../utils/async-handler';
 import { authenticate } from '../../middleware/authenticate';
 import { validate } from '../../middleware/validate';
 import { idempotency } from '../../middleware/idempotency';
+import { requireUserFeature } from '../../middleware/require-user-feature';
 import { walletController } from './wallet.controller';
 import {
   addressQuerySchema,
@@ -45,6 +46,7 @@ walletInfraRouter.post(
   '/addresses',
   authenticate,
   validate({ body: createDepositAddressSchema }),
+  requireUserFeature('canDepositCrypto'),
   idempotency(),
   asyncHandler(walletController.createAddress),
 );

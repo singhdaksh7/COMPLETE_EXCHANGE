@@ -4,6 +4,7 @@ import { authenticate } from '../../middleware/authenticate';
 import { validate } from '../../middleware/validate';
 import { idempotency } from '../../middleware/idempotency';
 import { sensitiveRateLimiter } from '../../middleware/rate-limit';
+import { requireUserFeature } from '../../middleware/require-user-feature';
 import { depositController } from './deposit.controller';
 import {
   createDepositSchema,
@@ -30,6 +31,7 @@ depositRouter.post(
   '/',
   authenticate,
   validate({ body: createDepositSchema }),
+  requireUserFeature('canDepositInr'),
   idempotency(),
   asyncHandler(depositController.create),
 );
@@ -42,6 +44,7 @@ depositRouter.post(
   authenticate,
   sensitiveRateLimiter,
   validate({ body: createManualDepositSchema }),
+  requireUserFeature('canDepositInr'),
   idempotency(),
   asyncHandler(depositController.createManual),
 );

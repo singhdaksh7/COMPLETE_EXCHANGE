@@ -245,6 +245,41 @@ describe('admin RBAC baseline user-risk grants', () => {
     expect(support?.permissions).not.toContain('compliance.approval.decide');
   });
 
+  it('defines user-controls permissions and the new assignable roles', () => {
+    expect(ADMIN_PERMISSIONS.map((p) => p.code)).toEqual(
+      expect.arrayContaining(['users.controls.view', 'users.controls.update']),
+    );
+
+    const names = ADMIN_ROLES.map((r) => r.name);
+    // The roles surfaced by the Admin Management dropdown all exist in the baseline.
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'SUPER_ADMIN',
+        'KYC_REVIEWER',
+        'COMPLIANCE_OFFICER',
+        'INR_OPERATOR',
+        'SUPPORT_ADMIN',
+      ]),
+    );
+
+    const compliance = ADMIN_ROLES.find((r) => r.name === 'COMPLIANCE_OFFICER');
+    const inr = ADMIN_ROLES.find((r) => r.name === 'INR_OPERATOR');
+    const supportAdmin = ADMIN_ROLES.find((r) => r.name === 'SUPPORT_ADMIN');
+
+    // COMPLIANCE_OFFICER is the role trusted to change per-user controls.
+    expect(compliance?.permissions).toEqual(
+      expect.arrayContaining(['users.controls.view', 'users.controls.update', 'users.view']),
+    );
+    // INR_OPERATOR can view controls but never change them, and never trades.
+    expect(inr?.permissions).toEqual(
+      expect.arrayContaining(['inr.view', 'inr.approve', 'users.controls.view']),
+    );
+    expect(inr?.permissions).not.toContain('users.controls.update');
+    // SUPPORT_ADMIN is read-only (VIEW_ONLY): inherits .view, never .update.
+    expect(supportAdmin?.permissions).toContain('users.controls.view');
+    expect(supportAdmin?.permissions).not.toContain('users.controls.update');
+  });
+
   it('defines system / ops-center permissions with the right role access (Stage 4.3)', () => {
     expect(ADMIN_PERMISSIONS.map((p) => p.code)).toEqual(
       expect.arrayContaining(['system.view', 'system.health.view', 'system.risk.view']),

@@ -3,6 +3,10 @@ import { asyncHandler } from '../../utils/async-handler';
 import { authenticate } from '../../middleware/authenticate';
 import { validate } from '../../middleware/validate';
 import { idempotency } from '../../middleware/idempotency';
+import {
+  requireOrderPlacementAllowed,
+  requireUserFeature,
+} from '../../middleware/require-user-feature';
 import { tradingController } from './trading.controller';
 import {
   candlesQuerySchema,
@@ -61,6 +65,8 @@ orderRouter.post(
   '/',
   authenticate,
   validate({ body: createOrderSchema }),
+  // Per-user feature controls: spot trading + side-specific buy/sell gate.
+  requireOrderPlacementAllowed(),
   idempotency(),
   asyncHandler(tradingController.create),
 );
@@ -84,6 +90,7 @@ orderRouter.delete(
   '/:id',
   authenticate,
   validate({ params: orderIdParamSchema }),
+  requireUserFeature('canCancelOrders'),
   asyncHandler(tradingController.cancel),
 );
 
