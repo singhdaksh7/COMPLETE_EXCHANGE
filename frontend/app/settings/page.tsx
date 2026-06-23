@@ -161,8 +161,8 @@ export default function SettingsPage() {
               <h1 className="text-2xl font-bold tracking-tight text-white">Notifications</h1>
               <p className="text-xs text-white/50 mt-1">Stay updated with your account activities.</p>
             </div>
-            <button className="rounded-lg border border-gold/40 bg-gold/5 px-4 py-2 text-xs font-bold text-gold hover:bg-gold/15 transition">
-              Mark all as read
+            <button disabled className="rounded-lg border border-gold/20 bg-gold/5 px-3 py-2 text-xs font-bold text-gold/50 cursor-not-allowed uppercase tracking-wider opacity-50">
+              Mark all read
             </button>
           </div>
 
@@ -210,7 +210,7 @@ export default function SettingsPage() {
                       <span>Last 30 Days</span>
                     </div>
                   </div>
-                  <button className="w-full rounded-lg border border-white/10 bg-white/[0.02] py-2 text-xs font-bold text-white/60 hover:text-white hover:bg-white/[0.04] transition uppercase tracking-wider">
+                  <button disabled className="w-full rounded-lg border border-white/10 bg-white/[0.02] py-2 text-xs font-bold text-white/30 cursor-not-allowed uppercase tracking-wider opacity-50">
                     Clear All
                   </button>
                 </div>

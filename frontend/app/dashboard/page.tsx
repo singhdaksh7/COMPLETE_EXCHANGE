@@ -56,6 +56,7 @@ export default function DashboardPage() {
     .slice(0, 5);
 
   const firstName = me?.user.fullName ? me.user.fullName.split(' ')[0] : 'Trader';
+  const hasBalances = balances.length > 0 && (Number(inr?.available ?? 0) + Number(inr?.available ?? 0) > 0 || Number(usdt?.available ?? 0) > 0);
 
   return (
     <UserShell className="max-w-[1400px]">
@@ -66,13 +67,15 @@ export default function DashboardPage() {
             <h1 className="text-3xl font-bold tracking-tight text-white">
               Welcome back, {firstName}! 👋
             </h1>
-            <p className="text-sm text-white/50 mt-1">
+            <p className="mt-0.5 text-sm text-white/50">
               Here&rsquo;s what&rsquo;s happening with your portfolio today.
             </p>
           </div>
-          <span className="text-[10px] text-white/30 font-semibold tracking-wider uppercase bg-white/5 border border-white/5 rounded-lg px-3 py-1.5 font-mono">
-            Last updated: 12 May 2025, 10:24 AM
-          </span>
+          {hasBalances && (
+            <span className="text-[10px] text-white/30 font-semibold tracking-wider uppercase bg-white/5 border border-white/5 rounded-lg px-3 py-1.5 font-mono">
+              Last updated: {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}, {new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
         </div>
 
         {walletQ.isError && <div className="mb-6"><Alert>{errorMessage(walletQ.error)}</Alert></div>}
@@ -86,20 +89,31 @@ export default function DashboardPage() {
             <div className="relative z-10 flex justify-between items-start">
               <div>
                 <span className="text-[10px] font-bold text-white/45 uppercase tracking-wider block">Total Portfolio Value</span>
-                <span className="text-2xl font-black text-white font-mono mt-1 block">
-                  ₹ {totalInrPortfolio.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-                <span className="text-xs text-white/45 font-mono mt-0.5 block">
-                  ≈ {totalBtcPortfolio.toFixed(4)} BTC
-                </span>
+                {hasBalances ? (
+                  <>
+                    <span className="text-2xl font-black text-white font-mono mt-1 block">
+                      ₹ {totalInrPortfolio.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                    <span className="text-xs text-white/45 font-mono mt-0.5 block">
+                      ≈ {totalBtcPortfolio.toFixed(4)} BTC
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-2xl font-black text-white font-mono mt-1 block">₹ 0.00</span>
+                )}
               </div>
-              {/* Gold sparkline SVG */}
-              <svg className="w-20 h-10 text-gold" viewBox="0 0 100 40" fill="none">
-                <path d="M0 30 Q 20 15, 40 25 T 80 5 T 100 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-              </svg>
+              {hasBalances && (
+                <svg className="w-20 h-10 text-gold" viewBox="0 0 100 40" fill="none">
+                  <path d="M0 30 Q 20 15, 40 25 T 80 5 T 100 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+              )}
             </div>
             <div className="relative z-10 flex gap-4 text-[10px] font-bold mt-4 border-t border-white/5 pt-2">
-              <span className="text-white/40">Indicative valuation at ≈ ₹83.20/USDT</span>
+              {hasBalances ? (
+                <span className="text-white/40">Indicative valuation at ≈ ₹83.20/USDT</span>
+              ) : (
+                <span className="text-white/30">Deposit funds to see your portfolio value</span>
+              )}
             </div>
           </div>
 
@@ -111,10 +125,19 @@ export default function DashboardPage() {
                 <span className="text-[10px] font-bold text-white/45 uppercase tracking-wider block">INR Balance</span>
                 <span className="h-6 w-6 rounded-full bg-gold/10 border border-gold/30 flex items-center justify-center text-gold text-xs font-bold font-mono">₹</span>
               </div>
-              <span className="text-2xl font-black text-white font-mono block">
-                ₹ {Number(inr?.available ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
-              <span className="text-[10px] text-white/40 block mt-1">Locked: ₹{inr?.locked ?? '0.00'}</span>
+              {Number(inr?.available ?? 0) > 0 ? (
+                <>
+                  <span className="text-2xl font-black text-white font-mono block">
+                    ₹ {Number(inr?.available ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-[10px] text-white/40 block mt-1">Locked: ₹{inr?.locked ?? '0.00'}</span>
+                </>
+              ) : (
+                <>
+                  <span className="text-2xl font-black text-white font-mono block">₹ 0.00</span>
+                  <span className="text-[10px] text-white/30 block mt-1">No INR balance</span>
+                </>
+              )}
             </div>
             <Link href="/deposit" className="relative z-10 mt-3 block w-full text-center rounded-lg border border-gold/30 bg-gold/5 py-1.5 text-xs font-bold text-gold hover:bg-gold/15 transition uppercase tracking-wider">
               Deposit INR
@@ -129,10 +152,19 @@ export default function DashboardPage() {
                 <span className="text-[10px] font-bold text-white/45 uppercase tracking-wider block">USDT Balance</span>
                 <span className="h-6 w-6 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 text-xs font-bold font-mono">₮</span>
               </div>
-              <span className="text-2xl font-black text-white font-mono block">
-                {Number(usdt?.available ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT
-              </span>
-              <span className="text-[10px] text-white/40 block mt-1">≈ ₹{Number(Number(usdt?.available ?? 0) * 83.20).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+              {Number(usdt?.available ?? 0) > 0 ? (
+                <>
+                  <span className="text-2xl font-black text-white font-mono block">
+                    {Number(usdt?.available ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT
+                  </span>
+                  <span className="text-[10px] text-white/40 block mt-1">≈ ₹{Number(Number(usdt?.available ?? 0) * 83.20).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                </>
+              ) : (
+                <>
+                  <span className="text-2xl font-black text-white font-mono block">0.00 USDT</span>
+                  <span className="text-[10px] text-white/30 block mt-1">No USDT balance</span>
+                </>
+              )}
             </div>
             <Link href="/wallet" className="relative z-10 mt-3 block w-full text-center rounded-lg border border-gold/30 bg-gold/5 py-1.5 text-xs font-bold text-gold hover:bg-gold/15 transition uppercase tracking-wider">
               Deposit USDT
@@ -144,29 +176,46 @@ export default function DashboardPage() {
             <div className="pointer-events-none absolute -inset-px rounded-2xl bg-gradient-to-b from-gold/15 to-transparent opacity-60" />
             <div className="relative z-10 flex justify-between items-start">
               <div>
-                <span className="text-[10px] font-bold text-white/45 uppercase tracking-wider flex items-center gap-1.5">
-                  Today&rsquo;s PnL
-                  <span className="rounded bg-amber-500/15 px-1 py-0.5 text-[8px] font-bold text-amber-300">SAMPLE</span>
-                </span>
-                <span className="text-2xl font-black text-up font-mono mt-1 block">
-                  + ₹ 45,320.50
-                </span>
-                <span className="text-[10px] text-up font-mono mt-0.5 block">
-                  +2.35%
-                </span>
+                {hasBalances ? (
+                  <>
+                    <span className="text-[10px] font-bold text-white/45 uppercase tracking-wider flex items-center gap-1.5">
+                      Today&rsquo;s PnL
+                      <span className="rounded bg-amber-500/15 px-1 py-0.5 text-[8px] font-bold text-amber-300">SAMPLE</span>
+                    </span>
+                    <span className="text-2xl font-black text-up font-mono mt-1 block">
+                      + ₹ 45,320.50
+                    </span>
+                    <span className="text-[10px] text-up font-mono mt-0.5 block">
+                      +2.35%
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-[10px] font-bold text-white/30 uppercase tracking-wider block">Today&rsquo;s PnL</span>
+                    <span className="text-2xl font-black text-white/30 font-mono mt-1 block">—</span>
+                    <span className="text-[10px] text-white/20 font-mono mt-0.5 block">No trades yet</span>
+                  </>
+                )}
               </div>
-              {/* Mini green bar chart */}
-              <div className="flex items-end gap-1 h-10 pt-2 text-up">
-                <div className="w-1.5 h-4 bg-up/40 rounded-sm" />
-                <div className="w-1.5 h-6 bg-up/60 rounded-sm" />
-                <div className="w-1.5 h-8 bg-up rounded-sm" />
-                <div className="w-1.5 h-5 bg-up/70 rounded-sm" />
-                <div className="w-1.5 h-7 bg-up rounded-sm" />
-              </div>
+              {hasBalances && (
+                <div className="flex items-end gap-1 h-10 pt-2 text-up">
+                  <div className="w-1.5 h-4 bg-up/40 rounded-sm" />
+                  <div className="w-1.5 h-6 bg-up/60 rounded-sm" />
+                  <div className="w-1.5 h-8 bg-up rounded-sm" />
+                  <div className="w-1.5 h-5 bg-up/70 rounded-sm" />
+                  <div className="w-1.5 h-7 bg-up rounded-sm" />
+                </div>
+              )}
             </div>
             <div className="relative z-10 flex gap-4 text-[10px] font-bold mt-4 border-t border-white/5 pt-2">
-              <span className="text-white/40">This Week PnL</span>
-              <span className="text-up">+ ₹ 1,25,450.75</span>
+              {hasBalances ? (
+                <>
+                  <span className="text-white/40">This Week PnL</span>
+                  <span className="text-up">+ ₹ 1,25,450.75</span>
+                </>
+              ) : (
+                <span className="text-white/30">Start trading to track PnL</span>
+              )}
             </div>
           </div>
 

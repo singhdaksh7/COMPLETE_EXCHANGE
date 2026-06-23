@@ -126,14 +126,14 @@ export default function DepositPage() {
                   {
                     id: 'UPI',
                     title: 'UPI',
-                    badge: 'Instant',
-                    desc: 'Pay using any UPI app and get instant credit',
+                    badge: 'Fast',
+                    desc: 'Pay using any UPI app — credited after admin verification',
                   },
                   {
                     id: 'IMPS',
                     title: 'IMPS',
-                    badge: 'Instant',
-                    desc: 'Transfer using IMPS and get instant credit',
+                    badge: 'Fast',
+                    desc: 'Transfer using IMPS — credited after admin verification',
                   },
                   {
                     id: 'NEFT',
@@ -419,8 +419,8 @@ export default function DepositPage() {
                   {[
                     { step: '1', title: 'Choose your preferred deposit method', desc: 'Select UPI, IMPS, NEFT or scan QR code' },
                     { step: '2', title: 'Make the payment', desc: 'Transfer the amount to the provided UPI ID or bank details' },
-                    { step: '3', title: 'Instant credit', desc: 'Your INR balance will be credited instantly or within a few minutes' },
-                    { step: '4', title: 'Start trading', desc: 'Use your balance to trade crypto on Exora' },
+                    { step: '3', title: 'Submit for verification', desc: 'Enter the UTR/reference number — your balance is credited after admin verification' },
+                    { step: '4', title: 'Start trading', desc: 'Once approved, use your INR balance to trade crypto on Exora' },
                   ].map((item) => (
                     <div key={item.step} className="flex gap-3">
                       <div className="h-5 w-5 rounded-full border border-gold/30 bg-gold/5 text-gold flex items-center justify-center font-bold text-[10px] shrink-0 font-mono">

@@ -159,12 +159,12 @@ export default function WalletPage() {
   let totalInrVal = 0;
   balances.forEach((b) => {
     const asset = b.asset.toUpperCase();
-    const rate = prices[asset] ?? 83.20; // fallback to USDT rate
+    const rate = prices[asset] ?? 83.20;
     totalInrVal += Number(b.total) * rate;
   });
 
-  // Default fallback for demo/empty state
-  const displayTotalInr = totalInrVal > 0 ? totalInrVal : 2458320.45;
+  const hasBalances = balances.length > 0 && totalInrVal > 0;
+  const displayTotalInr = hasBalances ? totalInrVal : 0;
   const displayTotalBtc = displayTotalInr / prices.BTC;
 
   // Calculate asset allocations
@@ -176,10 +176,10 @@ export default function WalletPage() {
     return { asset, pct };
   }).sort((a, b) => b.pct - a.pct);
 
-  const btcPct = allocations.find((a) => a.asset === 'BTC')?.pct ?? 44.7;
-  const ethPct = allocations.find((a) => a.asset === 'ETH')?.pct ?? 30.4;
-  const usdtPct = allocations.find((a) => a.asset === 'USDT')?.pct ?? 9.6;
-  const solPct = allocations.find((a) => a.asset === 'SOL')?.pct ?? 6.8;
+  const btcPct = allocations.find((a) => a.asset === 'BTC')?.pct ?? 0;
+  const ethPct = allocations.find((a) => a.asset === 'ETH')?.pct ?? 0;
+  const usdtPct = allocations.find((a) => a.asset === 'USDT')?.pct ?? 0;
+  const solPct = allocations.find((a) => a.asset === 'SOL')?.pct ?? 0;
 
   const filteredAssets = balances.filter((b) => {
     const asset = b.asset.toUpperCase();
@@ -243,17 +243,28 @@ export default function WalletPage() {
                     <span>Total Wallet Balance</span>
                     <button className="text-white/35 hover:text-white transition">👁️</button>
                   </div>
-                  <div className="text-3xl font-black text-white font-mono mt-1.5 tracking-tight">
-                    ₹{displayTotalInr.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </div>
-                  <div className="text-xs text-white/40 font-mono mt-1">
-                    ≈ {displayTotalBtc.toFixed(3)} BTC
-                  </div>
+                  {hasBalances ? (
+                    <>
+                      <div className="text-3xl font-black text-white font-mono mt-1.5 tracking-tight">
+                        ₹{displayTotalInr.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                      <div className="text-xs text-white/40 font-mono mt-1">
+                        ≈ {displayTotalBtc.toFixed(3)} BTC
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-3xl font-black text-white font-mono mt-1.5 tracking-tight">₹0.00</div>
+                      <div className="text-xs text-white/40 font-mono mt-1">No balances yet</div>
+                    </>
+                  )}
                 </div>
 
                 <div className="flex flex-col items-end gap-1">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] bg-up/10 text-up font-bold px-2 py-0.5 rounded-full">+2.35%</span>
+                    {hasBalances && (
+                      <span className="text-[10px] bg-up/10 text-up font-bold px-2 py-0.5 rounded-full">+2.35%</span>
+                    )}
                     <select className="bg-noir border border-white/10 rounded px-1.5 py-0.5 text-[10px] text-white/50 focus:outline-none">
                       <option>24H</option>
                       <option>7D</option>
@@ -266,13 +277,19 @@ export default function WalletPage() {
               <div className="relative z-10 grid grid-cols-2 items-end mt-4">
                 <div>
                   <span className="text-[9px] uppercase tracking-wider text-white/35 block font-bold">24H Change</span>
-                  <span className="text-xs font-bold text-up font-mono mt-0.5 block">
-                    +₹{(displayTotalInr * 0.0235).toLocaleString('en-IN', { maximumFractionDigits: 2 })} (+2.35%)
-                  </span>
+                  {hasBalances ? (
+                    <span className="text-xs font-bold text-up font-mono mt-0.5 block">
+                      +₹{(displayTotalInr * 0.0235).toLocaleString('en-IN', { maximumFractionDigits: 2 })} (+2.35%)
+                    </span>
+                  ) : (
+                    <span className="text-xs font-bold text-white/30 font-mono mt-0.5 block">—</span>
+                  )}
                 </div>
-                <div className="h-12 w-full max-w-[200px] justify-self-end">
-                  <SparklineChart />
-                </div>
+                {hasBalances && (
+                  <div className="h-12 w-full max-w-[200px] justify-self-end">
+                    <SparklineChart />
+                  </div>
+                )}
               </div>
             </div>
 
@@ -359,7 +376,7 @@ export default function WalletPage() {
                 Hide Small Balances
               </label>
               
-              <button className="flex items-center gap-1.5 text-gold font-bold hover:underline transition">
+              <button disabled className="flex items-center gap-1.5 text-gold/50 cursor-not-allowed transition opacity-50">
                 🔄 Convert Small Balances to USDT
               </button>
             </div>
@@ -383,7 +400,9 @@ export default function WalletPage() {
                 <tbody className="divide-y divide-white/5">
                   {filteredAssets.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-8 text-center text-white/40">No assets found matching filters.</td>
+                      <td colSpan={7} className="py-12 text-center text-white/40">
+                        {hasBalances ? 'No assets found matching filters.' : 'No balances yet. Deposit INR or crypto to get started.'}
+                      </td>
                     </tr>
                   ) : (
                     filteredAssets.map((b) => {

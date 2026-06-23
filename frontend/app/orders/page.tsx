@@ -335,7 +335,14 @@ export default function OrdersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5 font-mono">
-              {history.slice(0, 10).map((o) => (
+              {history.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="py-10 text-center text-xs text-white/40 font-sans">
+                    No order history yet. Your completed orders will appear here.
+                  </td>
+                </tr>
+              ) : (
+                history.slice(0, 10).map((o) => (
                 <tr key={o.id} className="hover:bg-white/[0.01]">
                   <td className="py-3 px-3 text-white/50 text-[10px]">{new Date(o.createdAt).toLocaleDateString()}</td>
                   <td className="px-3 font-sans font-bold text-white">{o.marketSymbol}</td>
@@ -348,7 +355,7 @@ export default function OrdersPage() {
                     <StatusBadge status={o.status} />
                   </td>
                 </tr>
-              ))}
+              )))}
             </tbody>
           </table>
         </div>
