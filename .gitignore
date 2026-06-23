@@ -1,0 +1,36 @@
+# ==================================================================
+# Repo-wide safety net (Stage 7.0B security hardening).
+# Per-package .gitignore files (backend/, frontend/, mobile/) hold the
+# detailed rules; this root file is a defensive backstop so secrets and
+# infra scratch can never be committed from any directory.
+# ==================================================================
+
+# Secrets / environment
+.env
+.env.*
+!.env.example
+!.env.local.example
+*.pem
+*.key
+*.p12
+*.keystore
+id_rsa
+id_ed25519
+
+# Cloud / deploy scratch (infra identifiers: account ids, ARNs, secret names)
+*taskdef*.json
+cex-staging-*.json
+*-overrides.json
+aws-exports.js
+
+# Dependencies / build output
+node_modules/
+dist/
+.next/
+out/
+coverage/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log

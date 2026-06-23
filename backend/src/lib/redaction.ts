@@ -1,5 +1,9 @@
+// Case-insensitive substring match against object KEYS. `.?` between words
+// catches both snake_case and camelCase variants (database_url / databaseUrl)
+// — Stage 7.0B widened this so camelCase connection-string / credential keys
+// can no longer slip through the defense-in-depth redactor.
 const SECRET_KEY_PATTERN =
-  /authorization|cookie|password|passcode|secret|token|otp|totp|private.?key|database_url|redis_url|access.?key|api.?key|key_secret|webhook_secret/i;
+  /authorization|cookie|password|passcode|passphrase|secret|credential|token|otp|totp|mnemonic|private.?key|database.?url|redis.?url|connection.?string|access.?key|api.?key|key_secret|webhook_secret/i;
 
 export const REDACTED = '[REDACTED]';
 

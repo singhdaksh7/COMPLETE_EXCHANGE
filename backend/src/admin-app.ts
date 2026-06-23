@@ -7,6 +7,7 @@ import {
   helmetMiddleware,
   corsMiddleware,
   compressionMiddleware,
+  additionalSecurityHeaders,
 } from './middleware/security';
 import { requestContext } from './middleware/request-context';
 import { globalRateLimiter } from './middleware/rate-limit';
@@ -33,6 +34,7 @@ export function createAdminApp(): Express {
   app.disable('x-powered-by');
 
   app.use(helmetMiddleware);
+  app.use(additionalSecurityHeaders);
   app.use(corsMiddleware);
   app.use(compressionMiddleware);
 

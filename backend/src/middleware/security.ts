@@ -39,3 +39,21 @@ export const corsMiddleware: RequestHandler = cors({
 });
 
 export const compressionMiddleware: RequestHandler = compression();
+
+/**
+ * Additional response headers helmet 8 does not set by default (Stage 7.0B).
+ *
+ * helmet already emits HSTS, X-Content-Type-Options: nosniff, X-Frame-Options,
+ * Referrer-Policy and the Cross-Origin-* set. The one gap from the hardening
+ * checklist is `Permissions-Policy`: this is a JSON API + separate admin API
+ * that never needs camera/microphone/geolocation/payment browser features, so
+ * we deny them outright. Purely additive — it cannot affect JSON responses or
+ * break CloudFront/static frontend loading (those assets are served elsewhere).
+ */
+export const additionalSecurityHeaders: RequestHandler = (_req, res, next) => {
+  res.setHeader(
+    'Permissions-Policy',
+    'camera=(), microphone=(), geolocation=(), payment=(), usb=(), accelerometer=(), gyroscope=(), magnetometer=()',
+  );
+  next();
+};

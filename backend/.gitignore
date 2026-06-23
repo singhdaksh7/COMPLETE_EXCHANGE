@@ -7,3 +7,18 @@ dist/
 coverage/
 .DS_Store
 prisma/*.db
+
+# ------------------------------------------------------------------
+# Deploy / infra scratch artifacts (Stage 7.0B security hardening).
+# These are pulled from AWS (`aws ecs describe-task-definition`, run-task
+# overrides, prisma maintenance overrides) and contain environment-specific
+# infra identifiers (AWS account id, IAM role ARNs, Secrets Manager ARNs).
+# They MUST NOT be committed. Keep them local only. A sanitized template
+# lives at backend/deploy/taskdef.example.json.
+# ------------------------------------------------------------------
+aws
+*taskdef*.json
+cex-staging-*.json
+*-overrides.json
+# ...but DO keep the sanitized, placeholder-only template.
+!deploy/taskdef.example.json
