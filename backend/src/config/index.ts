@@ -89,6 +89,15 @@ export const config = {
     callbackUrl: env.GOOGLE_CALLBACK_URL,
   },
 
+  // Email OTP (passwordless login/signup, Stage 3A).
+  otp: {
+    hashSecret: env.OTP_HASH_SECRET,
+    ttlMs: env.OTP_TTL_MS,
+    maxAttempts: env.OTP_MAX_ATTEMPTS,
+    resendCooldownMs: env.OTP_RESEND_COOLDOWN_MS,
+    maxPerHour: env.OTP_MAX_PER_HOUR,
+  },
+
   kyc: {
     encryptionKey: env.KYC_ENCRYPTION_KEY,
     uploadUrlTtlSec: env.KYC_UPLOAD_URL_TTL_SEC,

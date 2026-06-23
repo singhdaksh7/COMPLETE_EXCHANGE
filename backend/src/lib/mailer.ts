@@ -18,7 +18,7 @@ import { config } from '../config';
  * Public method signatures are stable, so callers in auth.service.ts never
  * change when the provider is swapped.
  */
-export type MailKind = 'EMAIL_VERIFICATION' | 'PASSWORD_RESET' | 'NOTIFICATION';
+export type MailKind = 'EMAIL_VERIFICATION' | 'PASSWORD_RESET' | 'NOTIFICATION' | 'EMAIL_OTP';
 
 export interface SentMail {
   to: string;
@@ -116,6 +116,26 @@ function resetEmail(link: string): EmailContent {
       'Reset your Exora password\n\n' +
       'We received a request to reset your Exora password. Use the link below (it expires shortly):\n' +
       `${link}\n\n` +
+      "If you didn't request this, you can safely ignore this email.",
+  };
+}
+
+/** Passwordless login/signup OTP email. The code is shown in the body (no link). */
+function otpEmail(code: string, purpose: 'LOGIN' | 'SIGNUP'): EmailContent {
+  const mins = Math.max(1, Math.round(config.otp.ttlMs / 60_000));
+  const action = purpose === 'SIGNUP' ? 'create your Exora account' : 'sign in to Exora';
+  return {
+    subject: `Your Exora verification code: ${code}`,
+    html: layout(
+      'Your verification code',
+      `Use this code to ${action}: ` +
+        `<strong style="color:#ffffff;font-size:20px;letter-spacing:2px;">${code}</strong>. ` +
+        `It expires in ${mins} minute${mins === 1 ? '' : 's'}.`,
+      { label: 'Open Exora', url: config.urls.frontendUrl },
+    ),
+    text:
+      `Your Exora verification code is ${code}.\n` +
+      `Use it to ${action}. It expires in ${mins} minute${mins === 1 ? '' : 's'}.\n` +
       "If you didn't request this, you can safely ignore this email.",
   };
 }
@@ -228,6 +248,18 @@ export const mailer = {
     }
     logger.info({ to, kind: 'NOTIFICATION', provider: 'log', subject: content.subject }, 'mailer: dispatched');
     return 'log';
+  },
+  /**
+   * Send a passwordless login/signup OTP. `purpose` only tunes copy; the code
+   * itself is recorded in the (non-prod) outbox for tests and is NEVER logged in
+   * production.
+   */
+  async sendEmailOtp(
+    to: string,
+    code: string,
+    purpose: 'LOGIN' | 'SIGNUP',
+  ): Promise<void> {
+    await dispatch(to, 'EMAIL_OTP', code, otpEmail(code, purpose));
   },
   /** Test helper: most recent token of a kind sent to an address. */
   lastTokenFor(to: string, kind: MailKind): string | undefined {

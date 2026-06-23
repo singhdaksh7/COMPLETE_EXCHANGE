@@ -43,6 +43,14 @@ export const AuditAction = {
   SESSIONS_REVOKED_ALL: 'auth.sessions_revoked_all',
   INVALID_REFRESH: 'auth.invalid_refresh',
   TOKEN_REUSE_DETECTED: 'auth.token_reuse_detected',
+  // Email OTP (passwordless login/signup, Stage 3A).
+  OTP_REQUESTED: 'auth.otp_requested',
+  OTP_VERIFIED: 'auth.otp_verified',
+  OTP_FAILED: 'auth.otp_failed',
+  OTP_LOCKED: 'auth.otp_locked',
+  OTP_SIGNUP: 'auth.otp_signup',
+  // Session / device security (Stage 3D).
+  LOGIN_NEW_DEVICE: 'auth.login_new_device',
 } as const;
 
 export async function recordAudit(input: AuditInput): Promise<void> {

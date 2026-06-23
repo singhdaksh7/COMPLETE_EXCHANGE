@@ -515,6 +515,39 @@ model LoginAttempt {
   @@map("login_attempts") // RANGE-partition monthly on created_at (raw SQL)
 }
 
+/// Passwordless email-OTP login/signup (Stage 3A).
+///
+/// One row per issued code. The code itself is NEVER stored — only a keyed
+/// HMAC-SHA256 hash (server secret + email), so a DB leak alone yields no
+/// usable codes and cannot be brute-forced offline without the secret. Codes
+/// are single-use (`usedAt`), short-lived (`expiresAt`), attempt-capped
+/// (`attempts`/`maxAttempts`) and resend-throttled (`lastSentAt`). Keyed by
+/// email (not user id) so signup — where no user exists yet — uses the same
+/// table and flow as login.
+enum EmailOtpPurpose {
+  LOGIN
+  SIGNUP
+}
+
+model EmailOtp {
+  id          String          @id @default(uuid()) @db.Uuid
+  email       String          @db.Citext
+  otpHash     String          @map("otp_hash")
+  purpose     EmailOtpPurpose
+  expiresAt   DateTime        @map("expires_at")
+  usedAt      DateTime?       @map("used_at")
+  attempts    Int             @default(0)
+  maxAttempts Int             @default(5) @map("max_attempts")
+  lastSentAt  DateTime        @default(now()) @map("last_sent_at")
+  createdAt   DateTime        @default(now()) @map("created_at")
+  ipAddress   String?         @map("ip_address") @db.Inet
+  userAgent   String?         @map("user_agent")
+
+  @@index([email, createdAt])
+  @@index([expiresAt])
+  @@map("email_otps")
+}
+
 // ============================================================================
 // RBAC — roles, permissions (users + admins)
 // ============================================================================

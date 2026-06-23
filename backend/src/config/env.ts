@@ -144,6 +144,24 @@ export const envSchema = z
   // e.g. https://api.example.com/api/v1/auth/google/callback
   GOOGLE_CALLBACK_URL: optionalUrl,
 
+  // ---- EMAIL OTP (passwordless login/signup, Stage 3A) ----
+  // Server secret used to key the HMAC over each OTP code. A DB leak alone is
+  // useless without this secret (no offline brute force of the 6-digit space).
+  // Production MUST supply a strong, externally-managed value; the dev default
+  // only unblocks local + test runs.
+  OTP_HASH_SECRET: z
+    .string()
+    .min(16, 'OTP_HASH_SECRET must be >= 16 chars')
+    .default('dev-only-change-me-email-otp-hmac-secret'),
+  // OTP lifetime (ms). Spec: 5–10 minutes. Default 10 minutes.
+  OTP_TTL_MS: z.coerce.number().int().positive().default(600_000),
+  // Maximum verify attempts before a code is locked.
+  OTP_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
+  // Minimum gap between two code sends to the same email (ms). Default 60s.
+  OTP_RESEND_COOLDOWN_MS: z.coerce.number().int().positive().default(60_000),
+  // Hard cap on codes issued to one email within the rolling hour (anti-abuse).
+  OTP_MAX_PER_HOUR: z.coerce.number().int().positive().default(6),
+
   // ---- KYC ----
   // Secret used to derive the AES-256-GCM key that seals KYC PII (PAN, Aadhaar
   // ref) into the frozen `*_enc` Bytes columns. Production MUST supply a strong,

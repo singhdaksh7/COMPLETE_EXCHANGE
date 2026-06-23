@@ -16,6 +16,11 @@ import {
   sessionIdParamSchema,
   oauthExchangeSchema,
 } from './auth.validators';
+import {
+  requestEmailOtpSchema,
+  resendEmailOtpSchema,
+  verifyEmailOtpSchema,
+} from './auth.otp.validators';
 
 /**
  * Auth routes.
@@ -76,6 +81,28 @@ authRouter.post(
   authRateLimiter,
   validate({ body: refreshSchema }),
   asyncHandler(authController.refresh),
+);
+
+// ---- passwordless email OTP (Stage 3A) ----
+authRouter.post(
+  '/request-email-otp',
+  authRateLimiter,
+  validate({ body: requestEmailOtpSchema }),
+  asyncHandler(authController.requestEmailOtp),
+);
+
+authRouter.post(
+  '/resend-email-otp',
+  authRateLimiter,
+  validate({ body: resendEmailOtpSchema }),
+  asyncHandler(authController.resendEmailOtp),
+);
+
+authRouter.post(
+  '/verify-email-otp',
+  authRateLimiter,
+  validate({ body: verifyEmailOtpSchema }),
+  asyncHandler(authController.verifyEmailOtp),
 );
 
 authRouter.post(

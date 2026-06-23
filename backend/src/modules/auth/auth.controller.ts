@@ -3,6 +3,7 @@ import { sendSuccess } from '../../utils/response';
 import { authService } from './auth.service';
 import { AppError, UnauthorizedError } from '../../lib/errors';
 import { config } from '../../config';
+import { authOtpService } from './auth.otp.service';
 import type { AuthContext } from './auth.types';
 
 /** Pull request-scoped forensic context for audit logging. */
@@ -85,6 +86,26 @@ export const authController = {
   async refresh(req: Request, res: Response): Promise<void> {
     const tokens = await authService.refresh(req.body.refreshToken, ctx(req));
     sendSuccess(res, { tokens });
+  },
+
+  // ---- email OTP (passwordless login/signup, Stage 3A) ----
+  async requestEmailOtp(req: Request, res: Response): Promise<void> {
+    const result = await authOtpService.requestOtp(req.body.email, ctx(req));
+    sendSuccess(res, result);
+  },
+
+  async resendEmailOtp(req: Request, res: Response): Promise<void> {
+    const result = await authOtpService.resendOtp(req.body.email, ctx(req));
+    sendSuccess(res, result);
+  },
+
+  async verifyEmailOtp(req: Request, res: Response): Promise<void> {
+    const result = await authOtpService.verifyOtp(
+      req.body.email,
+      req.body.otp,
+      ctx(req),
+    );
+    sendSuccess(res, result);
   },
 
   async logout(req: Request, res: Response): Promise<void> {

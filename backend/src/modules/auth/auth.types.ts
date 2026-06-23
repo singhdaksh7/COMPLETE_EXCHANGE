@@ -74,3 +74,15 @@ export interface LoginInput {
   userAgent?: string;
   requestId?: string;
 }
+
+/** Generic, enumeration-safe response to an OTP request/resend. */
+export interface OtpRequestResult {
+  sent: true;
+  expiresInSeconds: number;
+  resendCooldownSeconds: number;
+}
+
+/** Result of a successful OTP verification (login or just-created signup). */
+export interface OtpVerifyResult extends AuthResult {
+  isNewUser: boolean;
+}
