@@ -40,6 +40,7 @@ export interface SessionDto {
   ip: string | null;
   device: unknown;
   createdAt: Date;
+  lastSeenAt: Date | null;
   expiresAt: Date;
   current: boolean;
 }

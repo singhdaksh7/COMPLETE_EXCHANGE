@@ -27,6 +27,9 @@ vi.mock('../../src/modules/auth/auth.repository', () => ({
     revokeAllSessionsForUser: vi.fn(),
     getUserRolesAndPermissions: vi.fn(),
     listUserAuditLogs: vi.fn(),
+    countSessionsForUser: vi.fn().mockResolvedValue(0),
+    countSessionsForUserDevice: vi.fn().mockResolvedValue(1),
+    touchSession: vi.fn().mockResolvedValue(1),
   },
 }));
 

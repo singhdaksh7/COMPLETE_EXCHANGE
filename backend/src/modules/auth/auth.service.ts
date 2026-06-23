@@ -110,6 +110,7 @@ function toSessionDto(s: AuthSession, currentSessionId?: string): SessionDto {
     ip: s.ip,
     device: s.deviceInfo,
     createdAt: s.createdAt,
+    lastSeenAt: s.lastSeenAt,
     expiresAt: s.expiresAt,
     current: s.id === currentSessionId,
   };
@@ -373,6 +374,15 @@ export const authService = {
     user: User,
     meta: { ip?: string; userAgent?: string },
   ): Promise<TokenPair> {
+    // Device/login-security signal (Stage 3D). Determine — BEFORE creating the
+    // new row — whether this login comes from a device we have not seen for this
+    // user. Shared by password + OTP logins (both route through issueSession).
+    const [priorSessions, sameDeviceSessions] = await Promise.all([
+      authRepository.countSessionsForUser(user.id),
+      authRepository.countSessionsForUserDevice(user.id, meta.ip, meta.userAgent),
+    ]);
+    const isNewDevice = priorSessions > 0 && sameDeviceSessions === 0;
+
     const sessionId = randomUUID();
     const familyId = randomUUID();
     const refreshTtlMs = ttlToMs(config.jwt.refreshTtl);
@@ -399,6 +409,22 @@ export const authService = {
       deviceInfo: meta.userAgent ? { userAgent: meta.userAgent } : undefined,
       expiresAt: new Date(Date.now() + refreshTtlMs),
     });
+
+    // Login-alert ARCHITECTURE PLACEHOLDER (Stage 3D): a login from a new device
+    // is recorded to the audit trail now. A real out-of-band alert email is a
+    // future step and is deliberately NOT sent here. Never blocks login.
+    if (isNewDevice) {
+      await recordAudit({
+        actorType: 'USER',
+        actorId: user.id,
+        action: AuditAction.LOGIN_NEW_DEVICE,
+        entityType: 'auth_session',
+        entityId: sessionId,
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+        metadata: { reason: 'unrecognized_device' },
+      }).catch(() => undefined);
+    }
 
     return { accessToken, refreshToken };
   },
@@ -939,6 +965,10 @@ export const authService = {
     ) {
       throw new UnauthorizedError('Session is no longer valid', 'SESSION_INVALID');
     }
+    // Best-effort "last active" stamp (Stage 3D). Throttled in the repository to
+    // ≤1 write/min per session; fire-and-forget so it never delays or fails the
+    // authenticated request.
+    void authRepository.touchSession(sessionId).catch(() => undefined);
     return toPublicUser(session.user);
   },
 

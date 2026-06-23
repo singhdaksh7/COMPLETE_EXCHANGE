@@ -93,8 +93,49 @@ export const authRepository = {
         ip: data.ip,
         deviceInfo: data.deviceInfo,
         expiresAt: data.expiresAt,
+        // A fresh session has been "seen" right now.
+        lastSeenAt: new Date(),
       },
     });
+  },
+
+  /** Total sessions ever created for a user (device-recognition signal). */
+  countSessionsForUser(userId: string): Promise<number> {
+    return prisma.authSession.count({ where: { userId } });
+  },
+
+  /**
+   * Count prior sessions for this user that match the same device signal (same
+   * IP or same user-agent). Used to flag a login from a new device. When no
+   * signal is available we return 1 so we never raise a false "new device".
+   */
+  countSessionsForUserDevice(
+    userId: string,
+    ip?: string,
+    userAgent?: string,
+  ): Promise<number> {
+    const or: Prisma.AuthSessionWhereInput[] = [];
+    if (ip) or.push({ ip });
+    if (userAgent) or.push({ deviceInfo: { equals: { userAgent } } });
+    if (or.length === 0) return Promise.resolve(1);
+    return prisma.authSession.count({ where: { userId, OR: or } });
+  },
+
+  /**
+   * Best-effort "last active" stamp, throttled to at most once per minute per
+   * session so the authenticated hot path does not write on every request.
+   */
+  async touchSession(id: string): Promise<number> {
+    const cutoff = new Date(Date.now() - 60_000);
+    const result = await prisma.authSession.updateMany({
+      where: {
+        id,
+        revokedAt: null,
+        OR: [{ lastSeenAt: null }, { lastSeenAt: { lt: cutoff } }],
+      },
+      data: { lastSeenAt: new Date() },
+    });
+    return result.count;
   },
 
   findSessionById(id: string): Promise<AuthSession | null> {

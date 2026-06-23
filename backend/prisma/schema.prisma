@@ -477,6 +477,7 @@ model AuthSession {
   ip          String?   @db.Inet
   expiresAt   DateTime  @map("expires_at")
   revokedAt   DateTime? @map("revoked_at")
+  lastSeenAt  DateTime? @map("last_seen_at")
   createdAt   DateTime  @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
