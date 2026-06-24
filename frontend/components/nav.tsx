@@ -377,6 +377,7 @@ const ADMIN_GROUPS: { title: string; links: { href: string; label: string }[] }[
     title: 'Overview',
     links: [
       { href: '/admin/command-center', label: 'Command Center' },
+      { href: '/admin/notification-center', label: 'Notification Center' },
       { href: '/admin/dashboard', label: 'Dashboard' },
     ],
   },

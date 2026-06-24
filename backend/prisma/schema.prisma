@@ -451,6 +451,34 @@ model UserFeatureControls {
   @@map("user_feature_controls")
 }
 
+/// Internal admin operational notification (Stage 8B).
+///
+/// Surfaces important operational events (KYC waiting, pending deposits/
+/// withdrawals, compliance case opened, high-risk user, wallet-risk alert,
+/// screening hit, ...) to the admin notification center. Rows are DERIVED from
+/// real operational state by an idempotent refresh keyed on `dedupeKey`, so a
+/// signal never produces duplicates and a notification keeps its read state.
+/// `readByAdminId` is a plain uuid (no FK), mirroring the other actor columns.
+/// This model never moves money and is additive only.
+model AdminNotification {
+  id            String    @id @default(uuid()) @db.Uuid
+  type          String
+  severity      String    @default("INFO") // INFO | WARNING | CRITICAL
+  title         String
+  message       String
+  targetType    String?   @map("target_type")
+  targetId      String?   @map("target_id")
+  dedupeKey     String    @unique @map("dedupe_key")
+  isRead        Boolean   @default(false) @map("is_read")
+  readAt        DateTime? @map("read_at")
+  readByAdminId String?   @map("read_by_admin_id") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@index([isRead, createdAt])
+  @@index([type])
+  @@map("admin_notifications")
+}
+
 /// Free-text admin/compliance note attached directly to a user (Stage 5D).
 ///
 /// Distinct from ComplianceCaseNote (which is scoped to an investigation case):

@@ -1535,6 +1535,27 @@ export interface MonitoringRunResult {
   alertsLinked: number;
 }
 
+// ---- Stage 8B: admin notification center ----
+export interface AdminOpsNotification {
+  id: string;
+  type: string;
+  severity: string;
+  title: string;
+  message: string;
+  targetType: string | null;
+  targetId: string | null;
+  isRead: boolean;
+  readAt: string | null;
+  readByAdminId: string | null;
+  createdAt: string;
+}
+
+export interface AdminNotificationPage {
+  items: AdminOpsNotification[];
+  nextCursor: string | null;
+  unread: number;
+}
+
 // ---- Stage 8A: admin command center ----
 export interface CommandCenterCards {
   totalUsers: number;

@@ -21,6 +21,7 @@ import type {
   ComplianceDashboard,
   ComplianceDashboardFilters,
   CommandCenter,
+  AdminNotificationPage,
   Conversion,
   CreatedAdmin,
   CryptoWithdrawal,
@@ -452,6 +453,22 @@ export const adminApi = {
 
   // ---- Stage 8A: admin command center ----
   commandCenter: () => adminApiFetch<CommandCenter>('/ops/command-center', 'GET'),
+
+  // ---- Stage 8B: admin notification center ----
+  adminNotifications: (params: { unreadOnly?: boolean; type?: string; cursor?: string; limit?: number } = {}) =>
+    adminApiFetch<AdminNotificationPage>(
+      `/admin-notifications${buildQuery({
+        unreadOnly: params.unreadOnly ? 'true' : undefined,
+        type: params.type,
+        cursor: params.cursor,
+        limit: params.limit,
+      })}`,
+      'GET',
+    ),
+  adminNotificationMarkRead: (id: string) =>
+    adminApiFetch<{ updated: boolean }>(`/admin-notifications/${id}/read`, 'PATCH'),
+  adminNotificationMarkAllRead: () =>
+    adminApiFetch<{ updated: number }>('/admin-notifications/read-all', 'PATCH'),
 
   audit: (params: Record<string, string | number | undefined> = {}) =>
     adminApiFetch<Page<OperationsAuditLog>>(
