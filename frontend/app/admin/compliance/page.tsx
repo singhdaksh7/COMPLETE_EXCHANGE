@@ -1,9 +1,12 @@
 'use client';
 
+import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '@/lib/admin-api';
 import { errorMessage } from '@/lib/api';
 import { useGuard } from '@/components/guards';
+import type { ComplianceDashboardFilters } from '@/lib/types';
 
 function BackdropGlow() {
   return (
@@ -14,39 +17,106 @@ function BackdropGlow() {
   );
 }
 
+function fmt(d: string | null | undefined): string {
+  return d ? new Date(d).toLocaleString() : '—';
+}
+
+function Card({ label, val, hint, href }: { label: string; val: ReactNode; hint?: string; href?: string }) {
+  const body = (
+    <div className="relative rounded-xl border border-white/5 bg-white/[0.01] p-4 min-h-[92px] flex flex-col justify-between overflow-hidden hover:border-gold/20 transition">
+      <div className="pointer-events-none absolute -inset-px rounded-xl bg-gradient-to-b from-gold/5 to-transparent opacity-25" />
+      <span className="relative z-10 text-[9px] font-bold text-white/40 uppercase tracking-wider">{label}</span>
+      <span className="relative z-10 text-2xl font-black text-white font-mono leading-tight">{val}</span>
+      {hint && <span className="relative z-10 text-[9px] text-white/30">{hint}</span>}
+    </div>
+  );
+  return href ? <a href={href}>{body}</a> : body;
+}
+
+function Queue({
+  title,
+  href,
+  count,
+  empty,
+  children,
+}: {
+  title: string;
+  href: string;
+  count: number;
+  empty: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/5 bg-white/[0.01] p-5">
+      <div className="flex items-center justify-between border-b border-white/5 pb-2 mb-3">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-white">{title}</h3>
+        <a href={href} className="text-[10px] text-gold hover:underline">View all →</a>
+      </div>
+      {count === 0 ? (
+        <p className="py-8 text-center text-xs text-white/35">{empty}</p>
+      ) : (
+        <div className="space-y-1.5">{children}</div>
+      )}
+    </div>
+  );
+}
+
+function Pill({ text }: { text: string }) {
+  const t = text.toUpperCase();
+  const cls =
+    ['HIGH', 'CRITICAL', 'BLOCKED', 'HIT', 'REJECTED', 'PROHIBITED'].some((k) => t.includes(k))
+      ? 'bg-red-500/15 text-red-300'
+      : ['MEDIUM', 'REVIEW', 'PENDING', 'OPEN', 'SUBMITTED'].some((k) => t.includes(k))
+        ? 'bg-gold/15 text-gold'
+        : 'bg-white/5 text-white/50';
+  return <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${cls}`}>{text}</span>;
+}
+
+const RISK_LEVELS = ['', 'LOW', 'MEDIUM', 'HIGH', 'PROHIBITED'];
+const CASE_STATUSES = ['', 'OPEN', 'IN_REVIEW', 'ESCALATED', 'STR_DRAFTED', 'CLOSED'];
+const ALERT_TYPES = [
+  '',
+  'HIGH_VALUE_WITHDRAWAL',
+  'RAPID_DEPOSIT_WITHDRAWAL',
+  'STRUCTURING_PATTERN',
+  'ABNORMAL_TRADING_VOLUME',
+  'REPEATED_FAILED_WITHDRAWALS',
+  'HIGH_RISK_USER_ACTIVITY',
+  'SCREENING_RISK_ACTIVITY',
+  'WALLET_RISK_ACTIVITY',
+];
+
+const selectCls =
+  'rounded-lg border border-white/10 bg-white/[0.02] px-2.5 py-1.5 text-[11px] text-white/80 focus:border-gold/40 focus:outline-none';
+
 export default function AdminCompliancePage() {
   const ready = useGuard('admin');
-  const q = useQuery({
-    queryKey: ['admin-compliance-summary'],
-    queryFn: () => adminApi.complianceSummary(),
-    enabled: ready,
-    retry: false,
-  });
+  const [filters, setFilters] = useState<ComplianceDashboardFilters>({});
 
-  // Stage 5.2 — monitoring case/alert counts (best-effort; needs compliance.case.view).
-  const caseQ = useQuery({
-    queryKey: ['admin-compliance-case-summary'],
-    queryFn: () => adminApi.complianceCaseSummary(),
+  const q = useQuery({
+    queryKey: ['admin-compliance-dashboard', filters],
+    queryFn: () => adminApi.complianceDashboard(filters),
     enabled: ready,
     retry: false,
   });
 
   if (!ready) return null;
-  const s = q.data?.data;
-  const cs = caseQ.data?.data;
+  const d = q.data?.data;
+  const set = (patch: Partial<ComplianceDashboardFilters>) =>
+    setFilters((f) => ({ ...f, ...patch }));
 
-  const metricCards = s
+  const cards = d
     ? [
-        { label: 'Pending review', val: s.counts.pending, icon: '🕗' },
-        { label: 'In review', val: s.counts.inReview, icon: '🔍' },
-        { label: 'Manual review', val: s.counts.manualReview, icon: '🧑‍⚖️' },
-        { label: 'Needs more info', val: s.counts.needsMoreInfo, icon: '✉️' },
-        { label: 'Approved', val: s.counts.approved, icon: '✅' },
-        { label: 'Rejected', val: s.counts.rejected, icon: '⛔' },
-        { label: 'Pending > 24h', val: s.pendingOver24h, icon: '⚠️' },
-        { label: 'Pending > 48h', val: s.pendingOver48h, icon: '🚨' },
-        { label: 'High-risk users', val: s.highRiskUsers, icon: '🔥' },
-        { label: 'Rejection rate', val: s.rejectionRatePct === null ? '—' : `${s.rejectionRatePct}%`, icon: '📉' },
+        { label: 'Pending KYC reviews', val: d.cards.pendingKycReviews, href: '/admin/compliance/users' },
+        { label: 'Enhanced KYC required', val: d.cards.enhancedKycRequired, href: '/admin/compliance/users' },
+        { label: 'High-risk users', val: d.cards.highRiskUsers, href: '/admin/compliance/users' },
+        { label: 'Open cases', val: d.cards.openCases, href: '/admin/compliance/cases' },
+        { label: 'High / critical cases', val: d.cards.highCriticalCases, href: '/admin/compliance/cases' },
+        { label: 'Open alerts', val: d.cards.openAlerts, href: '/admin/compliance/cases' },
+        { label: 'Pending withdrawal reviews', val: d.cards.pendingWithdrawalReviews, href: '/admin/withdrawals' },
+        { label: 'Screening flags', val: d.cards.screeningFlaggedUsers, hint: 'sanctions / PEP / adverse media', href: '/admin/compliance/users' },
+        { label: 'Wallet-risk alerts', val: d.cards.walletRiskAlerts, href: '/admin/compliance/wallet-risk' },
+        { label: 'Open STR/SAR drafts', val: d.cards.openStrDrafts, hint: 'internal drafts only', href: '/admin/compliance/fiu' },
       ]
     : [];
 
@@ -63,12 +133,32 @@ export default function AdminCompliancePage() {
       <main className="relative z-10 mx-auto max-w-[1300px] px-6 pt-6 space-y-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-white/5 pb-4">
           <div>
-            <h1 className="text-2xl font-bold text-white tracking-tight">Compliance Dashboard</h1>
-            <p className="text-xs text-white/50 mt-1">Real KYC and risk metrics across all users. No sample data.</p>
+            <h1 className="text-2xl font-bold text-white tracking-tight">Compliance &amp; Risk Dashboard</h1>
+            <p className="text-xs text-white/50 mt-1">Real KYC, case, alert and risk data across all users. No sample data. Internal workflow only — not a regulatory filing.</p>
           </div>
-          <a href="/admin/kyc" className="rounded-lg border border-gold/30 bg-gold/5 px-4 py-2 text-xs font-bold text-gold hover:bg-gold/15 transition uppercase tracking-wider">
-            Open KYC queue →
-          </a>
+          <div className="flex gap-2">
+            <a href="/admin/kyc" className="rounded-lg border border-gold/30 bg-gold/5 px-4 py-2 text-xs font-bold text-gold hover:bg-gold/15 transition uppercase tracking-wider">KYC queue →</a>
+            <a href="/admin/compliance/cases" className="rounded-lg border border-white/10 bg-white/[0.02] px-4 py-2 text-xs font-bold text-white/70 hover:bg-white/5 transition uppercase tracking-wider">Cases →</a>
+          </div>
+        </div>
+
+        {/* Filters */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[10px] uppercase tracking-wider text-white/35">Filters</span>
+          <select className={selectCls} value={filters.riskLevel ?? ''} onChange={(e) => set({ riskLevel: e.target.value || undefined })}>
+            {RISK_LEVELS.map((r) => <option key={r} value={r}>{r ? `Risk: ${r}` : 'Risk: any'}</option>)}
+          </select>
+          <select className={selectCls} value={filters.caseStatus ?? ''} onChange={(e) => set({ caseStatus: e.target.value || undefined })}>
+            {CASE_STATUSES.map((s) => <option key={s} value={s}>{s ? `Case: ${s}` : 'Case: open'}</option>)}
+          </select>
+          <select className={selectCls} value={filters.alertType ?? ''} onChange={(e) => set({ alertType: e.target.value || undefined })}>
+            {ALERT_TYPES.map((a) => <option key={a} value={a}>{a ? a.replace(/_/g, ' ') : 'Alert: any'}</option>)}
+          </select>
+          <input type="date" className={selectCls} value={filters.from ?? ''} onChange={(e) => set({ from: e.target.value || undefined })} title="From date" />
+          <input type="date" className={selectCls} value={filters.to ?? ''} onChange={(e) => set({ to: e.target.value || undefined })} title="To date" />
+          {(filters.riskLevel || filters.caseStatus || filters.alertType || filters.from || filters.to) && (
+            <button className="text-[10px] text-gold hover:underline" onClick={() => setFilters({})}>Clear</button>
+          )}
         </div>
 
         {q.isError && (
@@ -78,63 +168,94 @@ export default function AdminCompliancePage() {
         )}
         {q.isLoading && <p className="text-sm text-white/40">Loading compliance metrics…</p>}
 
-        {cs && (
-          <div className="rounded-2xl border border-white/5 bg-white/[0.01] p-5">
-            <div className="flex items-center justify-between border-b border-white/5 pb-2 mb-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-white">Transaction monitoring</h3>
-              <a href="/admin/compliance/cases" className="text-[10px] text-gold hover:underline">Open cases →</a>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              {[
-                { label: 'Open cases', val: cs.openCases },
-                { label: 'High / critical', val: cs.highCriticalCases },
-                { label: 'Open alerts', val: cs.openAlerts },
-                { label: 'STR drafted', val: cs.strDrafted },
-              ].map((m) => (
-                <div key={m.label} className="rounded-xl border border-white/5 bg-white/[0.01] p-4">
-                  <span className="text-[9px] font-bold text-white/40 uppercase tracking-wider">{m.label}</span>
-                  <div className="mt-1 text-2xl font-black text-white font-mono leading-tight">{m.val}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {s && (
+        {d && (
           <>
+            {/* Overview cards */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-              {metricCards.map((m) => (
-                <div key={m.label} className="relative rounded-xl border border-white/5 bg-white/[0.01] p-4 min-h-[96px] flex flex-col justify-between overflow-hidden">
-                  <div className="pointer-events-none absolute -inset-px rounded-xl bg-gradient-to-b from-gold/5 to-transparent opacity-25" />
-                  <div className="relative z-10 flex justify-between items-center">
-                    <span className="text-[9px] font-bold text-white/40 uppercase tracking-wider">{m.label}</span>
-                    <span className="text-xs">{m.icon}</span>
-                  </div>
-                  <span className="relative z-10 text-2xl font-black text-white font-mono leading-tight">{m.val}</span>
-                </div>
-              ))}
+              {cards.map((c) => <Card key={c.label} {...c} />)}
             </div>
 
-            <div className="rounded-2xl border border-white/5 bg-white/[0.01] p-5">
-              <div className="flex items-center justify-between border-b border-white/5 pb-2 mb-3">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-white">Recent KYC actions</h3>
-                <a href="/admin/kyc" className="text-[10px] text-gold hover:underline">Review queue →</a>
-              </div>
-              {s.recentActions.length === 0 ? (
-                <p className="text-xs text-white/35 py-6 text-center">No KYC admin actions recorded yet.</p>
-              ) : (
-                <div className="space-y-1.5">
-                  {s.recentActions.map((a) => (
-                    <div key={a.id} className="flex justify-between items-center gap-3 text-[11px] border-b border-white/5 pb-1.5 last:border-0">
-                      <span className="font-mono text-white/80 w-32 shrink-0">{a.action}</span>
-                      <span className="text-white/45 font-mono truncate flex-1">{a.actorEmail ?? a.actorAdminId.slice(0, 8)}</span>
-                      {a.reason && <span className="text-white/40 truncate max-w-[260px] hidden md:block">“{a.reason}”</span>}
-                      <span className="text-white/30 shrink-0">{new Date(a.occurredAt).toLocaleString()}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
+            {/* Queues */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <Queue title="KYC review queue" href="/admin/compliance/users" count={d.queues.kycReview.length} empty="No KYC reviews pending.">
+                {d.queues.kycReview.map((i) => (
+                  <a key={i.userId} href={`/admin/users/detail?id=${i.userId}`} className="flex items-center justify-between gap-2 text-[11px] border-b border-white/5 pb-1.5 last:border-0 hover:text-gold">
+                    <span className="truncate flex-1 text-white/80">{i.email}</span>
+                    <Pill text={i.status} />
+                    <Pill text={i.riskLevel} />
+                    <span className="text-white/30 shrink-0">{fmt(i.submittedAt)}</span>
+                  </a>
+                ))}
+              </Queue>
+
+              <Queue title="Risk review queue" href="/admin/compliance/users" count={d.queues.riskReview.length} empty="No high-risk users.">
+                {d.queues.riskReview.map((i) => (
+                  <a key={i.userId} href={`/admin/users/detail?id=${i.userId}`} className="flex items-center justify-between gap-2 text-[11px] border-b border-white/5 pb-1.5 last:border-0 hover:text-gold">
+                    <span className="truncate flex-1 text-white/80">{i.email}</span>
+                    <Pill text={i.riskLevel} />
+                    <span className="font-mono text-white/40">{i.riskScore}</span>
+                    <span className="text-white/30 shrink-0 truncate max-w-[160px]">{i.riskReason ?? '—'}</span>
+                  </a>
+                ))}
+              </Queue>
+
+              <Queue title="Withdrawal / manual review" href="/admin/withdrawals" count={d.queues.withdrawalReview.length} empty="No withdrawals awaiting review.">
+                {d.queues.withdrawalReview.map((i) => (
+                  <a key={i.id} href={`/admin/users/detail?id=${i.userId}`} className="flex items-center justify-between gap-2 text-[11px] border-b border-white/5 pb-1.5 last:border-0 hover:text-gold">
+                    <span className="truncate flex-1 text-white/80">{i.email}</span>
+                    <span className="font-mono text-white/60">{i.amount} {i.asset}</span>
+                    <Pill text={i.status} />
+                    <span className="text-white/30 shrink-0">{fmt(i.requestedAt)}</span>
+                  </a>
+                ))}
+              </Queue>
+
+              <Queue title="Open compliance cases" href="/admin/compliance/cases" count={d.queues.openCases.length} empty="No open cases.">
+                {d.queues.openCases.map((i) => (
+                  <a key={i.id} href={`/admin/compliance/cases/detail?id=${i.id}`} className="flex items-center justify-between gap-2 text-[11px] border-b border-white/5 pb-1.5 last:border-0 hover:text-gold">
+                    <span className="truncate flex-1 text-white/80">{i.title}</span>
+                    <Pill text={i.priority} />
+                    <Pill text={i.status} />
+                    <span className="text-white/30 shrink-0">{fmt(i.createdAt)}</span>
+                  </a>
+                ))}
+              </Queue>
+
+              <Queue title="STR/SAR drafts (internal)" href="/admin/compliance/fiu" count={d.queues.strDrafts.length} empty="No open draft reports.">
+                {d.queues.strDrafts.map((i) => (
+                  <a key={i.id} href={`/admin/compliance/fiu/detail?id=${i.id}`} className="flex items-center justify-between gap-2 text-[11px] border-b border-white/5 pb-1.5 last:border-0 hover:text-gold">
+                    <span className="truncate flex-1 text-white/80">{i.title}</span>
+                    <Pill text={i.reportType} />
+                    <Pill text={i.status} />
+                    <span className="text-white/30 shrink-0">{fmt(i.createdAt)}</span>
+                  </a>
+                ))}
+              </Queue>
+
+              <Queue title="Recent screening alerts" href="/admin/compliance/cases" count={d.queues.recentAlerts.length} empty="No open alerts.">
+                {d.queues.recentAlerts.map((i) => (
+                  <a key={i.id} href={`/admin/users/detail?id=${i.userId}`} className="flex items-center justify-between gap-2 text-[11px] border-b border-white/5 pb-1.5 last:border-0 hover:text-gold">
+                    <span className="truncate flex-1 text-white/80">{i.title}</span>
+                    <Pill text={i.priority} />
+                    <span className="font-mono text-white/40">{i.score}</span>
+                    <span className="text-white/30 shrink-0">{fmt(i.createdAt)}</span>
+                  </a>
+                ))}
+              </Queue>
+
+              <Queue title="Wallet-risk alerts" href="/admin/compliance/wallet-risk" count={d.queues.walletRisk.length} empty="No wallet-risk alerts.">
+                {d.queues.walletRisk.map((i) => (
+                  <div key={i.id} className="flex items-center justify-between gap-2 text-[11px] border-b border-white/5 pb-1.5 last:border-0">
+                    <span className="truncate flex-1 font-mono text-white/70">{i.chain}:{i.address}</span>
+                    <Pill text={i.level} />
+                    <Pill text={i.status} />
+                    <span className="text-white/30 shrink-0">{fmt(i.checkedAt)}</span>
+                  </div>
+                ))}
+              </Queue>
             </div>
+
+            <p className="text-[10px] text-white/25 pt-2">{d.meta.note}</p>
           </>
         )}
       </main>

@@ -18,6 +18,8 @@ import type {
   AdminMeData,
   AdminRoleOption,
   ComplianceSummary,
+  ComplianceDashboard,
+  ComplianceDashboardFilters,
   Conversion,
   CreatedAdmin,
   CryptoWithdrawal,
@@ -231,6 +233,13 @@ export const adminApi = {
 
   complianceSummary: () =>
     adminApiFetch<ComplianceSummary>('/kyc/compliance/summary', 'GET'),
+
+  // ---- Stage 4A: unified compliance dashboard aggregate ----
+  complianceDashboard: (params: ComplianceDashboardFilters = {}) =>
+    adminApiFetch<ComplianceDashboard>(
+      `/compliance/dashboard${buildQuery({ ...params })}`,
+      'GET',
+    ),
 
   // ---- notification delivery log (Stage 4.0) ----
   notifications: (params: { type?: string; cursor?: string; limit?: number } = {}) =>

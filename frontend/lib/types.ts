@@ -1535,6 +1535,119 @@ export interface MonitoringRunResult {
   alertsLinked: number;
 }
 
+// ---- Stage 4A: compliance dashboard aggregate ----
+export interface ComplianceDashboardCards {
+  pendingKycReviews: number;
+  enhancedKycRequired: number;
+  highRiskUsers: number;
+  openCases: number;
+  highCriticalCases: number;
+  openAlerts: number;
+  pendingWithdrawalReviews: number;
+  screeningFlaggedUsers: number;
+  walletRiskAlerts: number;
+  openStrDrafts: number;
+}
+
+export interface DashKycItem {
+  userId: string;
+  email: string;
+  status: string;
+  riskLevel: string;
+  riskScore: number;
+  submittedAt: string;
+}
+export interface DashRiskItem {
+  userId: string;
+  email: string;
+  riskLevel: string;
+  riskScore: number;
+  riskReason: string | null;
+  lastReviewedAt: string | null;
+  updatedAt: string;
+}
+export interface DashWithdrawalItem {
+  id: string;
+  userId: string;
+  email: string;
+  asset: string;
+  chain: string;
+  amount: string;
+  status: string;
+  requestedAt: string;
+}
+export interface DashCaseItem {
+  id: string;
+  userId: string;
+  email: string;
+  type: string;
+  status: string;
+  priority: string;
+  title: string;
+  assignedToAdminId: string | null;
+  createdAt: string;
+}
+export interface DashStrDraftItem {
+  id: string;
+  reportType: string;
+  status: string;
+  scopeType: string;
+  scopeUserId: string | null;
+  scopeCaseId: string | null;
+  title: string;
+  createdAt: string;
+}
+export interface DashAlertItem {
+  id: string;
+  userId: string;
+  email: string;
+  type: string;
+  status: string;
+  priority: string;
+  score: number;
+  title: string;
+  createdAt: string;
+}
+export interface DashWalletRiskItem {
+  id: string;
+  userId: string | null;
+  asset: string;
+  chain: string;
+  address: string;
+  level: string;
+  status: string;
+  score: number;
+  checkedAt: string;
+}
+
+export interface ComplianceDashboard {
+  cards: ComplianceDashboardCards;
+  queues: {
+    kycReview: DashKycItem[];
+    riskReview: DashRiskItem[];
+    withdrawalReview: DashWithdrawalItem[];
+    openCases: DashCaseItem[];
+    strDrafts: DashStrDraftItem[];
+    recentAlerts: DashAlertItem[];
+    walletRisk: DashWalletRiskItem[];
+  };
+  meta: {
+    generatedAt: string;
+    note: string;
+    appliedFilters: Record<string, string>;
+  };
+}
+
+export interface ComplianceDashboardFilters {
+  riskLevel?: string;
+  caseStatus?: string;
+  alertType?: string;
+  assignedAdminId?: string;
+  from?: string;
+  to?: string;
+  previewLimit?: number;
+}
+
 // ---- Stage 5.3: wallet risk + Travel Rule ----
 export type WalletRiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 export type WalletRiskStatus = 'CLEAR' | 'REVIEW_REQUIRED' | 'BLOCKED' | 'FAILED';

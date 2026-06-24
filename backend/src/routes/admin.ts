@@ -15,6 +15,7 @@ import { adminReportsRouter } from '../modules/reports/reports.admin.routes';
 import { adminNotificationRouter } from '../modules/notification/notification.admin.routes';
 import { adminSystemRouter } from '../modules/system/system.routes';
 import { adminComplianceRouter } from '../modules/compliance/compliance.admin.routes';
+import { adminComplianceDashboardRouter } from '../modules/compliance/dashboard.admin.routes';
 import { adminComplianceCasesRouter } from '../modules/compliance/compliance.cases.admin.routes';
 import { adminWalletRiskRouter } from '../modules/compliance/wallet-risk.admin.routes';
 import { adminEvidenceRouter } from '../modules/compliance/evidence.admin.routes';
@@ -54,6 +55,10 @@ adminApiRouter.use('/operations', adminOperationsRouter);
 adminApiRouter.use('/reports', adminReportsRouter);
 adminApiRouter.use('/notifications', adminNotificationRouter);
 adminApiRouter.use('/system', adminSystemRouter);
+// Stage 4A — compliance dashboard aggregate. Mounted first so the static
+// /dashboard path is unambiguous; it does not collide with the other
+// /compliance sub-routers (/users, /cases, /alerts, ...).
+adminApiRouter.use('/compliance', adminComplianceDashboardRouter);
 adminApiRouter.use('/compliance', adminComplianceRouter);
 // Stage 5.2 — suspicious-transaction monitoring + STR case workflow. Mounted at
 // the same prefix; route paths (/cases, /alerts, /monitoring) don't collide with
