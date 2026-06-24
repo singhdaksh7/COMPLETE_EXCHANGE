@@ -407,6 +407,234 @@ export interface AdminUserDetail extends AdminUserListItem {
   }>;
 }
 
+// ---- Stage 5: full user profile aggregate ----
+
+/** Cursor-paginated slice of one profile section. */
+export interface ProfilePage<T> {
+  items: T[];
+  nextCursor: string | null;
+}
+
+/** List sections that support cursor drill-down. */
+export type ProfileSection =
+  | 'inrDeposits'
+  | 'inrWithdrawals'
+  | 'cryptoDeposits'
+  | 'cryptoWithdrawals'
+  | 'orders'
+  | 'trades'
+  | 'sessions'
+  | 'auditTrail';
+
+export interface ProfileIdentity {
+  id: string;
+  email: string;
+  phone: string | null;
+  emailVerified: boolean;
+  emailVerifiedAt: string | null;
+  phoneVerifiedAt: string | null;
+  accountStatus: string;
+  kycStatus: string;
+  kycTier: number;
+  riskLevel: string;
+  riskNote: string | null;
+  withdrawalsBlocked: boolean;
+  totpEnabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProfileKyc {
+  exists: boolean;
+  status: string | null;
+  tier: number;
+  fullName: string | null;
+  provider: string | null;
+  providerRef: string | null;
+  panMasked: string | null;
+  aadhaarMasked: string | null;
+  livenessStatus: string | null;
+  documentStatus: string | null;
+  riskScore: number | null;
+  rejectedReason: string | null;
+  reviewedAt: string | null;
+  reviewedByAdminId: string | null;
+  submittedAt: string | null;
+  enhancedKycRequired: boolean;
+}
+
+export interface ProfileBalance {
+  asset: string;
+  available: string;
+  locked: string;
+  total: string;
+}
+
+export interface ProfileInrTxn {
+  id: string;
+  type: string;
+  amount: string;
+  fee: string;
+  status: string;
+  provider: string | null;
+  method: string | null;
+  utr: string | null;
+  bankRef: string | null;
+  reviewedByAdminId: string | null;
+  reviewedAt: string | null;
+  firstApprovedByAdminId: string | null;
+  rejectionReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProfileCryptoDeposit {
+  id: string;
+  asset: string;
+  chain: string;
+  amount: string;
+  txHash: string;
+  confirmations: number;
+  reqConfirmations: number;
+  status: string;
+  fromAddress: string | null;
+  detectedAt: string;
+  creditedAt: string | null;
+}
+
+export interface ProfileCryptoWithdrawal {
+  id: string;
+  asset: string;
+  chain: string;
+  amount: string;
+  fee: string;
+  netAmount: string;
+  toAddress: string;
+  txHash: string | null;
+  status: string;
+  approvedByAdminId: string | null;
+  approvedBy2AdminId: string | null;
+  failureReason: string | null;
+  requestedAt: string;
+  completedAt: string | null;
+}
+
+export interface ProfileOrder {
+  id: string;
+  marketSymbol: string;
+  side: string;
+  type: string;
+  price: string | null;
+  quantity: string | null;
+  quoteBudget: string | null;
+  filledQuantity: string;
+  quoteSpent: string;
+  status: string;
+  createdAt: string;
+  closedAt: string | null;
+}
+
+export interface ProfileTrade {
+  id: string;
+  seq: string;
+  marketSymbol: string;
+  side: string;
+  price: string;
+  quantity: string;
+  quoteAmount: string;
+  fee: string;
+  executedAt: string;
+}
+
+export interface ProfileSessionItem {
+  id: string;
+  ip: string | null;
+  deviceInfo: unknown;
+  createdAt: string;
+  lastSeenAt: string | null;
+  expiresAt: string;
+  revokedAt: string | null;
+  active: boolean;
+}
+
+export interface ProfileAuditEntry {
+  id: string;
+  adminId: string;
+  action: string;
+  targetType: string | null;
+  reason: string | null;
+  beforeState: unknown;
+  afterState: unknown;
+  ip: string | null;
+  occurredAt: string;
+}
+
+export interface ProfileRiskFlag {
+  kind: 'SCREENING' | 'WALLET_RISK' | 'ALERT';
+  label: string;
+  status: string;
+  level: string | null;
+  detail: string | null;
+  createdAt: string;
+}
+
+export interface ProfileRiskCaseLink {
+  id: string;
+  type: string;
+  status: string;
+  priority: string;
+  title: string;
+  createdAt: string;
+}
+
+export interface ProfileRiskCompliance {
+  visible: boolean;
+  screening: {
+    sanctionsStatus: string;
+    pepStatus: string;
+    adverseMediaStatus: string;
+    complianceRiskLevel: string | null;
+    complianceRiskScore: number | null;
+  } | null;
+  manualHold: {
+    underComplianceReview: boolean;
+    manualReviewBeforeWithdrawal: boolean;
+    blockHighRiskActivity: boolean;
+    forceKycReview: boolean;
+    requireEnhancedKyc: boolean;
+  };
+  flags: ProfileRiskFlag[];
+  openCases: ProfileRiskCaseLink[];
+}
+
+export interface ProfileComplianceNote {
+  id: string;
+  adminId: string | null;
+  body: string;
+  createdAt: string;
+}
+
+export interface UserProfile {
+  identity: ProfileIdentity;
+  kyc: ProfileKyc;
+  balances: ProfileBalance[];
+  inrDeposits: ProfilePage<ProfileInrTxn>;
+  inrWithdrawals: ProfilePage<ProfileInrTxn>;
+  cryptoDeposits: ProfilePage<ProfileCryptoDeposit>;
+  cryptoWithdrawals: ProfilePage<ProfileCryptoWithdrawal>;
+  orders: ProfilePage<ProfileOrder>;
+  trades: ProfilePage<ProfileTrade>;
+  sessions: ProfilePage<ProfileSessionItem>;
+  auditTrail: ProfilePage<ProfileAuditEntry>;
+  riskCompliance: ProfileRiskCompliance;
+  complianceNotes: ProfilePage<ProfileComplianceNote> | null;
+  meta: {
+    complianceVisible: boolean;
+    canRevokeSessions: boolean;
+    canManageNotes: boolean;
+  };
+}
+
 // ---- shared ----
 export interface Page<T> {
   items: T[];

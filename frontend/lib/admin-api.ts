@@ -6,6 +6,9 @@ import type {
   AdminNotification,
   AdminUserDetail,
   AdminUserListItem,
+  UserProfile,
+  ProfileSection,
+  ProfilePage,
   AdminListItem,
   UserFeatureControls,
   UserControlFlag,
@@ -255,6 +258,20 @@ export const adminApi = {
 
   userDetail: (userId: string) =>
     adminApiFetch<AdminUserDetail>(`/users/${userId}`, 'GET'),
+
+  // ---- Stage 5: full user profile aggregate ----
+  userProfile: (userId: string) =>
+    adminApiFetch<UserProfile>(`/users/${userId}/profile`, 'GET'),
+
+  userProfileSection: <T>(
+    userId: string,
+    section: ProfileSection,
+    params: { cursor?: string; limit?: number } = {},
+  ) =>
+    adminApiFetch<ProfilePage<T>>(
+      `/users/${userId}/profile/sections/${section}${buildQuery({ ...params })}`,
+      'GET',
+    ),
 
   setUserStatus: (userId: string, status: 'ACTIVE' | 'FROZEN') =>
     adminApiFetch<AdminUserListItem>(`/users/${userId}/status`, 'PATCH', {
