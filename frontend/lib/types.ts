@@ -1535,6 +1535,36 @@ export interface MonitoringRunResult {
   alertsLinked: number;
 }
 
+// ---- Stage 8C: support tickets ----
+export interface SupportTicketListItem {
+  id: string;
+  userId: string | null;
+  userEmail: string | null;
+  subject: string;
+  category: string;
+  priority: string;
+  status: string;
+  assignedAdminId: string | null;
+  createdByAdminId: string | null;
+  closedByAdminId: string | null;
+  closedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface SupportTicketNote {
+  id: string;
+  authorAdminId: string | null;
+  body: string;
+  createdAt: string;
+}
+export interface SupportTicketDetail extends SupportTicketListItem {
+  notes: SupportTicketNote[];
+}
+export interface SupportTicketPage {
+  items: SupportTicketListItem[];
+  nextCursor: string | null;
+}
+
 // ---- Stage 8B: admin notification center ----
 export interface AdminOpsNotification {
   id: string;

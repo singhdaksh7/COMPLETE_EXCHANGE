@@ -15,6 +15,7 @@ import { adminFeatureControlsRouter } from '../modules/feature-controls/feature-
 import { adminReportsRouter } from '../modules/reports/reports.admin.routes';
 import { adminNotificationRouter } from '../modules/notification/notification.admin.routes';
 import { adminNotificationCenterRouter } from '../modules/admin-notification/admin-notification.routes';
+import { adminSupportRouter } from '../modules/support/support.routes';
 import { adminSystemRouter } from '../modules/system/system.routes';
 import { adminComplianceRouter } from '../modules/compliance/compliance.admin.routes';
 import { adminComplianceDashboardRouter } from '../modules/compliance/dashboard.admin.routes';
@@ -61,6 +62,8 @@ adminApiRouter.use('/notifications', adminNotificationRouter);
 // Stage 8B — admin notification center (operational notifications derived from
 // real state). Distinct prefix so it never shadows the /notifications log above.
 adminApiRouter.use('/admin-notifications', adminNotificationCenterRouter);
+// Stage 8C — internal support / operations tickets.
+adminApiRouter.use('/support', adminSupportRouter);
 adminApiRouter.use('/system', adminSystemRouter);
 // Stage 4A — compliance dashboard aggregate. Mounted first so the static
 // /dashboard path is unambiguous; it does not collide with the other

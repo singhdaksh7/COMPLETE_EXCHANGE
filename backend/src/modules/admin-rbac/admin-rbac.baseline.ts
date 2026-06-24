@@ -110,6 +110,9 @@ export const ADMIN_PERMISSIONS: PermissionDef[] = [
   { code: 'admin.view', description: 'View admin accounts' },
   { code: 'audit.view', description: 'Read audit & admin logs' },
   { code: 'operations.view', description: 'View the admin operations dashboard' },
+  // Internal support / operations tickets (Stage 8C).
+  { code: 'support.view', description: 'View support tickets' },
+  { code: 'support.manage', description: 'Create / update / assign / close support tickets and add notes' },
   // System / Ops Center (Stage 4.3). All end in `.view`, so SUPPORT/READ_ONLY
   // (the VIEW_ONLY roles) inherit them automatically — safe, read-only data.
   { code: 'system.view', description: 'View the system / ops command center' },
@@ -331,8 +334,10 @@ export const ADMIN_ROLES: RoleDef[] = [
   },
   {
     name: 'SUPPORT_ADMIN',
-    description: 'Read-only support across modules (alias of SUPPORT)',
-    permissions: VIEW_ONLY,
+    description: 'Read-only support across modules + support ticket management',
+    // VIEW_ONLY already includes support.view; support.manage is the one write
+    // grant that lets this role own the internal support-ticket workflow.
+    permissions: [...VIEW_ONLY, 'support.manage'],
   },
 ];
 

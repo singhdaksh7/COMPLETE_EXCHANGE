@@ -22,6 +22,8 @@ import type {
   ComplianceDashboardFilters,
   CommandCenter,
   AdminNotificationPage,
+  SupportTicketPage,
+  SupportTicketDetail,
   Conversion,
   CreatedAdmin,
   CryptoWithdrawal,
@@ -469,6 +471,18 @@ export const adminApi = {
     adminApiFetch<{ updated: boolean }>(`/admin-notifications/${id}/read`, 'PATCH'),
   adminNotificationMarkAllRead: () =>
     adminApiFetch<{ updated: number }>('/admin-notifications/read-all', 'PATCH'),
+
+  // ---- Stage 8C: support tickets ----
+  supportTickets: (params: { status?: string; priority?: string; assignedAdminId?: string; userId?: string; cursor?: string; limit?: number } = {}) =>
+    adminApiFetch<SupportTicketPage>(`/support/tickets${buildQuery({ ...params })}`, 'GET'),
+  supportTicket: (id: string) =>
+    adminApiFetch<SupportTicketDetail>(`/support/tickets/${id}`, 'GET'),
+  supportTicketCreate: (body: { userId?: string; subject: string; category?: string; priority?: string; body?: string }) =>
+    adminApiFetch<SupportTicketDetail>('/support/tickets', 'POST', { body }),
+  supportTicketUpdate: (id: string, body: { subject?: string; category?: string; priority?: string; status?: string; assignedAdminId?: string | null; reason?: string }) =>
+    adminApiFetch<SupportTicketDetail>(`/support/tickets/${id}`, 'PATCH', { body }),
+  supportTicketAddNote: (id: string, noteBody: string) =>
+    adminApiFetch<SupportTicketDetail>(`/support/tickets/${id}/notes`, 'POST', { body: { body: noteBody } }),
 
   audit: (params: Record<string, string | number | undefined> = {}) =>
     adminApiFetch<Page<OperationsAuditLog>>(

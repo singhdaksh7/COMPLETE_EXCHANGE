@@ -399,6 +399,7 @@ model User {
   complianceTasks    ComplianceTask[]
   featureControls    UserFeatureControls?
   complianceNotes    ComplianceNote[]
+  supportTickets     SupportTicket[]
 
   @@index([status])
   @@index([kycStatus])
@@ -477,6 +478,52 @@ model AdminNotification {
   @@index([isRead, createdAt])
   @@index([type])
   @@map("admin_notifications")
+}
+
+/// Internal support / operations ticket (Stage 8C).
+///
+/// A lightweight ops ticketing foundation handled by admins. `userId` is an
+/// optional link to the affected user (SetNull on user delete so ticket history
+/// survives). Admin actor ids are plain uuids (no FK), mirroring the other
+/// nullable-actor columns. Additive only; never moves money. Ticket
+/// create/update/close/assign/note actions are RBAC-gated and audit-logged in
+/// the service layer.
+model SupportTicket {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String?   @map("user_id") @db.Uuid
+  subject          String
+  category         String    @default("GENERAL")
+  priority         String    @default("MEDIUM") // LOW | MEDIUM | HIGH | URGENT
+  status           String    @default("OPEN") // OPEN | IN_PROGRESS | WAITING | RESOLVED | CLOSED
+  assignedAdminId  String?   @map("assigned_admin_id") @db.Uuid
+  createdByAdminId String?   @map("created_by_admin_id") @db.Uuid
+  closedByAdminId  String?   @map("closed_by_admin_id") @db.Uuid
+  closedAt         DateTime? @map("closed_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  user  User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  notes SupportTicketNote[]
+
+  @@index([status, createdAt])
+  @@index([assignedAdminId])
+  @@index([userId])
+  @@map("support_tickets")
+}
+
+/// A note/comment on a support ticket (Stage 8C). Append-only in practice.
+/// `authorAdminId` is the author (plain uuid, no FK).
+model SupportTicketNote {
+  id            String   @id @default(uuid()) @db.Uuid
+  ticketId      String   @map("ticket_id") @db.Uuid
+  authorAdminId String?  @map("author_admin_id") @db.Uuid
+  body          String
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+  @@map("support_ticket_notes")
 }
 
 /// Free-text admin/compliance note attached directly to a user (Stage 5D).
