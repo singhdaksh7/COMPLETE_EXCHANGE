@@ -375,7 +375,10 @@ export function UserNav() {
 const ADMIN_GROUPS: { title: string; links: { href: string; label: string }[] }[] = [
   {
     title: 'Overview',
-    links: [{ href: '/admin/dashboard', label: 'Dashboard' }],
+    links: [
+      { href: '/admin/command-center', label: 'Command Center' },
+      { href: '/admin/dashboard', label: 'Dashboard' },
+    ],
   },
   {
     title: 'Users & KYC',

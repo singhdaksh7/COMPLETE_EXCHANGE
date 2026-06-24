@@ -20,6 +20,7 @@ import type {
   ComplianceSummary,
   ComplianceDashboard,
   ComplianceDashboardFilters,
+  CommandCenter,
   Conversion,
   CreatedAdmin,
   CryptoWithdrawal,
@@ -448,6 +449,9 @@ export const adminApi = {
   // ---- operations dashboard + audit (Stage 3.4C) ----
   operationsSummary: () =>
     adminApiFetch<OperationsSummary>('/operations/summary', 'GET'),
+
+  // ---- Stage 8A: admin command center ----
+  commandCenter: () => adminApiFetch<CommandCenter>('/ops/command-center', 'GET'),
 
   audit: (params: Record<string, string | number | undefined> = {}) =>
     adminApiFetch<Page<OperationsAuditLog>>(

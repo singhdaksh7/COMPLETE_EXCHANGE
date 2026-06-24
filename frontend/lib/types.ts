@@ -1535,6 +1535,55 @@ export interface MonitoringRunResult {
   alertsLinked: number;
 }
 
+// ---- Stage 8A: admin command center ----
+export interface CommandCenterCards {
+  totalUsers: number;
+  newUsersToday: number;
+  pendingKyc: number;
+  enhancedKycRequired: number;
+  openCases: number;
+  openAlerts: number;
+  pendingInrDeposits: number;
+  pendingInrWithdrawals: number;
+  pendingCryptoWithdrawals: number;
+  failedPaymentEvents: number;
+  activeSessions: number;
+  adminActionsToday: number;
+  systemHealth: 'ok' | 'degraded' | 'unavailable';
+}
+
+export interface CommandCenter {
+  cards: CommandCenterCards;
+  operationsQueue: {
+    pendingInrDeposits: Array<{ id: string; userId: string; email: string; amount: string; status: string; createdAt: string }>;
+    pendingInrWithdrawals: Array<{ id: string; userId: string; email: string; amount: string; status: string; createdAt: string }>;
+    cryptoWithdrawalsForReview: Array<{ id: string; userId: string; email: string; asset: string; chain: string; amount: string; status: string; requestedAt: string }>;
+    pendingKycReviews: Array<{ userId: string; email: string; kycStatus: string; riskLevel: string; createdAt: string }>;
+    usersUnderComplianceReview: Array<{ userId: string; email: string }>;
+  };
+  riskQueue: {
+    highRiskUsers: Array<{ userId: string; email: string; riskLevel: string; riskNote: string | null }>;
+    walletRiskAlerts: Array<{ id: string; chain: string; address: string; level: string; status: string; score: number; checkedAt: string }>;
+    complianceAlerts: Array<{ id: string; userId: string; email: string; type: string; priority: string; score: number; title: string; createdAt: string }>;
+    openCases: Array<{ id: string; userId: string; email: string; type: string; priority: string; status: string; title: string; createdAt: string }>;
+  };
+  recentActivity: {
+    signups: Array<{ userId: string; email: string; kycStatus: string; createdAt: string }>;
+    adminActions: Array<{ id: string; adminId: string; adminEmail: string | null; action: string; targetType: string | null; targetId: string | null; occurredAt: string }>;
+    inrTransactions: Array<{ id: string; userId: string; email: string; type: string; amount: string; status: string; createdAt: string }>;
+    securityEvents: Array<{ id: string; action: string; ip: string | null; occurredAt: string }>;
+    highRiskEvents: Array<{ id: string; userId: string; email: string; type: string; priority: string; title: string; createdAt: string }>;
+  };
+  systemHealth: {
+    available: boolean;
+    status: 'ok' | 'degraded' | 'unavailable';
+    version: string | null;
+    uptimeSec: number | null;
+    dependencies: Array<{ name: string; status: string }>;
+  };
+  meta: { generatedAt: string; note: string };
+}
+
 // ---- Stage 4A: compliance dashboard aggregate ----
 export interface ComplianceDashboardCards {
   pendingKycReviews: number;

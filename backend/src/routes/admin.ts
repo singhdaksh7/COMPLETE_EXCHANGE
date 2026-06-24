@@ -8,6 +8,7 @@ import { adminWithdrawalRouter } from '../modules/withdrawal/withdrawal.admin.ro
 import { adminConversionRouter } from '../modules/conversion/conversion.admin.routes';
 import { adminTradingRouter } from '../modules/trading/trading.admin.routes';
 import { adminOperationsRouter } from '../modules/operations/operations.admin.routes';
+import { adminCommandCenterRouter } from '../modules/operations/command-center.admin.routes';
 import { adminUsersRouter } from '../modules/admin-users/admin-users.routes';
 import { adminUserProfileRouter } from '../modules/admin-user-profile/admin-user-profile.routes';
 import { adminFeatureControlsRouter } from '../modules/feature-controls/feature-controls.routes';
@@ -52,6 +53,8 @@ adminApiRouter.use('/withdrawals', adminWithdrawalRouter);
 adminApiRouter.use('/conversions', adminConversionRouter);
 adminApiRouter.use('/spot', adminTradingRouter);
 adminApiRouter.use('/operations', adminOperationsRouter);
+// Stage 8A — admin command center aggregate (GET /ops/command-center).
+adminApiRouter.use('/ops', adminCommandCenterRouter);
 adminApiRouter.use('/reports', adminReportsRouter);
 adminApiRouter.use('/notifications', adminNotificationRouter);
 adminApiRouter.use('/system', adminSystemRouter);
