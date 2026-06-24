@@ -9,6 +9,7 @@ import { adminConversionRouter } from '../modules/conversion/conversion.admin.ro
 import { adminTradingRouter } from '../modules/trading/trading.admin.routes';
 import { adminOperationsRouter } from '../modules/operations/operations.admin.routes';
 import { adminUsersRouter } from '../modules/admin-users/admin-users.routes';
+import { adminUserProfileRouter } from '../modules/admin-user-profile/admin-user-profile.routes';
 import { adminFeatureControlsRouter } from '../modules/feature-controls/feature-controls.routes';
 import { adminReportsRouter } from '../modules/reports/reports.admin.routes';
 import { adminNotificationRouter } from '../modules/notification/notification.admin.routes';
@@ -77,6 +78,9 @@ adminApiRouter.use('/users', adminUsersRouter);
 // Per-user feature controls (User Control Center). Same /users prefix; the
 // /:userId/controls paths are more specific than the generic /:userId detail.
 adminApiRouter.use('/users', adminFeatureControlsRouter);
+// Stage 5 — full user profile aggregate. Same /users prefix; the
+// /:userId/profile paths are more specific than the generic /:userId detail.
+adminApiRouter.use('/users', adminUserProfileRouter);
 
 // Future admin modules (each behind admin RBAC):
 // adminApiRouter.use('/withdrawals', adminWithdrawalsRouter);
