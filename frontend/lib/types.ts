@@ -1535,6 +1535,23 @@ export interface MonitoringRunResult {
   alertsLinked: number;
 }
 
+// ---- Stage 8D: user timeline ----
+export interface TimelineEvent {
+  id: string;
+  category: string;
+  type: string;
+  title: string;
+  detail: string | null;
+  refType: string | null;
+  refId: string | null;
+  occurredAt: string;
+}
+export interface TimelinePage {
+  items: TimelineEvent[];
+  nextCursor: string | null;
+  complianceVisible: boolean;
+}
+
 // ---- Stage 8C: support tickets ----
 export interface SupportTicketListItem {
   id: string;

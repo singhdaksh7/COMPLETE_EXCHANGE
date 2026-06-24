@@ -10,6 +10,7 @@ import type {
   ProfileSection,
   ProfilePage,
   ProfileComplianceNote,
+  TimelinePage,
   AdminListItem,
   UserFeatureControls,
   UserControlFlag,
@@ -284,6 +285,13 @@ export const adminApi = {
   ) =>
     adminApiFetch<ProfilePage<T>>(
       `/users/${userId}/profile/sections/${section}${buildQuery({ ...params })}`,
+      'GET',
+    ),
+
+  // ---- Stage 8D: unified user timeline ----
+  userTimeline: (userId: string, params: { cursor?: string; limit?: number } = {}) =>
+    adminApiFetch<TimelinePage>(
+      `/users/${userId}/timeline${buildQuery({ ...params })}`,
       'GET',
     ),
 

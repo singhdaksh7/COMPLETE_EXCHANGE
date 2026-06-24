@@ -9,11 +9,24 @@ import { adminApi } from '@/lib/admin-api';
 import { errorMessage } from '@/lib/api';
 import { useGuard } from '@/components/guards';
 import { Alert, Button, Card, EmptyState, Row, Select, StatusBadge } from '@/components/ui';
-import type { ProfileComplianceNote, ProfilePage, ProfileSection } from '@/lib/types';
+import type { ProfileComplianceNote, ProfilePage, ProfileSection, TimelineEvent } from '@/lib/types';
 import { FeatureControls } from './FeatureControls';
+
+const TIMELINE_CAT_CLS: Record<string, string> = {
+  ACCOUNT: 'bg-sky-500/15 text-sky-300',
+  AUTH: 'bg-indigo-500/15 text-indigo-300',
+  KYC: 'bg-brand/15 text-brand',
+  CONTROLS: 'bg-purple-500/15 text-purple-300',
+  DEPOSIT: 'bg-up/15 text-up',
+  WITHDRAWAL: 'bg-amber-500/15 text-amber-300',
+  TRADING: 'bg-cyan-500/15 text-cyan-300',
+  COMPLIANCE: 'bg-down/15 text-down',
+  ADMIN_ACTION: 'bg-panel-2 text-muted',
+};
 
 const TABS = [
   'Overview',
+  'Timeline',
   'Controls',
   'Balances',
   'INR',
@@ -214,6 +227,76 @@ function ComplianceNotes({
             </div>
           ))}
         </div>
+      )}
+      <LoadMore hasMore={!!cursor} loading={loading} error={loadErr} onClick={loadMore} />
+    </Section>
+  );
+}
+
+/**
+ * Stage 8D unified user timeline. Merges signup, auth/session, KYC, control
+ * changes, deposits, withdrawals, orders, trades, compliance cases/notes and
+ * admin actions into one time-ordered feed. Cursor-paginated (cursor = the last
+ * event's timestamp). Compliance events appear only when the caller has
+ * compliance.view (enforced server-side).
+ */
+function UserTimeline({ userId }: { userId: string }) {
+  const [extra, setExtra] = useState<TimelineEvent[]>([]);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+
+  const q = useQuery({
+    queryKey: ['user-timeline', userId],
+    queryFn: () => adminApi.userTimeline(userId),
+    enabled: !!userId,
+    retry: false,
+  });
+
+  useEffect(() => {
+    setExtra([]);
+    setCursor(q.data?.data.nextCursor ?? null);
+    setLoadErr(null);
+  }, [q.data]);
+
+  const items = [...(q.data?.data.items ?? []), ...extra];
+
+  async function loadMore() {
+    if (!cursor || loading) return;
+    setLoading(true);
+    setLoadErr(null);
+    try {
+      const res = await adminApi.userTimeline(userId, { cursor });
+      setExtra((p) => [...p, ...res.data.items]);
+      setCursor(res.data.nextCursor);
+    } catch (e) {
+      setLoadErr(errorMessage(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Section title="Timeline">
+      {q.isLoading && <p className="text-sm text-muted">Loading timeline…</p>}
+      {q.isError && <Alert>{errorMessage(q.error)}</Alert>}
+      {q.data && items.length === 0 && <EmptyState title="No timeline events" />}
+      {items.length > 0 && (
+        <ol className="relative space-y-3 border-l border-line pl-4">
+          {items.map((e) => (
+            <li key={e.id} className="relative">
+              <span className="absolute -left-[21px] top-1.5 h-2 w-2 rounded-full bg-brand" />
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${TIMELINE_CAT_CLS[e.category] ?? 'bg-panel-2 text-muted'}`}>
+                  {e.category}
+                </span>
+                <span className="text-sm text-ink">{e.title}</span>
+                {e.detail && <span className="text-xs text-muted">· {e.detail}</span>}
+              </div>
+              <div className="mt-0.5 text-[11px] text-muted-2">{fmt(e.occurredAt)}</div>
+            </li>
+          ))}
+        </ol>
       )}
       <LoadMore hasMore={!!cursor} loading={loading} error={loadErr} onClick={loadMore} />
     </Section>
@@ -450,6 +533,8 @@ function AdminUserDetailInner() {
               </div>
             </div>
           )}
+
+          {tab === 'Timeline' && <UserTimeline userId={id.id} />}
 
           {tab === 'Controls' && canViewControls && (
             <FeatureControls userId={id.id} canView={canViewControls} canUpdate={canUpdateControls} />

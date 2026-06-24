@@ -10,6 +10,7 @@ import {
   sectionParamSchema,
   sectionQuerySchema,
   sessionRevokeParamSchema,
+  timelineQuerySchema,
   userIdParamSchema,
 } from './admin-user-profile.validators';
 
@@ -39,6 +40,17 @@ adminUserProfileRouter.get(
   adminAuthorize('users.view'),
   validate({ params: sectionParamSchema, query: sectionQuerySchema }),
   asyncHandler(adminUserProfileController.section),
+);
+
+// Stage 8D — unified user timeline. users.view gates the feed; compliance
+// events (cases, notes) are only included when the caller also holds
+// compliance.view (resolved in the controller).
+adminUserProfileRouter.get(
+  '/:userId/timeline',
+  adminAuthenticate,
+  adminAuthorize('users.view'),
+  validate({ params: userIdParamSchema, query: timelineQuerySchema }),
+  asyncHandler(adminUserProfileController.timeline),
 );
 
 // Stage 5C — admin revoke of a single user session. users.manage (the same

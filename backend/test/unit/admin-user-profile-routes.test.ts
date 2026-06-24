@@ -11,7 +11,7 @@ import request from 'supertest';
  *    `viewer` (compliance gating) through to the service.
  */
 
-const { state, getProfile, getSection, revokeSession, listComplianceNotes, addComplianceNote } =
+const { state, getProfile, getSection, revokeSession, listComplianceNotes, addComplianceNote, getTimeline } =
   vi.hoisted(() => ({
     state: {
       admin: null as { id: string; sessionId: string } | null,
@@ -23,6 +23,7 @@ const { state, getProfile, getSection, revokeSession, listComplianceNotes, addCo
     revokeSession: vi.fn(),
     listComplianceNotes: vi.fn(),
     addComplianceNote: vi.fn(),
+    getTimeline: vi.fn(),
   }));
 
 vi.mock('../../src/middleware/admin-authenticate', () => ({
@@ -50,6 +51,10 @@ vi.mock('../../src/modules/admin-user-profile/admin-user-profile.service', () =>
     listComplianceNotes: listComplianceNotes,
     addComplianceNote: addComplianceNote,
   },
+}));
+
+vi.mock('../../src/modules/admin-user-profile/user-timeline.service', () => ({
+  userTimelineService: { getTimeline: getTimeline },
 }));
 
 import { adminUserProfileRouter } from '../../src/modules/admin-user-profile/admin-user-profile.routes';
@@ -83,6 +88,7 @@ beforeEach(() => {
   revokeSession.mockReset().mockResolvedValue({ revoked: true });
   listComplianceNotes.mockReset().mockResolvedValue({ items: [], nextCursor: null });
   addComplianceNote.mockReset().mockResolvedValue({ id: 'n1', adminId: 'admin-1', body: 'x', createdAt: '2026-06-11T00:00:00Z' });
+  getTimeline.mockReset().mockResolvedValue({ items: [], nextCursor: null, complianceVisible: false });
 });
 
 describe('admin user-profile routes — authentication', () => {
@@ -154,6 +160,17 @@ describe('admin user-profile routes — RBAC', () => {
   it('rejects an empty compliance note body', async () => {
     asAdmin(['X'], ['compliance.case.manage']);
     expect((await request(app).post(`/users/${UID}/compliance-notes`).send({ body: '' })).status).toBe(422);
+  });
+
+  it('timeline requires users.view and passes compliance visibility through', async () => {
+    asAdmin(['X'], []);
+    expect((await request(app).get(`/users/${UID}/timeline`)).status).toBe(403);
+    asAdmin(['X'], ['users.view']);
+    expect((await request(app).get(`/users/${UID}/timeline`)).status).toBe(200);
+    expect(getTimeline).toHaveBeenLastCalledWith(UID, expect.objectContaining({ complianceVisible: false }));
+    asAdmin(['X'], ['users.view', 'compliance.view']);
+    await request(app).get(`/users/${UID}/timeline`);
+    expect(getTimeline).toHaveBeenLastCalledWith(UID, expect.objectContaining({ complianceVisible: true }));
   });
 
   it('SUPER_ADMIN sees compliance and may revoke/manage notes', async () => {

@@ -37,6 +37,14 @@ export const createNoteSchema = z
   })
   .strict();
 
+export const timelineQuerySchema = z
+  .object({
+    cursor: z.string().datetime().optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(25),
+  })
+  .strict();
+
 export type SectionQueryDto = z.infer<typeof sectionQuerySchema>;
 export type NotesQueryDto = z.infer<typeof notesQuerySchema>;
 export type CreateNoteDto = z.infer<typeof createNoteSchema>;
+export type TimelineQueryDto = z.infer<typeof timelineQuerySchema>;

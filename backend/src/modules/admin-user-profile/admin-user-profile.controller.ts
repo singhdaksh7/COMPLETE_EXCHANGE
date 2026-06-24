@@ -6,10 +6,12 @@ import {
   type ProfileContext,
   type ProfileViewer,
 } from './admin-user-profile.service';
+import { userTimelineService } from './user-timeline.service';
 import type {
   CreateNoteDto,
   NotesQueryDto,
   SectionQueryDto,
+  TimelineQueryDto,
 } from './admin-user-profile.validators';
 import type { ProfileSection } from './admin-user-profile.types';
 
@@ -94,5 +96,16 @@ export const adminUserProfileController = {
       ctx(req),
     );
     sendSuccess(res, result, 201);
+  },
+
+  async timeline(req: Request, res: Response): Promise<void> {
+    if (!req.admin) throw new UnauthorizedError();
+    const q = req.query as unknown as TimelineQueryDto;
+    const result = await userTimelineService.getTimeline(req.params.userId, {
+      cursor: q.cursor,
+      limit: q.limit,
+      complianceVisible: viewer(req).complianceVisible,
+    });
+    sendSuccess(res, result);
   },
 };
