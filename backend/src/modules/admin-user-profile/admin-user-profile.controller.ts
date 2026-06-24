@@ -6,7 +6,11 @@ import {
   type ProfileContext,
   type ProfileViewer,
 } from './admin-user-profile.service';
-import type { SectionQueryDto } from './admin-user-profile.validators';
+import type {
+  CreateNoteDto,
+  NotesQueryDto,
+  SectionQueryDto,
+} from './admin-user-profile.validators';
 import type { ProfileSection } from './admin-user-profile.types';
 
 function ctx(req: Request): ProfileContext {
@@ -68,5 +72,27 @@ export const adminUserProfileController = {
       ctx(req),
     );
     sendSuccess(res, result);
+  },
+
+  async listNotes(req: Request, res: Response): Promise<void> {
+    if (!req.admin) throw new UnauthorizedError();
+    const q = req.query as unknown as NotesQueryDto;
+    const result = await adminUserProfileService.listComplianceNotes(
+      req.params.userId,
+      q.cursor,
+      q.limit,
+    );
+    sendSuccess(res, result);
+  },
+
+  async addNote(req: Request, res: Response): Promise<void> {
+    if (!req.admin) throw new UnauthorizedError();
+    const body = req.body as CreateNoteDto;
+    const result = await adminUserProfileService.addComplianceNote(
+      req.params.userId,
+      body.body,
+      ctx(req),
+    );
+    sendSuccess(res, result, 201);
   },
 };

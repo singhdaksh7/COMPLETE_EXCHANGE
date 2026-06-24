@@ -4,6 +4,7 @@ import {
   type AuthSession,
   type ComplianceAlert,
   type ComplianceCase,
+  type ComplianceNote,
   type CryptoDeposit,
   type CryptoWithdrawal,
   type InrTransaction,
@@ -12,7 +13,7 @@ import {
   type Trade,
   type WalletRiskCheck,
 } from '@prisma/client';
-import { NotFoundError } from '../../lib/errors';
+import { ForbiddenError, NotFoundError } from '../../lib/errors';
 import { AuditAction } from '../../lib/audit';
 import { recordAudit } from '../../lib/audit';
 import {
@@ -23,6 +24,7 @@ import {
 import type {
   AuditTrailDto,
   BalanceDto,
+  ComplianceNoteDto,
   CryptoDepositDto,
   CryptoWithdrawalDto,
   IdentityDto,
@@ -252,6 +254,15 @@ function toSession(row: AuthSession): SessionDto {
   };
 }
 
+function toComplianceNote(row: ComplianceNote): ComplianceNoteDto {
+  return {
+    id: row.id,
+    adminId: row.adminId,
+    body: row.body,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
 function toAuditTrail(row: AdminLog): AuditTrailDto {
   return {
     id: row.id.toString(),
@@ -391,6 +402,7 @@ export const adminUserProfileService = {
       sessions,
       auditTrail,
       riskCompliance,
+      complianceNotes,
     ] = await Promise.all([
       adminUserProfileRepository
         .inrTransactions(userId, 'DEPOSIT', undefined, limit)
@@ -417,6 +429,13 @@ export const adminUserProfileService = {
         .auditTrail(userId, undefined, limit)
         .then((r) => paginate(r, limit, toAuditTrail, (x) => x.id.toString())),
       buildRiskCompliance(userId, header, viewer.complianceVisible),
+      // Compliance notes are part of the compliance surface: only loaded when
+      // the caller may see it (compliance.view), otherwise null (hidden).
+      viewer.complianceVisible
+        ? adminUserProfileRepository
+            .complianceNotes(userId, undefined, limit)
+            .then((r) => paginate(r, limit, toComplianceNote, (x) => x.id))
+        : Promise.resolve(null),
     ]);
 
     await recordAudit({
@@ -444,8 +463,7 @@ export const adminUserProfileService = {
       sessions,
       auditTrail,
       riskCompliance,
-      // Compliance notes are wired in Stage 5D (separate model + endpoint).
-      complianceNotes: null,
+      complianceNotes,
       meta: {
         complianceVisible: viewer.complianceVisible,
         canRevokeSessions: viewer.canRevokeSessions,
@@ -566,6 +584,67 @@ export const adminUserProfileService = {
       });
     }
     return { revoked };
+  },
+
+  /** Paginated compliance notes for a user (RBAC compliance.view upstream). */
+  async listComplianceNotes(
+    userId: string,
+    cursor: string | undefined,
+    limit: number,
+  ): Promise<ProfilePage<ComplianceNoteDto>> {
+    const exists = await adminUserProfileRepository.findUserState(userId);
+    if (!exists) throw new NotFoundError('User not found', 'USER_NOT_FOUND');
+    const rows = await adminUserProfileRepository.complianceNotes(userId, cursor, limit);
+    return paginate(rows, limit, toComplianceNote, (x) => x.id);
+  },
+
+  /**
+   * Append a compliance note (Stage 5D). RBAC-gated upstream
+   * (compliance.case.manage). Notes are append-only — there is no edit/delete
+   * path in this first version. Every note records its author (admin id) and is
+   * written to both the hash-chained audit log and the admin log.
+   */
+  async addComplianceNote(
+    userId: string,
+    body: string,
+    ctx: ProfileContext = {},
+  ): Promise<ComplianceNoteDto> {
+    const trimmed = body.trim();
+    if (trimmed.length === 0) {
+      throw new ForbiddenError('Note body is required', 'NOTE_BODY_REQUIRED');
+    }
+    const exists = await adminUserProfileRepository.findUserState(userId);
+    if (!exists) throw new NotFoundError('User not found', 'USER_NOT_FOUND');
+
+    const note = await adminUserProfileRepository.createComplianceNote(
+      userId,
+      ctx.actorId ?? null,
+      trimmed,
+    );
+
+    await recordAudit({
+      actorType: 'ADMIN',
+      actorId: ctx.actorId,
+      action: 'admin.user.compliance_note_add',
+      entityType: 'compliance_note',
+      entityId: note.id,
+      ip: ctx.ip,
+      userAgent: ctx.userAgent,
+      requestId: ctx.requestId,
+      metadata: { userId },
+    });
+    if (ctx.actorId) {
+      await adminUserProfileRepository.writeAdminLog({
+        adminId: ctx.actorId,
+        action: 'admin.user.compliance_note_add',
+        targetType: 'user',
+        targetId: userId,
+        afterState: { noteId: note.id },
+        ip: ctx.ip,
+        requestId: ctx.requestId,
+      });
+    }
+    return toComplianceNote(note);
   },
 };
 

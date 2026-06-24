@@ -398,6 +398,7 @@ model User {
   fiuDraftReports    FiuDraftReport[]
   complianceTasks    ComplianceTask[]
   featureControls    UserFeatureControls?
+  complianceNotes    ComplianceNote[]
 
   @@index([status])
   @@index([kycStatus])
@@ -448,6 +449,27 @@ model UserFeatureControls {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("user_feature_controls")
+}
+
+/// Free-text admin/compliance note attached directly to a user (Stage 5D).
+///
+/// Distinct from ComplianceCaseNote (which is scoped to an investigation case):
+/// this is the support/compliance "sticky note" on the user profile. Append-only
+/// in this first version — there is no edit or delete path. `adminId` is the
+/// author, stored as a plain uuid with no FK (mirrors ComplianceCaseNote and the
+/// other nullable-actor columns, so the Admin model stays untouched). Note
+/// creation is RBAC-gated and audit-logged in the service layer.
+model ComplianceNote {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  adminId   String?  @map("admin_id") @db.Uuid
+  body      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("compliance_notes")
 }
 
 /// Links an external identity provider (e.g. Google) to a local User.

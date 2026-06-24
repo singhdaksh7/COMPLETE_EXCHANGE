@@ -11,16 +11,19 @@ import request from 'supertest';
  *    `viewer` (compliance gating) through to the service.
  */
 
-const { state, getProfile, getSection, revokeSession } = vi.hoisted(() => ({
-  state: {
-    admin: null as { id: string; sessionId: string } | null,
-    roles: [] as string[],
-    permissions: [] as string[],
-  },
-  getProfile: vi.fn(),
-  getSection: vi.fn(),
-  revokeSession: vi.fn(),
-}));
+const { state, getProfile, getSection, revokeSession, listComplianceNotes, addComplianceNote } =
+  vi.hoisted(() => ({
+    state: {
+      admin: null as { id: string; sessionId: string } | null,
+      roles: [] as string[],
+      permissions: [] as string[],
+    },
+    getProfile: vi.fn(),
+    getSection: vi.fn(),
+    revokeSession: vi.fn(),
+    listComplianceNotes: vi.fn(),
+    addComplianceNote: vi.fn(),
+  }));
 
 vi.mock('../../src/middleware/admin-authenticate', () => ({
   adminAuthenticate: (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -44,6 +47,8 @@ vi.mock('../../src/modules/admin-user-profile/admin-user-profile.service', () =>
     getProfile: getProfile,
     getSection: getSection,
     revokeSession: revokeSession,
+    listComplianceNotes: listComplianceNotes,
+    addComplianceNote: addComplianceNote,
   },
 }));
 
@@ -76,6 +81,8 @@ beforeEach(() => {
   getProfile.mockReset().mockResolvedValue({ ok: true });
   getSection.mockReset().mockResolvedValue({ items: [], nextCursor: null });
   revokeSession.mockReset().mockResolvedValue({ revoked: true });
+  listComplianceNotes.mockReset().mockResolvedValue({ items: [], nextCursor: null });
+  addComplianceNote.mockReset().mockResolvedValue({ id: 'n1', adminId: 'admin-1', body: 'x', createdAt: '2026-06-11T00:00:00Z' });
 });
 
 describe('admin user-profile routes — authentication', () => {
@@ -128,6 +135,25 @@ describe('admin user-profile routes — RBAC', () => {
     expect((await request(app).post(`/users/${UID}/sessions/${SID}/revoke`)).status).toBe(403);
     asAdmin(['X'], ['users.manage']);
     expect((await request(app).post(`/users/${UID}/sessions/${SID}/revoke`)).status).toBe(200);
+  });
+
+  it('reading compliance notes requires compliance.view', async () => {
+    asAdmin(['X'], ['users.view']);
+    expect((await request(app).get(`/users/${UID}/compliance-notes`)).status).toBe(403);
+    asAdmin(['X'], ['compliance.view']);
+    expect((await request(app).get(`/users/${UID}/compliance-notes`)).status).toBe(200);
+  });
+
+  it('creating a compliance note requires compliance.case.manage (view is not enough)', async () => {
+    asAdmin(['X'], ['compliance.view']);
+    expect((await request(app).post(`/users/${UID}/compliance-notes`).send({ body: 'hi' })).status).toBe(403);
+    asAdmin(['X'], ['compliance.case.manage']);
+    expect((await request(app).post(`/users/${UID}/compliance-notes`).send({ body: 'hi' })).status).toBe(201);
+  });
+
+  it('rejects an empty compliance note body', async () => {
+    asAdmin(['X'], ['compliance.case.manage']);
+    expect((await request(app).post(`/users/${UID}/compliance-notes`).send({ body: '' })).status).toBe(422);
   });
 
   it('SUPER_ADMIN sees compliance and may revoke/manage notes', async () => {

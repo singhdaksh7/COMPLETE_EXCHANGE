@@ -4,6 +4,7 @@ import {
   type AuthSession,
   type ComplianceAlert,
   type ComplianceCase,
+  type ComplianceNote,
   type ComplianceProfile,
   type CryptoDeposit,
   type CryptoWithdrawal,
@@ -199,6 +200,30 @@ export const adminUserProfileRepository = {
       where: { userId, status: { not: 'CLOSED' } },
       orderBy: { createdAt: 'desc' },
       take: 25,
+    });
+  },
+
+  // --- Compliance notes (5D) ---
+
+  complianceNotes(
+    userId: string,
+    cursor: string | undefined,
+    limit: number,
+  ): Promise<ComplianceNote[]> {
+    return prisma.complianceNote.findMany({
+      where: { userId },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      ...uuidCursor(cursor, limit),
+    });
+  },
+
+  createComplianceNote(
+    userId: string,
+    adminId: string | null,
+    body: string,
+  ): Promise<ComplianceNote> {
+    return prisma.complianceNote.create({
+      data: { userId, adminId, body },
     });
   },
 

@@ -9,6 +9,7 @@ import type {
   UserProfile,
   ProfileSection,
   ProfilePage,
+  ProfileComplianceNote,
   AdminListItem,
   UserFeatureControls,
   UserControlFlag,
@@ -277,6 +278,22 @@ export const adminApi = {
     adminApiFetch<{ revoked: boolean }>(
       `/users/${userId}/sessions/${sessionId}/revoke`,
       'POST',
+    ),
+
+  userComplianceNotes: (
+    userId: string,
+    params: { cursor?: string; limit?: number } = {},
+  ) =>
+    adminApiFetch<ProfilePage<ProfileComplianceNote>>(
+      `/users/${userId}/compliance-notes${buildQuery({ ...params })}`,
+      'GET',
+    ),
+
+  addUserComplianceNote: (userId: string, body: string) =>
+    adminApiFetch<ProfileComplianceNote>(
+      `/users/${userId}/compliance-notes`,
+      'POST',
+      { body: { body } },
     ),
 
   setUserStatus: (userId: string, status: 'ACTIVE' | 'FROZEN') =>

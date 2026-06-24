@@ -9,7 +9,7 @@ import { adminApi } from '@/lib/admin-api';
 import { errorMessage } from '@/lib/api';
 import { useGuard } from '@/components/guards';
 import { Alert, Button, Card, EmptyState, Row, Select, StatusBadge } from '@/components/ui';
-import type { ProfilePage, ProfileSection } from '@/lib/types';
+import type { ProfileComplianceNote, ProfilePage, ProfileSection } from '@/lib/types';
 import { FeatureControls } from './FeatureControls';
 
 const TABS = [
@@ -125,6 +125,98 @@ function Table({ head, children }: { head: ReactNode; children: ReactNode }) {
         <tbody>{children}</tbody>
       </table>
     </div>
+  );
+}
+
+/**
+ * Per-user compliance notes (Stage 5D). Append-only: notes can be created (when
+ * the admin holds compliance.case.manage) but never edited or deleted. The list
+ * seeds from the aggregate's embedded first page and supports cursor "Load
+ * more"; creating a note refetches the profile so the new note appears.
+ */
+function ComplianceNotes({
+  userId,
+  firstPage,
+  canManage,
+}: {
+  userId: string;
+  firstPage: ProfilePage<ProfileComplianceNote> | null;
+  canManage: boolean;
+}) {
+  const qc = useQueryClient();
+  const [extra, setExtra] = useState<ProfileComplianceNote[]>([]);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [body, setBody] = useState('');
+
+  useEffect(() => {
+    setExtra([]);
+    setCursor(firstPage?.nextCursor ?? null);
+    setLoadErr(null);
+  }, [firstPage]);
+
+  const notes = [...(firstPage?.items ?? []), ...extra];
+
+  async function loadMore() {
+    if (!cursor || loading) return;
+    setLoading(true);
+    setLoadErr(null);
+    try {
+      const res = await adminApi.userComplianceNotes(userId, { cursor });
+      setExtra((p) => [...p, ...res.data.items]);
+      setCursor(res.data.nextCursor);
+    } catch (e) {
+      setLoadErr(errorMessage(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const add = useMutation({
+    mutationFn: () => adminApi.addUserComplianceNote(userId, body.trim()),
+    onSuccess: () => {
+      setBody('');
+      qc.invalidateQueries({ queryKey: ['admin-user-profile', userId] });
+    },
+  });
+
+  return (
+    <Section title="Compliance Notes">
+      {canManage && (
+        <div className="mb-4 space-y-2">
+          <textarea
+            value={body}
+            disabled={add.isPending}
+            onChange={(e) => setBody(e.target.value)}
+            rows={3}
+            placeholder="Add a compliance note (visible to admins; cannot be edited or deleted)"
+            className="w-full rounded-lg border border-line bg-panel-2 px-3 py-2 text-sm text-ink placeholder:text-muted-2 focus:border-brand focus:outline-none"
+          />
+          {add.isError && <Alert>{errorMessage(add.error)}</Alert>}
+          <Button onClick={() => add.mutate()} disabled={add.isPending || body.trim().length === 0}>
+            {add.isPending ? 'Saving…' : 'Add note'}
+          </Button>
+        </div>
+      )}
+
+      {notes.length === 0 ? (
+        <EmptyState title="No compliance notes" />
+      ) : (
+        <div className="space-y-3">
+          {notes.map((n) => (
+            <div key={n.id} className="border-b border-line pb-3 text-sm last:border-0">
+              <p className="whitespace-pre-wrap text-ink">{n.body}</p>
+              <div className="mt-1 text-xs text-muted-2">
+                {n.adminId ? <>by <ShortId id={n.adminId} /> · </> : null}
+                {fmt(n.createdAt)}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <LoadMore hasMore={!!cursor} loading={loading} error={loadErr} onClick={loadMore} />
+    </Section>
   );
 }
 
@@ -640,6 +732,12 @@ function AdminUserDetailInner() {
                   </Table>
                 )}
               </Section>
+
+              <ComplianceNotes
+                userId={id.id}
+                firstPage={profile.complianceNotes}
+                canManage={profile.meta.canManageNotes}
+              />
             </div>
           )}
 

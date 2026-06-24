@@ -19,6 +19,8 @@ vi.mock('../../src/modules/admin-user-profile/admin-user-profile.repository', ()
     openCases: vi.fn(),
     revokeSession: vi.fn(),
     writeAdminLog: vi.fn(),
+    complianceNotes: vi.fn(),
+    createComplianceNote: vi.fn(),
   },
 }));
 
@@ -80,6 +82,7 @@ beforeEach(() => {
   repo.walletRiskChecks.mockResolvedValue([]);
   repo.openCases.mockResolvedValue([]);
   repo.writeAdminLog.mockResolvedValue({} as never);
+  repo.complianceNotes.mockResolvedValue([]);
 });
 
 describe('adminUserProfileService.getProfile', () => {
@@ -219,5 +222,55 @@ describe('adminUserProfileService.revokeSession', () => {
     await expect(
       adminUserProfileService.revokeSession(UID, 'sess-1', {}),
     ).rejects.toThrow(/not found/i);
+  });
+});
+
+describe('compliance notes', () => {
+  it('loads notes into the aggregate only when compliance is visible', async () => {
+    repo.findHeader.mockResolvedValue(header());
+    repo.complianceNotes.mockResolvedValue([
+      { id: 'n1', adminId: 'admin-1', body: 'reviewed', createdAt: new Date('2026-06-10T00:00:00Z') } as never,
+    ]);
+
+    const hidden = await adminUserProfileService.getProfile(UID, VIEW_BASIC);
+    expect(hidden.complianceNotes).toBeNull();
+    expect(repo.complianceNotes).not.toHaveBeenCalled();
+
+    const shown = await adminUserProfileService.getProfile(UID, VIEW_ALL);
+    expect(shown.complianceNotes?.items).toHaveLength(1);
+    expect(shown.complianceNotes?.items[0]).toMatchObject({ body: 'reviewed', adminId: 'admin-1' });
+  });
+
+  it('adds a note, records the author, and writes audit + admin logs', async () => {
+    repo.findUserState.mockResolvedValue({ id: UID, email: 'u@e.com', status: 'ACTIVE' } as never);
+    repo.createComplianceNote.mockResolvedValue({
+      id: 'n1',
+      adminId: 'admin-1',
+      body: 'manual hold pending docs',
+      createdAt: new Date('2026-06-11T00:00:00Z'),
+    } as never);
+
+    const note = await adminUserProfileService.addComplianceNote(
+      UID,
+      '  manual hold pending docs  ',
+      { actorId: 'admin-1' },
+    );
+
+    expect(note).toMatchObject({ id: 'n1', adminId: 'admin-1', body: 'manual hold pending docs' });
+    expect(repo.createComplianceNote).toHaveBeenCalledWith(UID, 'admin-1', 'manual hold pending docs');
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'admin.user.compliance_note_add', entityId: 'n1' }),
+    );
+    expect(repo.writeAdminLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'admin.user.compliance_note_add', targetId: UID }),
+    );
+  });
+
+  it('rejects an empty note body', async () => {
+    repo.findUserState.mockResolvedValue({ id: UID, email: 'u@e.com', status: 'ACTIVE' } as never);
+    await expect(
+      adminUserProfileService.addComplianceNote(UID, '   ', { actorId: 'admin-1' }),
+    ).rejects.toThrow(/required/i);
+    expect(repo.createComplianceNote).not.toHaveBeenCalled();
   });
 });

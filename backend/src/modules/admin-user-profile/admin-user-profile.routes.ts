@@ -5,6 +5,8 @@ import { validate } from '../../middleware/validate';
 import { asyncHandler } from '../../utils/async-handler';
 import { adminUserProfileController } from './admin-user-profile.controller';
 import {
+  createNoteSchema,
+  notesQuerySchema,
   sectionParamSchema,
   sectionQuerySchema,
   sessionRevokeParamSchema,
@@ -47,4 +49,24 @@ adminUserProfileRouter.post(
   adminAuthorize('users.manage'),
   validate({ params: sessionRevokeParamSchema }),
   asyncHandler(adminUserProfileController.revokeSession),
+);
+
+// Stage 5D — per-user compliance notes. Reading is part of the compliance
+// surface (compliance.view); creating is a compliance write action
+// (compliance.case.manage). Note creation is audit-logged. Notes are
+// append-only — there is no edit/delete route in this first version.
+adminUserProfileRouter.get(
+  '/:userId/compliance-notes',
+  adminAuthenticate,
+  adminAuthorize('compliance.view'),
+  validate({ params: userIdParamSchema, query: notesQuerySchema }),
+  asyncHandler(adminUserProfileController.listNotes),
+);
+
+adminUserProfileRouter.post(
+  '/:userId/compliance-notes',
+  adminAuthenticate,
+  adminAuthorize('compliance.case.manage'),
+  validate({ params: userIdParamSchema, body: createNoteSchema }),
+  asyncHandler(adminUserProfileController.addNote),
 );
