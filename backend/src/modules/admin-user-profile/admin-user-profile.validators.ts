@@ -10,6 +10,13 @@ export const sectionParamSchema = z
   })
   .strict();
 
+export const sessionRevokeParamSchema = z
+  .object({
+    userId: z.string().uuid(),
+    sessionId: z.string().uuid(),
+  })
+  .strict();
+
 export const sectionQuerySchema = z
   .object({
     cursor: z.string().trim().max(64).optional(),

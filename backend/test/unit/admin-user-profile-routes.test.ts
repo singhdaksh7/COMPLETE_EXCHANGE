@@ -11,7 +11,7 @@ import request from 'supertest';
  *    `viewer` (compliance gating) through to the service.
  */
 
-const { state, getProfile, getSection } = vi.hoisted(() => ({
+const { state, getProfile, getSection, revokeSession } = vi.hoisted(() => ({
   state: {
     admin: null as { id: string; sessionId: string } | null,
     roles: [] as string[],
@@ -19,6 +19,7 @@ const { state, getProfile, getSection } = vi.hoisted(() => ({
   },
   getProfile: vi.fn(),
   getSection: vi.fn(),
+  revokeSession: vi.fn(),
 }));
 
 vi.mock('../../src/middleware/admin-authenticate', () => ({
@@ -42,6 +43,7 @@ vi.mock('../../src/modules/admin-user-profile/admin-user-profile.service', () =>
   adminUserProfileService: {
     getProfile: getProfile,
     getSection: getSection,
+    revokeSession: revokeSession,
   },
 }));
 
@@ -73,6 +75,7 @@ beforeEach(() => {
   state.permissions = [];
   getProfile.mockReset().mockResolvedValue({ ok: true });
   getSection.mockReset().mockResolvedValue({ items: [], nextCursor: null });
+  revokeSession.mockReset().mockResolvedValue({ revoked: true });
 });
 
 describe('admin user-profile routes — authentication', () => {
@@ -117,6 +120,14 @@ describe('admin user-profile routes — RBAC', () => {
       expect.objectContaining({ complianceVisible: true }),
       expect.anything(),
     );
+  });
+
+  it('session revoke requires users.manage (users.view is not enough)', async () => {
+    const SID = '22222222-2222-4222-8222-222222222222';
+    asAdmin(['X'], ['users.view']);
+    expect((await request(app).post(`/users/${UID}/sessions/${SID}/revoke`)).status).toBe(403);
+    asAdmin(['X'], ['users.manage']);
+    expect((await request(app).post(`/users/${UID}/sessions/${SID}/revoke`)).status).toBe(200);
   });
 
   it('SUPER_ADMIN sees compliance and may revoke/manage notes', async () => {

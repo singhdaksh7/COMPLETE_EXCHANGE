@@ -187,6 +187,14 @@ function AdminUserDetailInner() {
     onSuccess: () => { setActionError(null); refresh(); },
     onError: onErr,
   });
+  const revokeSession = useMutation({
+    mutationFn: (sessionId: string) => adminApi.revokeUserSession(userId, sessionId),
+    onSuccess: () => {
+      setActionError(null);
+      qc.invalidateQueries({ queryKey: ['admin-user-profile', userId] });
+    },
+    onError: onErr,
+  });
 
   // Section pagers (seeded from the aggregate's embedded first page).
   const inrDeposits = useSectionPager(userId, 'inrDeposits', profile?.inrDeposits);
@@ -523,7 +531,7 @@ function AdminUserDetailInner() {
                 <EmptyState title="No sessions" />
               ) : (
                 <>
-                  <Table head={<><Th>Session</Th><Th>IP</Th><Th>Created</Th><Th>Last seen</Th><Th>Expires</Th><Th>State</Th></>}>
+                  <Table head={<><Th>Session</Th><Th>IP</Th><Th>Created</Th><Th>Last seen</Th><Th>Expires</Th><Th>State</Th>{profile.meta.canRevokeSessions && <Th> </Th>}</>}>
                     {sessions.items.map((s) => (
                       <tr key={s.id} className="border-b border-line last:border-0">
                         <Td><ShortId id={s.id} /></Td>
@@ -540,6 +548,24 @@ function AdminUserDetailInner() {
                             <StatusBadge status="EXPIRED" />
                           )}
                         </Td>
+                        {profile.meta.canRevokeSessions && (
+                          <Td>
+                            {s.active ? (
+                              <Button
+                                variant="danger"
+                                className="px-2 py-1 text-xs"
+                                disabled={revokeSession.isPending}
+                                onClick={() => {
+                                  if (window.confirm('Revoke this session? The user will be signed out on that device.')) {
+                                    revokeSession.mutate(s.id);
+                                  }
+                                }}
+                              >
+                                Revoke
+                              </Button>
+                            ) : null}
+                          </Td>
+                        )}
                       </tr>
                     ))}
                   </Table>

@@ -201,6 +201,43 @@ export const adminUserProfileRepository = {
       take: 25,
     });
   },
+
+  // --- Mutations (5C: session revoke) ---
+
+  /** Revoke one of a user's sessions. Returns rows updated (0 = none active). */
+  async revokeSession(userId: string, sessionId: string): Promise<number> {
+    const result = await prisma.authSession.updateMany({
+      where: { id: sessionId, userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    return result.count;
+  },
+
+  writeAdminLog(data: {
+    adminId: string;
+    action: string;
+    targetType?: string;
+    targetId?: string;
+    reason?: string;
+    beforeState?: Prisma.InputJsonValue;
+    afterState?: Prisma.InputJsonValue;
+    ip?: string;
+    requestId?: string;
+  }) {
+    return prisma.adminLog.create({
+      data: {
+        adminId: data.adminId,
+        action: data.action,
+        targetType: data.targetType,
+        targetId: data.targetId,
+        reason: data.reason,
+        beforeState: data.beforeState,
+        afterState: data.afterState,
+        ip: data.ip,
+        requestId: data.requestId,
+      },
+    });
+  },
 };
 
 export type AdminUserProfileRepository = typeof adminUserProfileRepository;

@@ -59,4 +59,14 @@ export const adminUserProfileController = {
     );
     sendSuccess(res, result);
   },
+
+  async revokeSession(req: Request, res: Response): Promise<void> {
+    if (!req.admin) throw new UnauthorizedError();
+    const result = await adminUserProfileService.revokeSession(
+      req.params.userId,
+      req.params.sessionId,
+      ctx(req),
+    );
+    sendSuccess(res, result);
+  },
 };

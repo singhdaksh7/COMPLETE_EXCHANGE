@@ -17,6 +17,8 @@ vi.mock('../../src/modules/admin-user-profile/admin-user-profile.repository', ()
     openAlerts: vi.fn(),
     walletRiskChecks: vi.fn(),
     openCases: vi.fn(),
+    revokeSession: vi.fn(),
+    writeAdminLog: vi.fn(),
   },
 }));
 
@@ -77,6 +79,7 @@ beforeEach(() => {
   repo.openAlerts.mockResolvedValue([]);
   repo.walletRiskChecks.mockResolvedValue([]);
   repo.openCases.mockResolvedValue([]);
+  repo.writeAdminLog.mockResolvedValue({} as never);
 });
 
 describe('adminUserProfileService.getProfile', () => {
@@ -180,6 +183,41 @@ describe('adminUserProfileService.getSection', () => {
     repo.findUserState.mockResolvedValue(null);
     await expect(
       adminUserProfileService.getSection(UID, 'orders', undefined, 25),
+    ).rejects.toThrow(/not found/i);
+  });
+});
+
+describe('adminUserProfileService.revokeSession', () => {
+  it('revokes a session scoped to the user and writes audit + admin logs', async () => {
+    repo.findUserState.mockResolvedValue({ id: UID, email: 'u@e.com', status: 'ACTIVE' } as never);
+    repo.revokeSession.mockResolvedValue(1);
+
+    const res = await adminUserProfileService.revokeSession(UID, 'sess-1', { actorId: 'admin-1' });
+
+    expect(res).toEqual({ revoked: true });
+    expect(repo.revokeSession).toHaveBeenCalledWith(UID, 'sess-1');
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'auth.session_revoked', entityId: 'sess-1' }),
+    );
+    expect(repo.writeAdminLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'admin.user.session_revoke', targetId: UID }),
+    );
+  });
+
+  it('is an idempotent no-op when the session is already revoked/expired', async () => {
+    repo.findUserState.mockResolvedValue({ id: UID, email: 'u@e.com', status: 'ACTIVE' } as never);
+    repo.revokeSession.mockResolvedValue(0);
+
+    const res = await adminUserProfileService.revokeSession(UID, 'sess-1', { actorId: 'admin-1' });
+
+    expect(res).toEqual({ revoked: false });
+    expect(audit).toHaveBeenCalled();
+  });
+
+  it('throws when the user does not exist', async () => {
+    repo.findUserState.mockResolvedValue(null);
+    await expect(
+      adminUserProfileService.revokeSession(UID, 'sess-1', {}),
     ).rejects.toThrow(/not found/i);
   });
 });

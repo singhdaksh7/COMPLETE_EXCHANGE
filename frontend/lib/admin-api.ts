@@ -273,6 +273,12 @@ export const adminApi = {
       'GET',
     ),
 
+  revokeUserSession: (userId: string, sessionId: string) =>
+    adminApiFetch<{ revoked: boolean }>(
+      `/users/${userId}/sessions/${sessionId}/revoke`,
+      'POST',
+    ),
+
   setUserStatus: (userId: string, status: 'ACTIVE' | 'FROZEN') =>
     adminApiFetch<AdminUserListItem>(`/users/${userId}/status`, 'PATCH', {
       body: { status },

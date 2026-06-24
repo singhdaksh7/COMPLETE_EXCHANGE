@@ -7,6 +7,7 @@ import { adminUserProfileController } from './admin-user-profile.controller';
 import {
   sectionParamSchema,
   sectionQuerySchema,
+  sessionRevokeParamSchema,
   userIdParamSchema,
 } from './admin-user-profile.validators';
 
@@ -36,4 +37,14 @@ adminUserProfileRouter.get(
   adminAuthorize('users.view'),
   validate({ params: sectionParamSchema, query: sectionQuerySchema }),
   asyncHandler(adminUserProfileController.section),
+);
+
+// Stage 5C — admin revoke of a single user session. users.manage (the same
+// gate as freeze/unfreeze) is required; every revoke is audit-logged.
+adminUserProfileRouter.post(
+  '/:userId/sessions/:sessionId/revoke',
+  adminAuthenticate,
+  adminAuthorize('users.manage'),
+  validate({ params: sessionRevokeParamSchema }),
+  asyncHandler(adminUserProfileController.revokeSession),
 );

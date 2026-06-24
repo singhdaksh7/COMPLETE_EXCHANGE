@@ -13,6 +13,7 @@ import {
   type WalletRiskCheck,
 } from '@prisma/client';
 import { NotFoundError } from '../../lib/errors';
+import { AuditAction } from '../../lib/audit';
 import { recordAudit } from '../../lib/audit';
 import {
   PROFILE_PAGE_SIZE,
@@ -522,6 +523,49 @@ export const adminUserProfileService = {
           (x) => x.id.toString(),
         );
     }
+  },
+
+  /**
+   * Admin-initiated revoke of a single user session (Stage 5C). RBAC-gated
+   * upstream (users.manage). Revoking is scoped to the user so an admin can
+   * never revoke another user's session by id. Both the hash-chained audit log
+   * and the admin log record who did it. Idempotent: revoking an already
+   * revoked/expired session is a no-op success.
+   */
+  async revokeSession(
+    userId: string,
+    sessionId: string,
+    ctx: ProfileContext = {},
+  ): Promise<{ revoked: boolean }> {
+    const exists = await adminUserProfileRepository.findUserState(userId);
+    if (!exists) throw new NotFoundError('User not found', 'USER_NOT_FOUND');
+
+    const count = await adminUserProfileRepository.revokeSession(userId, sessionId);
+    const revoked = count > 0;
+
+    await recordAudit({
+      actorType: 'ADMIN',
+      actorId: ctx.actorId,
+      action: AuditAction.SESSION_REVOKED,
+      entityType: 'auth_session',
+      entityId: sessionId,
+      ip: ctx.ip,
+      userAgent: ctx.userAgent,
+      requestId: ctx.requestId,
+      metadata: { userId, revoked, by: 'ADMIN' },
+    });
+    if (ctx.actorId) {
+      await adminUserProfileRepository.writeAdminLog({
+        adminId: ctx.actorId,
+        action: 'admin.user.session_revoke',
+        targetType: 'user',
+        targetId: userId,
+        afterState: { sessionId, revoked },
+        ip: ctx.ip,
+        requestId: ctx.requestId,
+      });
+    }
+    return { revoked };
   },
 };
 
