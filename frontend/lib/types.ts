@@ -1,5 +1,71 @@
 /** Response shapes mirrored from the backend OpenAPI / DTOs. */
 
+// ---- Master-wallet USDT crypto deposits (Stage 12 V1) ----
+export type CryptoDepositChain = 'BSC' | 'ETH' | 'TRON';
+
+export type CryptoDepositStatus =
+  | 'submitted'
+  | 'pending_confirmation'
+  | 'confirmed'
+  | 'rejected'
+  | 'duplicate'
+  | 'failed';
+
+export interface CryptoDepositNetwork {
+  chain: CryptoDepositChain;
+  assetSymbol: string;
+  label: string;
+  masterAddress: string | null;
+  minConfirmations: number;
+  decimals: number;
+  enabled: boolean;
+  warning: string;
+}
+
+export interface CryptoDepositNetworksResponse {
+  enabled: boolean;
+  networks: CryptoDepositNetwork[];
+}
+
+export interface MasterCryptoDeposit {
+  id: string;
+  assetSymbol: string;
+  chain: string;
+  masterAddress: string;
+  fromAddress: string | null;
+  txHash: string;
+  amount: string;
+  confirmations: number;
+  minConfirmations: number | null;
+  status: CryptoDepositStatus;
+  rejectionReason: string | null;
+  creditedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminMasterCryptoDeposit extends MasterCryptoDeposit {
+  userId: string;
+  userEmail: string | null;
+}
+
+export interface MasterCryptoDepositPage {
+  items: MasterCryptoDeposit[];
+  nextCursor: string | null;
+}
+
+export interface AdminMasterCryptoDepositPage {
+  items: AdminMasterCryptoDeposit[];
+  nextCursor: string | null;
+}
+
+export interface SubmitCryptoDepositInput {
+  assetSymbol: 'USDT';
+  chain: CryptoDepositChain;
+  txHash: string;
+}
+
+
 export interface PublicUser {
   id: string;
   email: string;

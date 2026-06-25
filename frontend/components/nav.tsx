@@ -428,6 +428,7 @@ const ADMIN_GROUPS: AdminGroup[] = [
     title: 'INR & Wallets',
     links: [
       { href: '/admin/deposits', label: 'INR Deposits', requiredPermissions: ['inr.view'] },
+      { href: '/admin/crypto/deposits', label: 'Crypto deposits', requiredPermissions: ['operations.view'] },
       { href: '/admin/withdrawals', label: 'Withdrawals', requiredPermissions: ['withdrawals.view'] },
       { href: '/admin/conversions', label: 'Conversions ledger', requiredPermissions: ['inr.view'] },
     ],

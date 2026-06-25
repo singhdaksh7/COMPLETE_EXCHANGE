@@ -17,6 +17,8 @@ import type {
   UserControlAuditEntry,
   AdminLoginData,
   AdminMeData,
+  AdminMasterCryptoDeposit,
+  AdminMasterCryptoDepositPage,
   AdminRoleOption,
   ComplianceSummary,
   ComplianceDashboard,
@@ -380,6 +382,30 @@ export const adminApi = {
 
   approveDeposit: (id: string) =>
     adminApiFetch<InrDeposit>(`/inr/deposits/${id}/approve`, 'POST'),
+
+  // ---- master-wallet USDT crypto deposits (Stage 12) ----
+  cryptoDeposits: (
+    params: {
+      status?: string;
+      chain?: string;
+      userId?: string;
+      txHash?: string;
+      fromDate?: string;
+      toDate?: string;
+      cursor?: string;
+      limit?: number;
+    } = {},
+  ) =>
+    adminApiFetch<AdminMasterCryptoDepositPage>(
+      `/crypto/deposits${buildQuery({ limit: 50, ...params })}`,
+      'GET',
+    ),
+
+  cryptoDeposit: (id: string) =>
+    adminApiFetch<AdminMasterCryptoDeposit>(`/crypto/deposits/${id}`, 'GET'),
+
+  recheckCryptoDeposit: (id: string) =>
+    adminApiFetch<AdminMasterCryptoDeposit>(`/crypto/deposits/${id}/recheck`, 'POST'),
 
   rejectDeposit: (id: string, reason: string) =>
     adminApiFetch<InrDeposit>(`/inr/deposits/${id}/reject`, 'POST', {
