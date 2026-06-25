@@ -30,6 +30,15 @@ export interface AdminProfile {
   admin: PublicAdmin;
   roles: string[];
   permissions: string[];
+  /**
+   * True when the admin holds the SUPER_ADMIN role. Such admins bypass every
+   * permission check on the backend (see admin-authorize middleware), so the
+   * frontend treats this flag as "may see all admin modules". When set, the
+   * `permissions` array above is expanded to the full known permission set so a
+   * permission-aware UI never hides a module from a master admin — even if the
+   * DB grants for SUPER_ADMIN have gone stale relative to newer modules.
+   */
+  isSuperAdmin: boolean;
 }
 
 export interface RoleDto {

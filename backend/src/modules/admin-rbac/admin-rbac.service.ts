@@ -27,6 +27,7 @@ import {
 import { isIpAllowed, isValidIpv4OrCidr } from '../../lib/ip-allowlist';
 import { adminTotpRequired } from '../../lib/prod-safety';
 import { adminRbacRepository } from './admin-rbac.repository';
+import { ADMIN_PERMISSIONS } from './admin-rbac.baseline';
 import type {
   AdminContext,
   AdminListItem,
@@ -48,6 +49,16 @@ import {
 
 const ADMIN_RBAC_KEY = (adminId: string): string => `admin:rbac:perms:${adminId}`;
 const SUPER_ADMIN = 'SUPER_ADMIN';
+
+/**
+ * The full set of known admin permission codes (from the RBAC baseline). Used to
+ * expand a SUPER_ADMIN's effective permissions for the `/auth/me` payload so a
+ * permission-aware frontend never hides a module from a master admin, even if
+ * the DB grants for SUPER_ADMIN predate a newer module's permission.
+ */
+const ALL_ADMIN_PERMISSION_CODES: readonly string[] = ADMIN_PERMISSIONS.map(
+  (p) => p.code,
+);
 
 function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
@@ -320,12 +331,24 @@ export const adminRbacService = {
     const admin = await adminRbacRepository.findAdminById(adminId);
     if (!admin) throw new UnauthorizedError('Admin not found');
     const { roles, permissions } = await this.getAdminPermissions(adminId);
+    const isSuperAdmin = roles.includes(SUPER_ADMIN);
+    // A SUPER_ADMIN bypasses every backend permission check, so expose the full
+    // permission set here (union of granted + all known codes) — the frontend
+    // uses this to render every admin module without special-casing the role.
+    const effectivePermissions = isSuperAdmin
+      ? [...new Set([...permissions, ...ALL_ADMIN_PERMISSION_CODES])]
+      : permissions;
     await audit({ ...ctx, adminId }, {
       action: 'admin.profile.view',
       targetType: 'admin',
       targetId: adminId,
     });
-    return { admin: toPublicAdmin(admin), roles, permissions };
+    return {
+      admin: toPublicAdmin(admin),
+      roles,
+      permissions: effectivePermissions,
+      isSuperAdmin,
+    };
   },
 
   listRoles(): Promise<RoleDto[]> {
