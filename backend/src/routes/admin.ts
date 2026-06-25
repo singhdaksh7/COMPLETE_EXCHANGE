@@ -17,6 +17,7 @@ import { adminNotificationRouter } from '../modules/notification/notification.ad
 import { adminNotificationCenterRouter } from '../modules/admin-notification/admin-notification.routes';
 import { adminSupportRouter } from '../modules/support/support.routes';
 import { adminSystemRouter } from '../modules/system/system.routes';
+import { adminSecurityRouter } from '../modules/security/security.routes';
 import { adminComplianceRouter } from '../modules/compliance/compliance.admin.routes';
 import { adminComplianceDashboardRouter } from '../modules/compliance/dashboard.admin.routes';
 import { adminComplianceCasesRouter } from '../modules/compliance/compliance.cases.admin.routes';
@@ -65,6 +66,9 @@ adminApiRouter.use('/admin-notifications', adminNotificationCenterRouter);
 // Stage 8C — internal support / operations tickets.
 adminApiRouter.use('/support', adminSupportRouter);
 adminApiRouter.use('/system', adminSystemRouter);
+// Stage 9D — admin audit review dashboard (risk-aware, paginated). Additive;
+// does not replace the existing /operations/audit viewer.
+adminApiRouter.use('/security', adminSecurityRouter);
 // Stage 4A — compliance dashboard aggregate. Mounted first so the static
 // /dashboard path is unambiguous; it does not collide with the other
 // /compliance sub-routers (/users, /cases, /alerts, ...).
