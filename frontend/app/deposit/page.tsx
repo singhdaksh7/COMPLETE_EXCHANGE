@@ -8,6 +8,7 @@ import { useGuard } from '@/components/guards';
 import { UserShell } from '@/components/user-shell';
 import { StatusBadge } from '@/components/ui';
 import { CopyButton, ExplorerLink, KycRequiredNotice } from '@/components/wallet-bits';
+import { MasterWalletDepositPanel } from '@/components/master-deposit-panel';
 
 type TabMode = 'INR' | 'CRYPTO';
 type InrMethod = 'UPI' | 'IMPS' | 'NEFT' | 'QR';
@@ -558,6 +559,9 @@ export default function DepositPage() {
             <h1 className="text-2xl font-bold text-white tracking-tight">Crypto Deposit</h1>
             <p className="text-xs text-white/50 mt-1">Select your cryptocurrency and network to get your deposit address.</p>
           </div>
+
+          {/* Stage 12: master-wallet USDT deposit (send to EXORA address + submit tx hash). */}
+          <MasterWalletDepositPanel />
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
             

@@ -8,6 +8,10 @@ import type {
   ConversionSide,
   CreateManualDepositInput,
   CryptoWithdrawal,
+  CryptoDepositNetworksResponse,
+  MasterCryptoDeposit,
+  MasterCryptoDepositPage,
+  SubmitCryptoDepositInput,
   DepositAddress,
   InrDeposit,
   InrDepositIntent,
@@ -202,6 +206,20 @@ export const userApi = {
   /** The caller's crypto deposit history/status (detected → credited). */
   listCryptoDeposits: () =>
     authed<Page<UserCryptoDeposit>>('/wallets/deposits'),
+
+  // ---- Master-wallet USDT deposits V1 (Stage 12) ----
+  cryptoDepositNetworks: () =>
+    authed<CryptoDepositNetworksResponse>('/deposits/crypto/networks'),
+
+  submitCryptoDeposit: (body: SubmitCryptoDepositInput) =>
+    authed<MasterCryptoDeposit>('/deposits/crypto/submit', {
+      method: 'POST',
+      body,
+      headers: { 'Idempotency-Key': idemKey() },
+    }),
+
+  listMasterCryptoDeposits: () =>
+    authed<MasterCryptoDepositPage>('/deposits/crypto'),
 
   // ---- INR deposit (Razorpay mock order) ----
   createInrDeposit: (amount: string) =>
