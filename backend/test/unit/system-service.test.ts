@@ -186,11 +186,24 @@ describe('systemService.overview', () => {
       withdrawalSigner: config.withdrawal.signer,
       adminTotpRequired: !config.security.allowAdminLoginWithoutTotp,
       liveSigningEnabled: config.withdrawal.signer === 'live',
+      // Stage 13: the temporary login bypass is surfaced as a safety flag.
+      unverifiedLoginAllowed: config.auth.allowUnverifiedLogin,
     });
     expect(o.deployment).toMatchObject({
       apiPrefix: config.http.apiPrefix,
       adminApiPrefix: config.admin.apiPrefix,
     });
+  });
+
+  it('flags the email-verification bypass as a warning when ALLOW_UNVERIFIED_LOGIN=true', async () => {
+    const prev = config.auth.allowUnverifiedLogin;
+    config.auth.allowUnverifiedLogin = true;
+    try {
+      const o = await systemService.overview();
+      expect(o.flags.unverifiedLoginAllowed).toBe(true);
+    } finally {
+      config.auth.allowUnverifiedLogin = prev;
+    }
   });
 
   it('NEVER leaks secrets (db/redis/jwt) anywhere in the serialized response', async () => {

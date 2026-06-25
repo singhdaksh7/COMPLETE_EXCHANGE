@@ -62,6 +62,7 @@ import {
 } from '../../src/lib/redis';
 import { mailer } from '../../src/lib/mailer';
 import { AuditAction, recordAudit } from '../../src/lib/audit';
+import { config } from '../../src/config';
 
 const repo = vi.mocked(authRepository);
 const r = vi.mocked(redis);
@@ -244,13 +245,37 @@ describe('login', () => {
     );
   });
 
-  it('refuses login when the email is unverified', async () => {
+  it('refuses login when the email is unverified (ALLOW_UNVERIFIED_LOGIN=false)', async () => {
     repo.findUserByEmail.mockResolvedValue(
       makeUser({ passwordHash: pwHash, emailVerifiedAt: null }),
     );
     await expect(
       authService.login({ email: 'user@example.com', password: PASSWORD }),
     ).rejects.toMatchObject({ errorCode: 'EMAIL_NOT_VERIFIED', statusCode: 403 });
+  });
+
+  it('allows an unverified login when ALLOW_UNVERIFIED_LOGIN=true (Stage 13 bypass)', async () => {
+    const prev = config.auth.allowUnverifiedLogin;
+    config.auth.allowUnverifiedLogin = true;
+    try {
+      repo.findUserByEmail.mockResolvedValue(
+        makeUser({ passwordHash: pwHash, emailVerifiedAt: null }),
+      );
+      repo.createSession.mockResolvedValue(makeSession());
+
+      const result = await authService.login({
+        email: 'user@example.com',
+        password: PASSWORD,
+      });
+
+      expect(result.tokens.accessToken).toBeTruthy();
+      expect(repo.createSession).toHaveBeenCalledOnce();
+      expect(repo.recordLoginAttempt).toHaveBeenCalledWith(
+        expect.objectContaining({ success: true }),
+      );
+    } finally {
+      config.auth.allowUnverifiedLogin = prev;
+    }
   });
 
   it('issues a session on valid, verified login', async () => {
