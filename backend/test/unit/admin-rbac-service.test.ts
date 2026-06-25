@@ -220,3 +220,44 @@ describe('adminRbacService', () => {
     );
   });
 });
+
+describe('adminRbacService.profile (/auth/me payload)', () => {
+  it('flags a SUPER_ADMIN and expands their permissions to the full known set', async () => {
+    repo.findAdminById.mockResolvedValue(makeAdmin());
+    // SUPER_ADMIN with only a partial set of DB grants (simulates stale grants).
+    repo.getAdminRolesAndPermissions.mockResolvedValue({
+      roles: ['SUPER_ADMIN'],
+      permissions: ['role.manage', 'admin.manage'],
+    });
+
+    const profile = await adminRbacService.profile('admin-1', { adminId: 'admin-1' });
+
+    expect(profile.isSuperAdmin).toBe(true);
+    // Even though kyc.view / compliance.view were NOT granted in the DB, the
+    // master admin's effective permissions cover every known module.
+    expect(profile.permissions).toContain('kyc.view');
+    expect(profile.permissions).toContain('compliance.view');
+    expect(profile.permissions).toContain('role.manage'); // granted ones retained
+    // No secrets are leaked in the payload.
+    expect(profile.admin).not.toHaveProperty('passwordHash');
+    expect(profile.admin).not.toHaveProperty('totpSecretEnc');
+  });
+
+  it('returns only the assigned permissions for a normal admin (no expansion)', async () => {
+    repo.findAdminById.mockResolvedValue(makeAdmin());
+    repo.getAdminRolesAndPermissions.mockResolvedValue({
+      roles: ['KYC_REVIEWER'],
+      permissions: ['kyc.view', 'kyc.review', 'compliance.view'],
+    });
+
+    const profile = await adminRbacService.profile('admin-1', { adminId: 'admin-1' });
+
+    expect(profile.isSuperAdmin).toBe(false);
+    expect([...profile.permissions].sort()).toEqual(
+      ['compliance.view', 'kyc.review', 'kyc.view'],
+    );
+    // A normal admin must NOT silently receive elevated permissions.
+    expect(profile.permissions).not.toContain('admin.manage');
+    expect(profile.permissions).not.toContain('role.manage');
+  });
+});

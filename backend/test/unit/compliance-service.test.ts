@@ -48,17 +48,26 @@ vi.mock('../../src/lib/audit', async (orig) => {
 });
 
 vi.mock('../../src/lib/prisma', () => ({
-  prisma: { user: { update: vi.fn().mockResolvedValue({}) } },
+  prisma: {
+    user: { update: vi.fn().mockResolvedValue({}) },
+    kycProfile: {
+      findUnique: vi.fn().mockResolvedValue(null),
+      upsert: vi.fn().mockResolvedValue({}),
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
+  },
 }));
 
 import { complianceService } from '../../src/modules/compliance/compliance.service';
 import { complianceRepository } from '../../src/modules/compliance/compliance.repository';
 import { screeningRepository } from '../../src/modules/compliance/screening.repository';
 import { notificationService } from '../../src/modules/notification/notification.service';
+import { prisma } from '../../src/lib/prisma';
 
 const repo = vi.mocked(complianceRepository);
 const screenRepo = vi.mocked(screeningRepository);
 const notify = vi.mocked(notificationService.notify);
+const db = vi.mocked(prisma, true);
 
 type Cat = 'SANCTIONS' | 'PEP' | 'ADVERSE_MEDIA';
 function checkRow(category: Cat, over: Record<string, unknown> = {}) {
@@ -186,6 +195,62 @@ describe('complianceService.submitEnhanced', () => {
     );
     expect(repo.createRiskAssessment).toHaveBeenCalled(); // risk scored
     expect(notify).toHaveBeenCalledWith(expect.objectContaining({ type: 'KYC_SUBMITTED' }));
+  });
+
+  it('mirrors the submission onto the legacy KycProfile so it shows in the admin KYC queue', async () => {
+    repo.findProfile.mockResolvedValueOnce(null).mockResolvedValue(makeProfile() as never);
+    repo.upsertProfile.mockResolvedValue(makeProfile() as never);
+    db.kycProfile.findUnique.mockResolvedValueOnce(null);
+
+    await complianceService.submitEnhanced('user-1', SUBMIT_INPUT, GEO, {});
+
+    // A PENDING legacy profile is upserted with MASKED identifiers only.
+    expect(db.kycProfile.upsert).toHaveBeenCalledTimes(1);
+    const upsertArg = db.kycProfile.upsert.mock.calls[0][0] as {
+      create: Record<string, unknown>;
+      update: Record<string, unknown>;
+    };
+    expect(upsertArg.create.status).toBe('PENDING');
+    expect(upsertArg.update.status).toBe('PENDING');
+    expect(upsertArg.create.panMasked).toBe('ABCDE****F');
+    const serialized = JSON.stringify(upsertArg);
+    expect(serialized).not.toContain(RAW_PAN);
+    expect(serialized).not.toContain(RAW_AADHAAR);
+
+    // The user gating field is moved to PENDING so it surfaces in admin filters.
+    expect(db.user.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ kycStatus: 'PENDING' }) }),
+    );
+  });
+
+  it('never downgrades an already-APPROVED legacy KYC profile on resubmit', async () => {
+    repo.findProfile.mockResolvedValueOnce(null).mockResolvedValue(makeProfile() as never);
+    repo.upsertProfile.mockResolvedValue(makeProfile() as never);
+    db.kycProfile.findUnique.mockResolvedValueOnce({ status: 'APPROVED' } as never);
+
+    await complianceService.submitEnhanced('user-1', SUBMIT_INPUT, GEO, {});
+
+    expect(db.kycProfile.upsert).not.toHaveBeenCalled();
+    expect(db.user.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('complianceService.syncLegacyKyc', () => {
+  it('mirrors a terminal compliance decision onto BOTH the user gating field and the legacy KycProfile', async () => {
+    await complianceService.syncLegacyKyc('user-1', 'APPROVED');
+    expect(db.user.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ kycStatus: 'APPROVED' }) }),
+    );
+    expect(db.kycProfile.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: 'user-1' }, data: expect.objectContaining({ status: 'APPROVED' }) }),
+    );
+  });
+
+  it('propagates REJECTED to the legacy KycProfile status', async () => {
+    await complianceService.syncLegacyKyc('user-1', 'REJECTED');
+    expect(db.kycProfile.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'REJECTED' }) }),
+    );
   });
 });
 
