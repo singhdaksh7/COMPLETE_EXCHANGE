@@ -10,6 +10,7 @@ import {
 import { depositRouter } from '../modules/deposit/deposit.routes';
 import { walletInfraRouter } from '../modules/wallet/wallet.routes';
 import { cryptoDepositRouter } from '../modules/scanner/scanner.routes';
+import { cryptoDepositRouter as masterWalletDepositRouter } from '../modules/crypto-deposit/crypto-deposit.routes';
 import { withdrawalRouter } from '../modules/withdrawal/withdrawal.routes';
 import { conversionRouter } from '../modules/conversion/conversion.routes';
 import {
@@ -42,6 +43,9 @@ apiRouter.use('/wallets', walletInfraRouter);
 // whose `/:asset` would otherwise capture "deposits" as an asset symbol.
 apiRouter.use('/wallets', cryptoDepositRouter);
 apiRouter.use('/wallets', walletRouter);
+// Master-wallet USDT crypto deposits V1 (Stage 12) — manual tx-hash flow,
+// distinct from the scanner-based custody deposit routes above.
+apiRouter.use('/deposits/crypto', masterWalletDepositRouter);
 apiRouter.use('/inr/deposits', depositRouter);
 apiRouter.use('/inr', inrLedgerRouter);
 apiRouter.use('/inr', conversionRouter);

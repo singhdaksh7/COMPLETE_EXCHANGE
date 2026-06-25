@@ -6,6 +6,7 @@ import { connectDatabase, disconnectDatabase } from './lib/prisma';
 import { connectRedis, disconnectRedis } from './lib/redis';
 import { createSocketServer } from './realtime/socket-server';
 import { onShutdown, setupProcessGuards } from './lib/lifecycle';
+import { cryptoDepositService } from './modules/crypto-deposit/crypto-deposit.service';
 
 /**
  * Public API entrypoint.
@@ -21,6 +22,13 @@ async function bootstrap(): Promise<void> {
 
   await connectDatabase();
   await connectRedis();
+
+  // Persist the PUBLIC crypto-deposit network config projection (Stage 12).
+  // Best-effort + non-fatal: the env-derived config is the source of truth, this
+  // just mirrors the public fields into deposit_network_configs for admin view.
+  await cryptoDepositService.seedNetworkConfigs().catch((err) => {
+    logger.warn({ err }, 'crypto-deposit: network config seed skipped');
+  });
 
   const app = createApp();
   // Create the HTTP server explicitly so Socket.IO can share the same port as
