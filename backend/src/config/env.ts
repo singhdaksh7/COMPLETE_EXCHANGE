@@ -407,12 +407,70 @@ export const envSchema = z
   MONITORING_ADMIN_5XX_ALERT: z.string().default('false').transform((v) => v === 'true'),
   MONITORING_ECS_CRASH_ALERT: z.string().default('false').transform((v) => v === 'true'),
   MONITORING_RDS_ALERT: z.string().default('false').transform((v) => v === 'true'),
+  // Stage 10E splits the single RDS alarm into CPU vs storage. RDS_ALERT above
+  // remains the combined/back-compat flag; when these granular flags are unset
+  // they fall back to MONITORING_RDS_ALERT (resolved in config/index.ts).
+  MONITORING_RDS_CPU_ALERT: optionalNonEmptyString, // 'true' | 'false'
+  MONITORING_RDS_STORAGE_ALERT: optionalNonEmptyString, // 'true' | 'false'
   MONITORING_REDIS_ALERT: z.string().default('false').transform((v) => v === 'true'),
   MONITORING_FAILED_LOGIN_ALERT: z.string().default('false').transform((v) => v === 'true'),
   MONITORING_WITHDRAWAL_FAILURE_ALERT: z.string().default('false').transform((v) => v === 'true'),
   MONITORING_KYC_QUEUE_ALERT: z.string().default('false').transform((v) => v === 'true'),
   // Optional dashboard/runbook URL operators can click through to (non-secret).
   MONITORING_DASHBOARD_URL: optionalUrl,
+
+  // ---- GO-LIVE / PRODUCTION INFRA READINESS (Stage 10) ----
+  // Status/documentation surface only — these describe the intended production
+  // posture so the admin console can report ready/warning/blocked. All OPTIONAL
+  // and boot-safe; NONE are secrets. No AWS API is ever called from the app.
+
+  // Deployment target. Distinguishes staging from production even though staging
+  // runs NODE_ENV=production (Stage 4.2). Drives blocker-vs-warning severity.
+  APP_ENV: z.enum(['development', 'staging', 'production']).optional(),
+
+  // Public URLs (used for go-live separation checks; never secrets).
+  PUBLIC_API_URL: optionalUrl, // public API base, e.g. https://api.exora.com
+  ADMIN_APP_URL: optionalUrl, // admin dashboard base, e.g. https://admin.exora.com
+
+  // Production domains (host names only).
+  PUBLIC_APP_DOMAIN: optionalNonEmptyString,
+  ADMIN_DOMAIN: optionalNonEmptyString,
+  API_DOMAIN: optionalNonEmptyString,
+
+  // TLS / cookie posture. Auth uses bearer tokens (no cookies) today, so
+  // COOKIE_SECURE is informational; HTTPS_REQUIRED reflects the edge policy.
+  HTTPS_REQUIRED: z.string().default('false').transform((v) => v === 'true'),
+  COOKIE_SECURE: z.string().default('false').transform((v) => v === 'true'),
+
+  // CDN / static frontend (CloudFront + S3). Ids/names only — not secrets.
+  CLOUDFRONT_DISTRIBUTION_ID: optionalNonEmptyString,
+  FRONTEND_S3_BUCKET: optionalNonEmptyString,
+
+  // SMS provider (optional capability). 'none' = SMS not in use → checks are
+  // informational/skipped; 'log' is a staging stub; others are real providers.
+  SMS_PROVIDER: z.enum(['none', 'log', 'sns', 'twilio']).default('none'),
+  SMS_FROM: optionalNonEmptyString,
+
+  // Edge security perimeter. WAF lives at the CDN/edge (ARCHITECTURE.md §10);
+  // this flag lets the deploy pipeline assert it is configured.
+  WAF_ENABLED: z.string().default('false').transform((v) => v === 'true'),
+
+  // Go-live checklist acknowledgements (Stage 10H). Each OPTIONAL flag is set to
+  // 'true' by an operator ONLY when that item is genuinely complete — there is
+  // no auto-complete. Default unset = "pending" in the UI.
+  GOLIVE_INFRA_CREATED: optionalNonEmptyString,
+  GOLIVE_DNS_CONFIGURED: optionalNonEmptyString,
+  GOLIVE_SSL_ACTIVE: optionalNonEmptyString,
+  GOLIVE_EMAIL_LIVE: optionalNonEmptyString,
+  GOLIVE_BACKUPS_VERIFIED: optionalNonEmptyString,
+  GOLIVE_RESTORE_DRILL_DONE: optionalNonEmptyString,
+  GOLIVE_MONITORING_ACTIVE: optionalNonEmptyString,
+  GOLIVE_WAF_RATELIMIT_ACTIVE: optionalNonEmptyString,
+  GOLIVE_ADMIN_ACCOUNTS_REVIEWED: optionalNonEmptyString,
+  GOLIVE_LEGAL_APPROVED: optionalNonEmptyString,
+  GOLIVE_LOAD_TEST_DONE: optionalNonEmptyString,
+  GOLIVE_PENTEST_DONE: optionalNonEmptyString,
+  GOLIVE_SMOKE_TEST_PASSED: optionalNonEmptyString,
 
   // ---- PRODUCTION SAFETY OVERRIDES (Stage 4.2) ----
   // Staging runs NODE_ENV=production with offline/mock services and may run

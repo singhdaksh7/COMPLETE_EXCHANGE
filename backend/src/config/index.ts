@@ -213,10 +213,49 @@ export const config = {
       admin5xx: env.MONITORING_ADMIN_5XX_ALERT,
       ecsCrash: env.MONITORING_ECS_CRASH_ALERT,
       rds: env.MONITORING_RDS_ALERT,
+      // Stage 10E granular RDS alarms; fall back to the combined RDS flag.
+      rdsCpu: (env.MONITORING_RDS_CPU_ALERT ?? String(env.MONITORING_RDS_ALERT)) === 'true',
+      rdsStorage: (env.MONITORING_RDS_STORAGE_ALERT ?? String(env.MONITORING_RDS_ALERT)) === 'true',
       redis: env.MONITORING_REDIS_ALERT,
       failedLogin: env.MONITORING_FAILED_LOGIN_ALERT,
       withdrawalFailure: env.MONITORING_WITHDRAWAL_FAILURE_ALERT,
       kycQueue: env.MONITORING_KYC_QUEUE_ALERT,
+    },
+  },
+
+  // Go-live / production infra readiness surface (Stage 10). Status only — no
+  // AWS calls, no secrets. URLs/domains/ids are non-sensitive metadata.
+  goLive: {
+    appEnv: env.APP_ENV ?? null, // 'development' | 'staging' | 'production' | null
+    publicApiUrl: env.PUBLIC_API_URL ?? null,
+    adminAppUrl: env.ADMIN_APP_URL ?? null,
+    publicAppDomain: env.PUBLIC_APP_DOMAIN ?? null,
+    adminDomain: env.ADMIN_DOMAIN ?? null,
+    apiDomain: env.API_DOMAIN ?? null,
+    httpsRequired: env.HTTPS_REQUIRED,
+    cookieSecure: env.COOKIE_SECURE,
+    cloudfrontDistributionId: env.CLOUDFRONT_DISTRIBUTION_ID ?? null,
+    frontendS3Bucket: env.FRONTEND_S3_BUCKET ?? null,
+    wafEnabled: env.WAF_ENABLED,
+    sms: {
+      provider: env.SMS_PROVIDER, // 'none' | 'log' | 'sns' | 'twilio'
+      from: env.SMS_FROM ?? null,
+    },
+    // Go-live checklist acknowledgements (operator-set 'true' only when done).
+    checklist: {
+      infraCreated: env.GOLIVE_INFRA_CREATED === 'true',
+      dnsConfigured: env.GOLIVE_DNS_CONFIGURED === 'true',
+      sslActive: env.GOLIVE_SSL_ACTIVE === 'true',
+      emailLive: env.GOLIVE_EMAIL_LIVE === 'true',
+      backupsVerified: env.GOLIVE_BACKUPS_VERIFIED === 'true',
+      restoreDrillDone: env.GOLIVE_RESTORE_DRILL_DONE === 'true',
+      monitoringActive: env.GOLIVE_MONITORING_ACTIVE === 'true',
+      wafRateLimitActive: env.GOLIVE_WAF_RATELIMIT_ACTIVE === 'true',
+      adminAccountsReviewed: env.GOLIVE_ADMIN_ACCOUNTS_REVIEWED === 'true',
+      legalApproved: env.GOLIVE_LEGAL_APPROVED === 'true',
+      loadTestDone: env.GOLIVE_LOAD_TEST_DONE === 'true',
+      pentestDone: env.GOLIVE_PENTEST_DONE === 'true',
+      smokeTestPassed: env.GOLIVE_SMOKE_TEST_PASSED === 'true',
     },
   },
 } as const;
