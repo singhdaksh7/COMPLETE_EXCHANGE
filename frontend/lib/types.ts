@@ -124,6 +124,12 @@ export interface AdminMeData {
   admin: PublicAdmin;
   roles: string[];
   permissions: string[];
+  /**
+   * True for SUPER_ADMIN / master admins. They bypass every backend permission
+   * check, so the sidebar shows them all modules. When true, `permissions` is
+   * already expanded to the full set by the backend.
+   */
+  isSuperAdmin: boolean;
 }
 
 // --- Admin management (Stage 3.4B) ---

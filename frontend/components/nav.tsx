@@ -370,75 +370,126 @@ export function UserNav() {
   );
 }
 
+type AdminLink = {
+  href: string;
+  label: string;
+  /**
+   * Permission keys that grant access to this module (ANY-of). The item is shown
+   * when the admin holds at least one of them — mirroring the backend route
+   * guards, several of which are `adminAuthorizeAny`. A SUPER_ADMIN sees every
+   * item regardless. An item with no `requiredPermissions` is always visible.
+   *
+   * IMPORTANT: this is presentation only. The backend independently enforces
+   * RBAC on every admin route, so hiding a menu item is never the security
+   * boundary — direct URL/API access is still blocked when the permission is
+   * missing.
+   */
+  requiredPermissions?: string[];
+};
+
+type AdminGroup = { title: string; links: AdminLink[] };
+
 // All admin destinations, grouped logically. This is the single source of
 // truth for admin navigation — every existing admin route is represented here.
-const ADMIN_GROUPS: { title: string; links: { href: string; label: string }[] }[] = [
+// The `requiredPermissions` on each link mirror the backing route's permission
+// guard so the sidebar is permission-aware (see AdminLink doc above).
+const ADMIN_GROUPS: AdminGroup[] = [
   {
     title: 'Overview',
     links: [
-      { href: '/admin/command-center', label: 'Command Center' },
-      { href: '/admin/notification-center', label: 'Notification Center' },
-      { href: '/admin/dashboard', label: 'Dashboard' },
+      { href: '/admin/command-center', label: 'Command Center', requiredPermissions: ['operations.view'] },
+      { href: '/admin/notification-center', label: 'Notification Center', requiredPermissions: ['operations.view'] },
+      { href: '/admin/dashboard', label: 'Dashboard', requiredPermissions: ['operations.view'] },
     ],
   },
   {
     title: 'Users & KYC',
     links: [
-      { href: '/admin/users', label: 'Users' },
-      { href: '/admin/kyc', label: 'KYC Verification' },
+      { href: '/admin/users', label: 'Users', requiredPermissions: ['users.view'] },
+      { href: '/admin/kyc', label: 'KYC Verification', requiredPermissions: ['kyc.view'] },
     ],
   },
   {
     title: 'Compliance',
     links: [
-      { href: '/admin/compliance', label: 'Compliance overview' },
-      { href: '/admin/compliance/users', label: 'Compliance review' },
-      { href: '/admin/compliance/cases', label: 'Compliance cases' },
-      { href: '/admin/compliance/wallet-risk', label: 'Wallet risk' },
-      { href: '/admin/compliance/travel-rule', label: 'Travel Rule' },
-      { href: '/admin/compliance/evidence-packs', label: 'Evidence packs' },
-      { href: '/admin/compliance/retention', label: 'Retention' },
-      { href: '/admin/compliance/fiu', label: 'FIU drafts' },
-      { href: '/admin/compliance/aml', label: 'AML policies' },
-      { href: '/admin/compliance/workspace', label: 'Workspace' },
+      { href: '/admin/compliance', label: 'Compliance overview', requiredPermissions: ['compliance.view'] },
+      { href: '/admin/compliance/users', label: 'Compliance review', requiredPermissions: ['compliance.view'] },
+      { href: '/admin/compliance/cases', label: 'Compliance cases', requiredPermissions: ['compliance.case.view'] },
+      { href: '/admin/compliance/wallet-risk', label: 'Wallet risk', requiredPermissions: ['compliance.walletRisk.view'] },
+      { href: '/admin/compliance/travel-rule', label: 'Travel Rule', requiredPermissions: ['compliance.travelRule.view'] },
+      { href: '/admin/compliance/evidence-packs', label: 'Evidence packs', requiredPermissions: ['compliance.evidencePack.view'] },
+      { href: '/admin/compliance/retention', label: 'Retention', requiredPermissions: ['compliance.retention.view'] },
+      { href: '/admin/compliance/fiu', label: 'FIU drafts', requiredPermissions: ['compliance.fiuReport.view'] },
+      { href: '/admin/compliance/aml', label: 'AML policies', requiredPermissions: ['compliance.amlPolicy.view'] },
+      { href: '/admin/compliance/workspace', label: 'Workspace', requiredPermissions: ['compliance.workspace.view'] },
     ],
   },
   {
     title: 'INR & Wallets',
     links: [
-      { href: '/admin/deposits', label: 'INR Deposits' },
-      { href: '/admin/withdrawals', label: 'Withdrawals' },
-      { href: '/admin/conversions', label: 'Conversions ledger' },
+      { href: '/admin/deposits', label: 'INR Deposits', requiredPermissions: ['inr.view'] },
+      { href: '/admin/withdrawals', label: 'Withdrawals', requiredPermissions: ['withdrawals.view'] },
+      { href: '/admin/conversions', label: 'Conversions ledger', requiredPermissions: ['inr.view'] },
     ],
   },
   {
     title: 'Tax & Legal',
     links: [
-      { href: '/admin/tax', label: 'Tax / TDS' },
-      { href: '/admin/legal', label: 'Legal docs' },
+      { href: '/admin/tax', label: 'Tax / TDS', requiredPermissions: ['tax.rule.view', 'tax.tds.view', 'tax.statement.view'] },
+      { href: '/admin/legal', label: 'Legal docs', requiredPermissions: ['legal.document.view'] },
     ],
   },
   {
     title: 'Risk & Monitoring',
     links: [
-      { href: '/admin/reports', label: 'Fee reports' },
-      { href: '/admin/notifications', label: 'Notifications' },
-      { href: '/admin/scanner', label: 'Blockchain scan' },
-      { href: '/admin/system', label: 'System / Ops Center' },
+      { href: '/admin/reports', label: 'Fee reports', requiredPermissions: ['fees.view'] },
+      { href: '/admin/notifications', label: 'Notifications', requiredPermissions: ['notifications.view'] },
+      { href: '/admin/scanner', label: 'Blockchain scan', requiredPermissions: ['deposit.view'] },
+      { href: '/admin/system', label: 'System / Ops Center', requiredPermissions: ['system.view', 'operations.view'] },
     ],
   },
   {
     title: 'Administration',
     links: [
-      { href: '/admin/support', label: 'Support tickets' },
-      { href: '/admin/admins', label: 'Admin management' },
-      { href: '/admin/audit', label: 'Audit log' },
-      { href: '/admin/security/audit-review', label: 'Audit review' },
+      { href: '/admin/support', label: 'Support tickets', requiredPermissions: ['support.view'] },
+      { href: '/admin/admins', label: 'Admin management', requiredPermissions: ['admin.view'] },
+      { href: '/admin/audit', label: 'Audit log', requiredPermissions: ['audit.view'] },
+      { href: '/admin/security/audit-review', label: 'Audit review', requiredPermissions: ['audit.view', 'operations.view'] },
     ],
   },
 ];
 
 const ADMIN_HREFS = ADMIN_GROUPS.flatMap((g) => g.links.map((l) => l.href));
+
+/**
+ * Permission-aware visibility for a single admin link. A SUPER_ADMIN (or any
+ * admin whose effective permission set covers it) may see the item. Links with
+ * no declared permissions are always visible. Pure + side-effect free.
+ */
+export function canSeeAdminLink(
+  link: AdminLink,
+  access: { permissions: string[]; isSuperAdmin: boolean },
+): boolean {
+  if (access.isSuperAdmin) return true;
+  if (!link.requiredPermissions || link.requiredPermissions.length === 0) return true;
+  return link.requiredPermissions.some((p) => access.permissions.includes(p));
+}
+
+/**
+ * Filter the admin nav groups down to what the current admin may see, dropping
+ * any group left with no visible links. Returns all groups when access info has
+ * not loaded yet (`undefined`) so the nav is never momentarily empty for a
+ * legitimately-permissioned admin.
+ */
+export function visibleAdminGroups(
+  access?: { permissions: string[]; isSuperAdmin: boolean },
+): AdminGroup[] {
+  if (!access) return ADMIN_GROUPS;
+  return ADMIN_GROUPS.map((g) => ({
+    ...g,
+    links: g.links.filter((l) => canSeeAdminLink(l, access)),
+  })).filter((g) => g.links.length > 0);
+}
 
 /** Resolve the most specific (longest-prefix) nav link for the current path. */
 function activeAdminHref(pathname: string): string {
@@ -451,11 +502,13 @@ function activeAdminHref(pathname: string): string {
 
 /** Grouped link list + admin identity + logout — shared by sidebar and drawer. */
 function AdminSidebarBody({
+  groups,
   activeHref,
   onNavigate,
   onLogout,
   identity,
 }: {
+  groups: AdminGroup[];
   activeHref: string;
   onNavigate: () => void;
   onLogout: () => void;
@@ -464,7 +517,7 @@ function AdminSidebarBody({
   return (
     <>
       <nav className="flex-1 space-y-5 overflow-y-auto pr-1">
-        {ADMIN_GROUPS.map((group) => (
+        {groups.map((group) => (
           <div key={group.title} className="space-y-1">
             <span className="block px-3 text-[10px] font-bold uppercase tracking-widest text-white/30">
               {group.title}
@@ -538,6 +591,12 @@ export function AdminShell({ children }: { children: ReactNode }) {
   const identity = me
     ? { email: me.admin.email, status: me.admin.status, roles: me.roles }
     : undefined;
+  // Permission-aware nav: a master admin sees every module; a normal admin sees
+  // only modules their permissions cover. Until /auth/me resolves we show the
+  // full set (cosmetic only — the backend enforces RBAC on every route).
+  const groups = visibleAdminGroups(
+    me ? { permissions: me.permissions, isSuperAdmin: me.isSuperAdmin } : undefined,
+  );
   const activeHref = activeAdminHref(pathname);
 
   const brand = (
@@ -558,6 +617,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-white/5 bg-noir px-4 py-5 lg:flex">
         <div className="mb-6 px-2">{brand}</div>
         <AdminSidebarBody
+          groups={groups}
           activeHref={activeHref}
           onNavigate={() => {}}
           onLogout={handleLogout}
@@ -598,6 +658,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
               </button>
             </div>
             <AdminSidebarBody
+              groups={groups}
               activeHref={activeHref}
               onNavigate={() => setMobileOpen(false)}
               onLogout={handleLogout}
