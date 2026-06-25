@@ -33,6 +33,11 @@ export interface MeResult {
   user: PublicUser;
   roles: string[];
   permissions: string[];
+  /**
+   * True when ALLOW_UNVERIFIED_LOGIN is enabled (Stage 13 temporary bypass).
+   * The UI uses this to show a non-blocking testing/demo notice. Not a secret.
+   */
+  emailVerificationBypass: boolean;
 }
 
 export interface SessionDto {

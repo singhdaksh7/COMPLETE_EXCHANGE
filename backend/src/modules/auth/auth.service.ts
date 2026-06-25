@@ -183,7 +183,10 @@ export const authService = {
 
     return {
       user: toPublicUser(user),
-      emailVerificationRequired: config.auth.requireEmailVerification,
+      // Bypass-aware: when ALLOW_UNVERIFIED_LOGIN is on, the client must NOT gate
+      // the user on verification (they can use the app immediately).
+      emailVerificationRequired:
+        config.auth.requireEmailVerification && !config.auth.allowUnverifiedLogin,
     };
   },
 
@@ -343,7 +346,15 @@ export const authService = {
       throw new ForbiddenError('Account is not active', 'ACCOUNT_NOT_ACTIVE');
     }
 
-    if (config.auth.requireEmailVerification && !user.emailVerifiedAt) {
+    // Email-verification gate. The temporary Stage 13 bypass
+    // (ALLOW_UNVERIFIED_LOGIN=true) lets unverified users log in for
+    // testing/demo while SES is unapproved — without disabling the verification
+    // system itself. Default (bypass off) keeps the original behaviour.
+    if (
+      config.auth.requireEmailVerification &&
+      !config.auth.allowUnverifiedLogin &&
+      !user.emailVerifiedAt
+    ) {
       throw new ForbiddenError(
         'Email address is not verified',
         'EMAIL_NOT_VERIFIED',
@@ -947,7 +958,14 @@ export const authService = {
     const user = await authRepository.findUserById(userId);
     if (!user) throw new UnauthorizedError('User not found');
     const { roles, permissions } = await this.getUserPermissions(userId);
-    return { user: toPublicUser(user), roles, permissions };
+    return {
+      user: toPublicUser(user),
+      roles,
+      permissions,
+      // Lets the UI show a non-blocking "email verification temporarily
+      // disabled for testing" notice (Stage 13). No secrets — just the flag.
+      emailVerificationBypass: config.auth.allowUnverifiedLogin,
+    };
   },
 
   async validateAccessSession(

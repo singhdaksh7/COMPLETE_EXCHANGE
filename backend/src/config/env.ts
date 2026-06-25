@@ -103,6 +103,15 @@ export const envSchema = z
     .string()
     .default('true')
     .transform((v) => v !== 'false'),
+  // TEMPORARY TESTING/DEMO BYPASS (Stage 13). When true, login succeeds for
+  // unverified users even while REQUIRE_EMAIL_VERIFICATION stays true — used
+  // while Amazon SES approval is pending. Default false = no behaviour change.
+  // The email verification system itself (routes/tokens/OTP) is untouched; this
+  // only relaxes the login gate. Surfaced as a staging/demo risk on /admin/system.
+  ALLOW_UNVERIFIED_LOGIN: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
   // TTL of the per-user RBAC permission cache in Redis (seconds).
   RBAC_CACHE_TTL_SEC: z.coerce.number().int().positive().default(60),
 

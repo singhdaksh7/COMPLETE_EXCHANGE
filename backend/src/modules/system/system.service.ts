@@ -81,6 +81,8 @@ export interface SystemFlags {
   mockWithdrawalSignerAllowed: boolean;
   logMailProviderAllowed: boolean;
   unverifiedEmailLoginAllowed: boolean;
+  /** Stage 13 temporary login bypass (ALLOW_UNVERIFIED_LOGIN). Risk flag. */
+  unverifiedLoginAllowed: boolean;
   adminTotpRequired: boolean;
   liveSigningEnabled: boolean;
 }
@@ -123,6 +125,7 @@ function buildFlags(): SystemFlags {
     mockWithdrawalSignerAllowed: config.security.allowMockWithdrawalSigner,
     logMailProviderAllowed: config.security.allowLogMailProvider,
     unverifiedEmailLoginAllowed: config.security.allowUnverifiedEmailLogin,
+    unverifiedLoginAllowed: config.auth.allowUnverifiedLogin,
     // TOTP is required unless the staging bypass flag is explicitly set.
     adminTotpRequired: !config.security.allowAdminLoginWithoutTotp,
     liveSigningEnabled: config.withdrawal.signer === 'live',

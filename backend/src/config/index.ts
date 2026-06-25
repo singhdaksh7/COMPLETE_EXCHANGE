@@ -57,6 +57,9 @@ export const config = {
     emailVerificationTtlMs: env.EMAIL_VERIFICATION_TTL_MS,
     passwordResetTtlMs: env.PASSWORD_RESET_TTL_MS,
     requireEmailVerification: env.REQUIRE_EMAIL_VERIFICATION,
+    // Stage 13 temporary bypass: allow unverified users to log in (testing/demo
+    // while SES is unapproved). Does not remove email verification.
+    allowUnverifiedLogin: env.ALLOW_UNVERIFIED_LOGIN,
     rbacCacheTtlSec: env.RBAC_CACHE_TTL_SEC,
   },
 
