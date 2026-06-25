@@ -116,6 +116,8 @@ export interface MeData {
   user: PublicUser;
   roles: string[];
   permissions: string[];
+  /** Stage 13: true when ALLOW_UNVERIFIED_LOGIN is on (testing/demo bypass). */
+  emailVerificationBypass?: boolean;
 }
 
 /** Generic, enumeration-safe result of requesting/resending an email OTP. */
@@ -1234,6 +1236,7 @@ export interface SystemFlags {
   mockWithdrawalSignerAllowed: boolean;
   logMailProviderAllowed: boolean;
   unverifiedEmailLoginAllowed: boolean;
+  unverifiedLoginAllowed: boolean;
   adminTotpRequired: boolean;
   liveSigningEnabled: boolean;
 }

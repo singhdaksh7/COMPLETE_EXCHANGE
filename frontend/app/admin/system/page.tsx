@@ -680,6 +680,7 @@ export default function AdminSystemPage() {
                 <FlagRow label="Mock signer allowed" value={o.flags.mockWithdrawalSignerAllowed ? 'YES' : 'no'} tone={o.flags.mockWithdrawalSignerAllowed ? 'warn' : 'ok'} />
                 <FlagRow label="Log mail allowed" value={o.flags.logMailProviderAllowed ? 'YES' : 'no'} tone={o.flags.logMailProviderAllowed ? 'warn' : 'ok'} />
                 <FlagRow label="Unverified login allowed" value={o.flags.unverifiedEmailLoginAllowed ? 'YES' : 'no'} tone={o.flags.unverifiedEmailLoginAllowed ? 'warn' : 'ok'} />
+                <FlagRow label="Email verification bypass (testing)" value={o.flags.unverifiedLoginAllowed ? 'YES' : 'no'} tone={o.flags.unverifiedLoginAllowed ? 'bad' : 'ok'} />
               </div>
               <p className="mt-3 text-[10px] text-white/30">
                 Amber/red flags indicate staging/demo posture or reduced safety. None of these expose secrets.
