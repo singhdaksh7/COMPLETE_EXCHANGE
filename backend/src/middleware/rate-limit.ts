@@ -49,3 +49,10 @@ export const authRateLimiter = buildLimiter(config.rateLimit.authMax, 'auth');
 // Reuses the (tight) auth cap but in a separate bucket so a user's withdrawal /
 // deposit submissions never consume — or get consumed by — their auth quota.
 export const sensitiveRateLimiter = buildLimiter(config.rateLimit.authMax, 'sensitive');
+// Stage 9E — guardrail throttle for SENSITIVE ADMIN mutations (user lock/unlock,
+// withdrawal approve/reject). Its own bucket so it never shares quota with the
+// public auth/sensitive limiters. Reuses the tight auth cap.
+export const adminSensitiveRateLimiter = buildLimiter(
+  config.rateLimit.authMax,
+  'admin-sensitive',
+);

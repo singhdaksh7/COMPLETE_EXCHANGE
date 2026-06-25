@@ -3,6 +3,7 @@ import { asyncHandler } from '../../utils/async-handler';
 import { validate } from '../../middleware/validate';
 import { adminAuthenticate } from '../../middleware/admin-authenticate';
 import { adminAuthorize } from '../../middleware/admin-authorize';
+import { adminSensitiveRateLimiter } from '../../middleware/rate-limit';
 import { adminWithdrawalController } from './withdrawal.admin.controller';
 import {
   adminQueueQuerySchema,
@@ -27,10 +28,13 @@ adminWithdrawalRouter.get(
   asyncHandler(adminWithdrawalController.queue),
 );
 
+// Stage 9E — sensitive admin money-movement actions are throttled in the
+// dedicated admin-sensitive bucket (in addition to dual-approval controls).
 adminWithdrawalRouter.post(
   '/:id/approve',
   adminAuthenticate,
   adminAuthorize('withdrawals.approve'),
+  adminSensitiveRateLimiter,
   validate({ params: withdrawalIdParamSchema }),
   asyncHandler(adminWithdrawalController.approve),
 );
@@ -39,6 +43,7 @@ adminWithdrawalRouter.post(
   '/:id/reject',
   adminAuthenticate,
   adminAuthorize('withdrawals.review'),
+  adminSensitiveRateLimiter,
   validate({ params: withdrawalIdParamSchema, body: rejectSchema }),
   asyncHandler(adminWithdrawalController.reject),
 );

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { adminAuthenticate } from '../../middleware/admin-authenticate';
 import { adminAuthorize } from '../../middleware/admin-authorize';
+import { adminSensitiveRateLimiter } from '../../middleware/rate-limit';
 import { validate } from '../../middleware/validate';
 import { asyncHandler } from '../../utils/async-handler';
 import { adminUsersController } from './admin-users.controller';
@@ -30,18 +31,23 @@ adminUsersRouter.get(
   asyncHandler(adminUsersController.detail),
 );
 
+// Stage 9E — sensitive admin mutation: user lock/unlock (account status).
+// Throttled in the dedicated admin-sensitive bucket.
 adminUsersRouter.patch(
   '/:userId/status',
   adminAuthenticate,
   adminAuthorize('users.manage'),
+  adminSensitiveRateLimiter,
   validate({ params: userIdParamSchema, body: accountStatusSchema }),
   asyncHandler(adminUsersController.setStatus),
 );
 
+// Stage 9E — sensitive admin mutation: withdrawal block toggle.
 adminUsersRouter.patch(
   '/:userId/withdrawals-block',
   adminAuthenticate,
   adminAuthorize('risk.manage'),
+  adminSensitiveRateLimiter,
   validate({ params: userIdParamSchema, body: withdrawalBlockSchema }),
   asyncHandler(adminUsersController.setWithdrawalBlock),
 );
