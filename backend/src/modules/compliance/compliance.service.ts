@@ -253,6 +253,11 @@ export const complianceService = {
     // Risk scoring (source = KYC).
     await this.recomputeRisk(userId, 'KYC');
 
+    // Mirror the submission onto the legacy KycProfile + user gating so it shows
+    // up in the admin "KYC Verification" queue (which reads kyc_profiles), not
+    // only the compliance review surface. Additive + non-fatal.
+    await this.mirrorEnhancedKycToLegacy(userId, profile);
+
     await this.audit(ctx, userId, 'compliance.submit', {
       customerType: input.customerType,
       hasAadhaar: Boolean(input.aadhaar),
@@ -673,8 +678,87 @@ export const complianceService = {
           ? { kycStatus: 'APPROVED', kycTier: config.kyc.defaultApprovedTier }
           : { kycStatus: status };
       await prisma.user.update({ where: { id: userId }, data });
+      // Keep the legacy KycProfile row (if one was mirrored on submit) in step
+      // with the compliance decision so the admin "KYC Verification" surface
+      // reflects the same status. updateMany is a no-op when no row exists.
+      await prisma.kycProfile.updateMany({
+        where: { userId },
+        data: { status, reviewedAt: new Date() },
+      });
     } catch (err) {
       logger.warn({ err, userId, status }, 'compliance: legacy KYC sync failed (non-fatal)');
+    }
+  },
+
+  /**
+   * Mirror an enhanced-KYC submission onto the legacy KycProfile + user gating
+   * so the submission is visible in the admin "KYC Verification" queue (which
+   * reads kyc_profiles), not only the compliance review surface.
+   *
+   * Additive + non-fatal: a mirror failure never breaks the compliance
+   * submission itself. ONLY non-secret, already-masked fields are copied — the
+   * raw PAN/Aadhaar stay in the encrypted compliance columns and are never
+   * written here. An already-APPROVED legacy row is left untouched (no
+   * downgrade).
+   */
+  async mirrorEnhancedKycToLegacy(
+    userId: string,
+    profile: {
+      fullName: string | null;
+      dateOfBirth: Date | null;
+      panMasked: string | null;
+      aadhaarMasked: string | null;
+      addressLine1: string | null;
+      addressLine2: string | null;
+      city: string | null;
+      state: string | null;
+      postalCode: string | null;
+      country: string | null;
+      kycProvider: string | null;
+    },
+  ) {
+    try {
+      const existing = await prisma.kycProfile.findUnique({
+        where: { userId },
+        select: { status: true },
+      });
+      // Never downgrade a legacy profile that is already APPROVED.
+      if (existing?.status === 'APPROVED') return;
+
+      const address: Prisma.InputJsonValue = {
+        line1: profile.addressLine1 ?? '',
+        ...(profile.addressLine2 ? { line2: profile.addressLine2 } : {}),
+        city: profile.city ?? '',
+        state: profile.state ?? '',
+        pincode: profile.postalCode ?? '',
+        country: profile.country ?? '',
+      };
+      const writable = {
+        fullName: profile.fullName,
+        dob: profile.dateOfBirth,
+        panMasked: profile.panMasked,
+        aadhaarMasked: profile.aadhaarMasked,
+        address,
+        provider: profile.kycProvider,
+        status: 'PENDING' as const,
+        // A resubmission clears any prior terminal review outcome on the mirror.
+        rejectedReason: null,
+        reviewedAt: null,
+      };
+      await prisma.kycProfile.upsert({
+        where: { userId },
+        update: writable,
+        create: { userId, ...writable },
+      });
+      await prisma.user.update({
+        where: { id: userId },
+        data: { kycStatus: 'PENDING' },
+      });
+    } catch (err) {
+      logger.warn(
+        { err, userId },
+        'compliance: legacy KYC mirror on submit failed (non-fatal)',
+      );
     }
   },
 
