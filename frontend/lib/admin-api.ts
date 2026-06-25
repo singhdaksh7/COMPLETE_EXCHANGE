@@ -49,6 +49,7 @@ import type {
   MonitoringStatus,
   GuardrailsStatus,
   AuditReviewResult,
+  GoLiveReadinessReport,
   ComplianceQueueItem,
   AdminComplianceDetail,
   AdminScreeningView,
@@ -522,6 +523,7 @@ export const adminApi = {
   systemBackupStatus: () => adminApiFetch<BackupStatus>('/system/backup-status', 'GET'),
   systemMonitoring: () => adminApiFetch<MonitoringStatus>('/system/monitoring', 'GET'),
   systemGuardrails: () => adminApiFetch<GuardrailsStatus>('/system/guardrails', 'GET'),
+  systemGoLiveReadiness: () => adminApiFetch<GoLiveReadinessReport>('/system/go-live-readiness', 'GET'),
   auditReview: (
     params: {
       adminId?: string;

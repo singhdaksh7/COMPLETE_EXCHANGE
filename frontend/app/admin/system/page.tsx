@@ -99,6 +99,19 @@ function guardrailTone(state?: string): Tone {
   if (state === 'partial') return 'warn';
   return 'muted';
 }
+// Stage 10 go-live tone mappings.
+function goLiveTone(status?: string): Tone {
+  if (status === 'ready') return 'ok';
+  if (status === 'warning') return 'warn';
+  if (status === 'blocked') return 'bad';
+  return 'muted';
+}
+function goLiveCheckTone(status?: string): Tone {
+  if (status === 'ok') return 'ok';
+  if (status === 'warning') return 'warn';
+  if (status === 'blocked') return 'bad';
+  return 'muted';
+}
 
 function fmtUptime(seconds?: number): string {
   if (!seconds && seconds !== 0) return '—';
@@ -182,6 +195,14 @@ export default function AdminSystemPage() {
     retry: false,
     refetchInterval: 60000,
   });
+  // Stage 10 — production go-live readiness.
+  const goLive = useQuery({
+    queryKey: ['system-go-live'],
+    queryFn: () => adminApi.systemGoLiveReadiness(),
+    enabled: ready,
+    retry: false,
+    refetchInterval: 60000,
+  });
 
   if (!ready) return null;
 
@@ -194,6 +215,7 @@ export default function AdminSystemPage() {
   const bk = backup.data?.data;
   const mon = monitoring.data?.data;
   const gr = guardrails.data?.data;
+  const gl = goLive.data?.data;
 
   const refreshAll = () => {
     overview.refetch();
@@ -205,6 +227,7 @@ export default function AdminSystemPage() {
     backup.refetch();
     monitoring.refetch();
     guardrails.refetch();
+    goLive.refetch();
   };
 
   const dbTone = statusTone(o?.dependencies.database);
@@ -425,6 +448,98 @@ export default function AdminSystemPage() {
             )}
           </Panel>
         </div>
+
+        {/* ===== Stage 10 — Production Go-Live Readiness ===== */}
+        <section className="relative rounded-2xl border border-gold/15 bg-gold/[0.02] p-5">
+          <div className="mb-4 flex flex-col gap-2 border-b border-white/5 pb-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-white">
+                Production Go-Live Readiness
+                {gl && <Badge tone={goLiveTone(gl.status)}>{gl.status}</Badge>}
+              </h2>
+              <p className="mt-1 text-[11px] text-white/45">
+                Environment separation, domain/SSL, email/SMS, backups, monitoring, security perimeter & secrets.
+                Read-only · config-driven · no secrets exposed.
+              </p>
+            </div>
+            {gl && (
+              <div className="flex flex-wrap gap-2 text-[11px] text-white/50">
+                <span className="rounded border border-white/10 bg-white/[0.02] px-2 py-1">Env: <b className="text-white/80">{gl.environment}</b></span>
+                <span className="rounded border border-white/10 bg-white/[0.02] px-2 py-1">APP_ENV: <b className="text-white/80">{gl.appEnv ?? '—'}</b></span>
+                <span className="rounded border border-white/10 bg-white/[0.02] px-2 py-1">Target: <Badge tone={gl.targetingProduction ? 'bad' : 'muted'}>{gl.targetingProduction ? 'production' : 'staging'}</Badge></span>
+              </div>
+            )}
+          </div>
+
+          {goLive.isError ? (
+            <p className="text-xs text-white/40">Requires <code>operations.view</code> or <code>system.view</code>.</p>
+          ) : gl ? (
+            <>
+              {!gl.targetingProduction && (
+                <div className="mb-4 rounded-lg border border-amber-500/20 bg-amber-500/5 p-2 text-[11px] text-amber-300">
+                  APP_ENV is not <b>production</b> — production gaps below are shown as <b>warnings</b>. Set APP_ENV=production to evaluate them as launch blockers.
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                {gl.sections.map((s) => (
+                  <div key={s.key} className="rounded-xl border border-white/5 bg-white/[0.01] p-4">
+                    <div className="mb-2 flex items-center justify-between border-b border-white/5 pb-2">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-white/80">{s.title}</span>
+                      <Badge tone={goLiveTone(s.status)}>{s.status}</Badge>
+                    </div>
+                    <div className="space-y-1">
+                      {s.checks.map((c) => (
+                        <div key={c.key} className="flex items-start justify-between gap-2 py-1">
+                          <div className="min-w-0">
+                            <span className="block text-[11px] font-medium text-white/75">{c.label}</span>
+                            <span className="block text-[10px] text-white/35">{c.detail}</span>
+                          </div>
+                          <Badge tone={goLiveCheckTone(c.status)}>{c.status}</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Blockers / warnings rollup */}
+              {gl.warnings.length > 0 && (
+                <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.01] p-3">
+                  <span className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-white/40">Outstanding items</span>
+                  <div className="space-y-0.5">
+                    {gl.warnings.slice(0, 30).map((w, i) => (
+                      <div key={i} className={`text-[11px] ${w.startsWith('[BLOCKER]') ? 'text-red-400' : 'text-amber-300'}`}>{w}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ===== Stage 10H — Final Go-Live Checklist ===== */}
+              <div className="mt-4 rounded-xl border border-white/5 bg-white/[0.01] p-4">
+                <span className="mb-3 block text-[11px] font-bold uppercase tracking-wider text-white/80">
+                  Go-Live Checklist
+                  <span className="ml-2 font-mono text-white/40">
+                    {gl.checklist.filter((c) => c.done).length}/{gl.checklist.length}
+                  </span>
+                </span>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {gl.checklist.map((c) => (
+                    <div key={c.key} className="flex items-center justify-between gap-2 rounded-lg border border-white/5 bg-white/[0.01] px-3 py-2">
+                      <span className="text-[11px] text-white/70">{c.label}</span>
+                      <Badge tone={c.done ? 'ok' : 'muted'}>{c.done ? 'done' : 'pending'}</Badge>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-3 text-[10px] text-white/30">
+                  Items show <b className="text-emerald-400">done</b> only when an operator has explicitly set the corresponding GOLIVE_* flag — there is no automatic completion.
+                </p>
+              </div>
+            </>
+          ) : (
+            <p className="text-xs text-white/40">{goLive.isLoading ? 'Loading…' : 'Unavailable.'}</p>
+          )}
+        </section>
 
         {/* ===== Stage 9A — Structured Readiness ===== */}
         <Panel title="Readiness Checks (Stage 9)" action={rd && <Badge tone={readyTone(rd.status)}>{rd.status}</Badge>}>

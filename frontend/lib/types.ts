@@ -1307,6 +1307,42 @@ export interface AuditReviewResult {
   summary: { high: number; medium: number; low: number; total: number };
 }
 
+// ---- Stage 10: production go-live readiness ----
+export type GoLiveCheckStatus = 'ok' | 'warning' | 'blocked' | 'unknown';
+export type GoLiveStatus = 'ready' | 'warning' | 'blocked';
+
+export interface GoLiveCheck {
+  key: string;
+  label: string;
+  status: GoLiveCheckStatus;
+  detail: string;
+}
+
+export interface GoLiveSection {
+  key: string;
+  title: string;
+  status: GoLiveStatus;
+  checks: GoLiveCheck[];
+}
+
+export interface GoLiveChecklistItem {
+  key: string;
+  label: string;
+  done: boolean;
+}
+
+export interface GoLiveReadinessReport {
+  status: GoLiveStatus;
+  environment: string;
+  appEnv: string | null;
+  isProduction: boolean;
+  targetingProduction: boolean;
+  sections: GoLiveSection[];
+  checklist: GoLiveChecklistItem[];
+  warnings: string[];
+  timestamp: string;
+}
+
 // ---- Compliance / Enhanced KYC (Stage 5.0) ----
 export type ComplianceKycStatus =
   | 'NOT_STARTED' | 'DRAFT' | 'SUBMITTED' | 'NEEDS_MORE_INFO'
