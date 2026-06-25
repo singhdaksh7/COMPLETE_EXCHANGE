@@ -6,6 +6,7 @@ import { getSystemReadiness } from './readiness.service';
 import { backupService } from './backup.service';
 import { monitoringService } from './monitoring.service';
 import { guardrailsService } from './guardrails.service';
+import { goLiveService } from './go-live.service';
 
 /**
  * Admin System / Ops Center controllers. Each handler sits behind
@@ -65,5 +66,11 @@ export const systemController = {
   async guardrails(req: Request, res: Response): Promise<void> {
     if (!req.admin) throw new UnauthorizedError();
     sendSuccess(res, guardrailsService.status());
+  },
+
+  // Stage 10 — production go-live readiness aggregate.
+  async goLiveReadiness(req: Request, res: Response): Promise<void> {
+    if (!req.admin) throw new UnauthorizedError();
+    sendSuccess(res, goLiveService.readiness());
   },
 };

@@ -130,6 +130,7 @@ async function main(): Promise<void> {
   await expectProtected(`${ADMIN}/system/backup-status`, 'GET /system/backup-status', token);
   await expectProtected(`${ADMIN}/system/monitoring`, 'GET /system/monitoring', token);
   await expectProtected(`${ADMIN}/system/guardrails`, 'GET /system/guardrails', token);
+  await expectProtected(`${ADMIN}/system/go-live-readiness`, 'GET /system/go-live-readiness (Stage 10)', token);
   await expectProtected(`${ADMIN}/security/audit-review`, 'GET /security/audit-review', token);
 
   log('\n[4] Existing Stage 8 routes (regression)');

@@ -96,3 +96,12 @@ adminSystemRouter.get(
   adminAuthorizeAny('operations.view', 'system.view'),
   asyncHandler(systemController.guardrails),
 );
+
+// Stage 10 — production go-live readiness aggregate (env separation, domain/SSL,
+// email/SMS, backup, monitoring, security perimeter, secrets).
+adminSystemRouter.get(
+  '/go-live-readiness',
+  adminAuthenticate,
+  adminAuthorizeAny('operations.view', 'system.view'),
+  asyncHandler(systemController.goLiveReadiness),
+);
