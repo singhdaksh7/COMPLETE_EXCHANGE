@@ -433,6 +433,7 @@ const ADMIN_GROUPS: { title: string; links: { href: string; label: string }[] }[
       { href: '/admin/support', label: 'Support tickets' },
       { href: '/admin/admins', label: 'Admin management' },
       { href: '/admin/audit', label: 'Audit log' },
+      { href: '/admin/security/audit-review', label: 'Audit review' },
     ],
   },
 ];

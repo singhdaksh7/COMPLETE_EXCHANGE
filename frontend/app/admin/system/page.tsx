@@ -76,6 +76,30 @@ function statusTone(status?: string): Tone {
   return 'muted';
 }
 
+// Stage 9 tone mappings.
+function readyTone(status?: string): Tone {
+  if (status === 'healthy') return 'ok';
+  if (status === 'degraded') return 'warn';
+  if (status === 'unhealthy') return 'bad';
+  return 'muted';
+}
+function checkTone(status?: string): Tone {
+  if (status === 'pass') return 'ok';
+  if (status === 'warn') return 'warn';
+  if (status === 'fail') return 'bad';
+  return 'muted';
+}
+function backupItemTone(status?: string): Tone {
+  if (status === 'ok') return 'ok';
+  if (status === 'action_required') return 'bad';
+  return 'warn';
+}
+function guardrailTone(state?: string): Tone {
+  if (state === 'enforced') return 'ok';
+  if (state === 'partial') return 'warn';
+  return 'muted';
+}
+
 function fmtUptime(seconds?: number): string {
   if (!seconds && seconds !== 0) return '—';
   const s = Math.floor(seconds);
@@ -129,6 +153,35 @@ export default function AdminSystemPage() {
     retry: false,
     refetchInterval: 30000,
   });
+  // Stage 9 — production readiness pack.
+  const readiness = useQuery({
+    queryKey: ['system-readiness'],
+    queryFn: () => adminApi.systemReadiness(),
+    enabled: ready,
+    retry: false,
+    refetchInterval: 15000,
+  });
+  const backup = useQuery({
+    queryKey: ['system-backup'],
+    queryFn: () => adminApi.systemBackupStatus(),
+    enabled: ready,
+    retry: false,
+    refetchInterval: 60000,
+  });
+  const monitoring = useQuery({
+    queryKey: ['system-monitoring'],
+    queryFn: () => adminApi.systemMonitoring(),
+    enabled: ready,
+    retry: false,
+    refetchInterval: 60000,
+  });
+  const guardrails = useQuery({
+    queryKey: ['system-guardrails'],
+    queryFn: () => adminApi.systemGuardrails(),
+    enabled: ready,
+    retry: false,
+    refetchInterval: 60000,
+  });
 
   if (!ready) return null;
 
@@ -137,6 +190,10 @@ export default function AdminSystemPage() {
   const sc = scanner.data?.data;
   const ml = mail.data?.data;
   const rk = risk.data?.data;
+  const rd = readiness.data?.data;
+  const bk = backup.data?.data;
+  const mon = monitoring.data?.data;
+  const gr = guardrails.data?.data;
 
   const refreshAll = () => {
     overview.refetch();
@@ -144,6 +201,10 @@ export default function AdminSystemPage() {
     scanner.refetch();
     mail.refetch();
     risk.refetch();
+    readiness.refetch();
+    backup.refetch();
+    monitoring.refetch();
+    guardrails.refetch();
   };
 
   const dbTone = statusTone(o?.dependencies.database);
@@ -364,6 +425,126 @@ export default function AdminSystemPage() {
             )}
           </Panel>
         </div>
+
+        {/* ===== Stage 9A — Structured Readiness ===== */}
+        <Panel title="Readiness Checks (Stage 9)" action={rd && <Badge tone={readyTone(rd.status)}>{rd.status}</Badge>}>
+          {readiness.isError ? (
+            <p className="text-xs text-white/40">Requires <code>operations.view</code> or <code>system.view</code>.</p>
+          ) : rd ? (
+            <>
+              <div className="mb-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {rd.checks.map((c) => (
+                  <div key={c.key} className="rounded-xl border border-white/5 bg-white/[0.01] p-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-semibold text-white/70">{c.label}</span>
+                      <Badge tone={checkTone(c.status)}>{c.status}</Badge>
+                    </div>
+                    <p className="mt-1 text-[10px] text-white/40">{c.detail}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] text-white/50">
+                <span className="rounded border border-white/10 bg-white/[0.02] px-2 py-1">Version: <b className="text-white/80">{rd.version}</b></span>
+                <span className="rounded border border-white/10 bg-white/[0.02] px-2 py-1">Env: <b className="text-white/80">{rd.environment}</b></span>
+                <span className="rounded border border-white/10 bg-white/[0.02] px-2 py-1">Commit: <b className="text-white/80">{rd.build.commit ?? '—'}</b></span>
+                <span className="rounded border border-white/10 bg-white/[0.02] px-2 py-1">Checked: <b className="text-white/80">{new Date(rd.timestamp).toLocaleTimeString()}</b></span>
+              </div>
+            </>
+          ) : (
+            <p className="text-xs text-white/40">{readiness.isLoading ? 'Loading…' : 'Unavailable.'}</p>
+          )}
+        </Panel>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* ===== Stage 9B — Backup & Restore ===== */}
+          <Panel title="Backup & Restore" action={bk && <Badge tone={bk.status === 'ok' ? 'ok' : 'warn'}>{bk.status}</Badge>}>
+            {backup.isError ? (
+              <p className="text-xs text-white/40">Requires <code>operations.view</code> or <code>system.view</code>.</p>
+            ) : bk ? (
+              <>
+                <KV label="Provider" value={bk.database.provider} />
+                <KV
+                  label="Automated backups"
+                  value={<Badge tone={bk.database.automatedBackups === 'enabled' ? 'ok' : bk.database.automatedBackups === 'disabled' ? 'bad' : 'warn'}>{bk.database.automatedBackups}</Badge>}
+                />
+                <KV label="Retention" value={bk.database.retentionDays !== null ? `${bk.database.retentionDays}d` : '—'} />
+                <KV label="Latest snapshot" value={bk.latestBackup.known ? `${bk.latestBackup.snapshotId}` : 'unknown'} />
+                <KV label="Restore drill" value={bk.restoreDrill.documented ? new Date(bk.restoreDrill.lastTestedAt as string).toLocaleDateString() : 'not documented'} />
+                <div className="mt-3 space-y-1.5">
+                  {[...bk.backupChecklist, ...bk.restoreDrillChecklist].map((i) => (
+                    <div key={i.key} className="flex items-start justify-between gap-2">
+                      <span className="text-[11px] text-white/60">{i.label}</span>
+                      <Badge tone={backupItemTone(i.status)}>{i.status === 'action_required' ? 'action' : i.status}</Badge>
+                    </div>
+                  ))}
+                </div>
+                {bk.warnings.length > 0 && (
+                  <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/5 p-2 text-[11px] text-amber-300">
+                    {bk.warnings.map((w, i) => <div key={i}>• {w}</div>)}
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="text-xs text-white/40">{backup.isLoading ? 'Loading…' : 'Unavailable.'}</p>
+            )}
+          </Panel>
+
+          {/* ===== Stage 9C — Monitoring & Alerts ===== */}
+          <Panel
+            title="Monitoring & Alerts"
+            action={mon && <Badge tone={mon.status === 'ok' ? 'ok' : 'warn'}>{mon.configuredCount}/{mon.totalCount}</Badge>}
+          >
+            {monitoring.isError ? (
+              <p className="text-xs text-white/40">Requires <code>operations.view</code> or <code>system.view</code>.</p>
+            ) : mon ? (
+              <div className="space-y-1.5">
+                {mon.alerts.map((al) => (
+                  <div key={al.key} className="rounded-lg border border-white/5 bg-white/[0.01] px-3 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-medium text-white/75">{al.label}</span>
+                      <Badge tone={al.configured ? 'ok' : 'warn'}>{al.configured ? 'configured' : 'missing'}</Badge>
+                    </div>
+                    <p className="mt-0.5 text-[10px] text-white/35">Recommended: {al.recommendedThreshold}</p>
+                  </div>
+                ))}
+                {mon.dashboardUrl && (
+                  <a href={mon.dashboardUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block text-[11px] text-gold hover:underline">
+                    Open monitoring dashboard →
+                  </a>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-white/40">{monitoring.isLoading ? 'Loading…' : 'Unavailable.'}</p>
+            )}
+          </Panel>
+        </div>
+
+        {/* ===== Stage 9E — Security Guardrails ===== */}
+        <Panel
+          title="Security Guardrails"
+          action={gr && <Badge tone="muted">{gr.enforcedCount} enforced · {gr.plannedCount} planned</Badge>}
+        >
+          {guardrails.isError ? (
+            <p className="text-xs text-white/40">Requires <code>operations.view</code> or <code>system.view</code>.</p>
+          ) : gr ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {gr.guardrails.map((g) => (
+                <div key={g.key} className="rounded-lg border border-white/5 bg-white/[0.01] px-3 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-medium text-white/75">{g.label}</span>
+                    <Badge tone={guardrailTone(g.state)}>{g.state}</Badge>
+                  </div>
+                  <p className="mt-0.5 text-[10px] text-white/35">{g.detail}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-white/40">{guardrails.isLoading ? 'Loading…' : 'Unavailable.'}</p>
+          )}
+          <p className="mt-3 text-[10px] text-white/30">
+            <b className="text-emerald-400">enforced</b> = active today · <b className="text-amber-300">partial</b> = available but not fully on · <b className="text-white/50">planned</b> = documented, needs model support.
+          </p>
+        </Panel>
 
         {/* 7. Deployment safety panel */}
         <Panel title="Deployment / Safety Flags">

@@ -31,7 +31,8 @@
     "rbac:ensure-staging": "node dist/scripts/ensure-admin-rbac.js",
     "market:seed-staging": "node dist/scripts/seed-demo-market.js",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "smoke:stage9": "tsx scripts/stage9-smoke.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

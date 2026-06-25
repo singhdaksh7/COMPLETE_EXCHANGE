@@ -384,6 +384,36 @@ export const envSchema = z
   // Quote lifetime (ms). Short-lived; expired quotes are rejected at execution.
   CONVERSION_QUOTE_TTL_MS: z.coerce.number().int().positive().default(30_000),
 
+  // ---- BACKUP / RESTORE STATUS (Stage 9B) ----
+  // Documentation/status surface only — this app NEVER takes or restores
+  // backups. AWS owns the actual RDS automated backups + snapshots; these
+  // OPTIONAL variables let the deploy pipeline publish backup metadata into the
+  // admin console so operators can verify posture. Absent = "unknown" in the UI
+  // (a warning), never a hard failure. No secret/connection material here.
+  DB_PROVIDER: z.string().default('postgresql (Amazon RDS)'),
+  DB_BACKUP_AUTOMATED: optionalNonEmptyString, // 'true' | 'false'
+  DB_BACKUP_RETENTION_DAYS: z.coerce.number().int().min(0).optional(),
+  DB_LATEST_SNAPSHOT_ID: optionalNonEmptyString,
+  DB_LATEST_SNAPSHOT_AT: optionalNonEmptyString, // ISO timestamp
+  DB_RESTORE_TEST_AT: optionalNonEmptyString, // ISO timestamp of last restore drill
+  BACKUP_NOTES: optionalNonEmptyString,
+
+  // ---- MONITORING / ALERTS STATUS (Stage 9C) ----
+  // Documentation/status surface only — alarms live in AWS CloudWatch. Each
+  // OPTIONAL flag lets the deploy pipeline mark an alarm as configured so the
+  // admin console can show configured/missing without touching AWS APIs or
+  // exposing any secret. Default 'false' = not yet configured (shown as a gap).
+  MONITORING_API_5XX_ALERT: z.string().default('false').transform((v) => v === 'true'),
+  MONITORING_ADMIN_5XX_ALERT: z.string().default('false').transform((v) => v === 'true'),
+  MONITORING_ECS_CRASH_ALERT: z.string().default('false').transform((v) => v === 'true'),
+  MONITORING_RDS_ALERT: z.string().default('false').transform((v) => v === 'true'),
+  MONITORING_REDIS_ALERT: z.string().default('false').transform((v) => v === 'true'),
+  MONITORING_FAILED_LOGIN_ALERT: z.string().default('false').transform((v) => v === 'true'),
+  MONITORING_WITHDRAWAL_FAILURE_ALERT: z.string().default('false').transform((v) => v === 'true'),
+  MONITORING_KYC_QUEUE_ALERT: z.string().default('false').transform((v) => v === 'true'),
+  // Optional dashboard/runbook URL operators can click through to (non-secret).
+  MONITORING_DASHBOARD_URL: optionalUrl,
+
   // ---- PRODUCTION SAFETY OVERRIDES (Stage 4.2) ----
   // Staging runs NODE_ENV=production with offline/mock services and may run
   // admins without TOTP. Each unsafe-in-production toggle is blocked at startup

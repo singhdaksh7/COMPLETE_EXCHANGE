@@ -44,6 +44,11 @@ import type {
   SystemScanner,
   SystemMail,
   SystemRiskAlerts,
+  SystemReadiness,
+  BackupStatus,
+  MonitoringStatus,
+  GuardrailsStatus,
+  AuditReviewResult,
   ComplianceQueueItem,
   AdminComplianceDetail,
   AdminScreeningView,
@@ -511,6 +516,29 @@ export const adminApi = {
   systemScanner: () => adminApiFetch<SystemScanner>('/system/scanner', 'GET'),
   systemMail: () => adminApiFetch<SystemMail>('/system/mail', 'GET'),
   systemRiskAlerts: () => adminApiFetch<SystemRiskAlerts>('/system/risk-alerts', 'GET'),
+
+  // ---- Stage 9: production readiness pack ----
+  systemReadiness: () => adminApiFetch<SystemReadiness>('/system/readiness', 'GET'),
+  systemBackupStatus: () => adminApiFetch<BackupStatus>('/system/backup-status', 'GET'),
+  systemMonitoring: () => adminApiFetch<MonitoringStatus>('/system/monitoring', 'GET'),
+  systemGuardrails: () => adminApiFetch<GuardrailsStatus>('/system/guardrails', 'GET'),
+  auditReview: (
+    params: {
+      adminId?: string;
+      targetId?: string;
+      action?: string;
+      riskLevel?: string;
+      ip?: string;
+      fromDate?: string;
+      toDate?: string;
+      cursor?: string;
+      limit?: number;
+    } = {},
+  ) =>
+    adminApiFetch<AuditReviewResult>(
+      `/security/audit-review${buildQuery({ limit: 50, ...params })}`,
+      'GET',
+    ),
 
   // ---- compliance / FIU review (Stage 5.0) ----
   complianceUsers: (

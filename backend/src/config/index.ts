@@ -190,6 +190,35 @@ export const config = {
     tdsBps: env.CONVERSION_TDS_BPS,
     quoteTtlMs: env.CONVERSION_QUOTE_TTL_MS,
   },
+
+  // Backup / restore status surface (Stage 9B). Status/documentation only — no
+  // backup is ever taken or restored by this app. Values are operator-published
+  // metadata, never secrets.
+  backup: {
+    dbProvider: env.DB_PROVIDER,
+    automated: env.DB_BACKUP_AUTOMATED, // 'true' | 'false' | undefined (unknown)
+    retentionDays: env.DB_BACKUP_RETENTION_DAYS ?? null,
+    latestSnapshotId: env.DB_LATEST_SNAPSHOT_ID ?? null,
+    latestSnapshotAt: env.DB_LATEST_SNAPSHOT_AT ?? null,
+    restoreTestAt: env.DB_RESTORE_TEST_AT ?? null,
+    notes: env.BACKUP_NOTES ?? null,
+  },
+
+  // Monitoring / alerts status surface (Stage 9C). Config-driven flags marking
+  // which CloudWatch alarms the deploy pipeline has wired. No AWS access here.
+  monitoring: {
+    dashboardUrl: env.MONITORING_DASHBOARD_URL ?? null,
+    alerts: {
+      api5xx: env.MONITORING_API_5XX_ALERT,
+      admin5xx: env.MONITORING_ADMIN_5XX_ALERT,
+      ecsCrash: env.MONITORING_ECS_CRASH_ALERT,
+      rds: env.MONITORING_RDS_ALERT,
+      redis: env.MONITORING_REDIS_ALERT,
+      failedLogin: env.MONITORING_FAILED_LOGIN_ALERT,
+      withdrawalFailure: env.MONITORING_WITHDRAWAL_FAILURE_ALERT,
+      kycQueue: env.MONITORING_KYC_QUEUE_ALERT,
+    },
+  },
 } as const;
 
 export type Config = typeof config;

@@ -2,6 +2,10 @@ import type { Request, Response } from 'express';
 import { UnauthorizedError } from '../../lib/errors';
 import { sendSuccess } from '../../utils/response';
 import { systemService } from './system.service';
+import { getSystemReadiness } from './readiness.service';
+import { backupService } from './backup.service';
+import { monitoringService } from './monitoring.service';
+import { guardrailsService } from './guardrails.service';
 
 /**
  * Admin System / Ops Center controllers. Each handler sits behind
@@ -37,5 +41,29 @@ export const systemController = {
   async riskAlerts(req: Request, res: Response): Promise<void> {
     if (!req.admin) throw new UnauthorizedError();
     sendSuccess(res, await systemService.riskAlerts());
+  },
+
+  // Stage 9A — structured readiness (DB / Redis / config / build).
+  async readiness(req: Request, res: Response): Promise<void> {
+    if (!req.admin) throw new UnauthorizedError();
+    sendSuccess(res, await getSystemReadiness());
+  },
+
+  // Stage 9B — backup / restore status + checklist (status surface only).
+  async backupStatus(req: Request, res: Response): Promise<void> {
+    if (!req.admin) throw new UnauthorizedError();
+    sendSuccess(res, backupService.status());
+  },
+
+  // Stage 9C — monitoring / alerts configured-vs-missing status.
+  async monitoring(req: Request, res: Response): Promise<void> {
+    if (!req.admin) throw new UnauthorizedError();
+    sendSuccess(res, monitoringService.status());
+  },
+
+  // Stage 9E — security / abuse guardrails: enforced vs planned.
+  async guardrails(req: Request, res: Response): Promise<void> {
+    if (!req.admin) throw new UnauthorizedError();
+    sendSuccess(res, guardrailsService.status());
   },
 };

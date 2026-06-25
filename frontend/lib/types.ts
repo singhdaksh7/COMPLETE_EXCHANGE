@@ -1198,6 +1198,115 @@ export interface SystemOverview {
   };
 }
 
+// ---- Stage 9A: structured readiness ----
+export type ReadinessStatus = 'healthy' | 'degraded' | 'unhealthy';
+export type CheckStatus = 'pass' | 'warn' | 'fail';
+
+export interface ReadinessCheck {
+  key: string;
+  label: string;
+  status: CheckStatus;
+  detail: string;
+}
+
+export interface SystemReadiness {
+  status: ReadinessStatus;
+  checks: ReadinessCheck[];
+  environment: string;
+  version: string;
+  build: { version: string; commit: string | null; builtAt: string | null; node: string };
+  uptimeSeconds: number;
+  timestamp: string;
+}
+
+// ---- Stage 9B: backup / restore status ----
+export type BackupItemStatus = 'ok' | 'unknown' | 'action_required';
+
+export interface BackupChecklistItem {
+  key: string;
+  label: string;
+  status: BackupItemStatus;
+  detail: string;
+}
+
+export interface BackupStatus {
+  status: 'ok' | 'attention';
+  database: {
+    provider: string;
+    automatedBackups: 'enabled' | 'disabled' | 'unknown';
+    retentionDays: number | null;
+  };
+  latestBackup: { snapshotId: string | null; takenAt: string | null; known: boolean };
+  restoreDrill: { lastTestedAt: string | null; documented: boolean };
+  backupChecklist: BackupChecklistItem[];
+  restoreDrillChecklist: BackupChecklistItem[];
+  warnings: string[];
+  notes: string | null;
+  environment: string;
+  timestamp: string;
+}
+
+// ---- Stage 9C: monitoring / alerts status ----
+export interface MonitoringAlertItem {
+  key: string;
+  label: string;
+  configured: boolean;
+  recommendedThreshold: string;
+  detail: string;
+}
+
+export interface MonitoringStatus {
+  status: 'ok' | 'attention';
+  configuredCount: number;
+  totalCount: number;
+  dashboardUrl: string | null;
+  alerts: MonitoringAlertItem[];
+  warnings: string[];
+  environment: string;
+  timestamp: string;
+}
+
+// ---- Stage 9E: security / abuse guardrails ----
+export type GuardrailState = 'enforced' | 'partial' | 'planned';
+
+export interface GuardrailItem {
+  key: string;
+  label: string;
+  state: GuardrailState;
+  detail: string;
+}
+
+export interface GuardrailsStatus {
+  enforcedCount: number;
+  plannedCount: number;
+  totalCount: number;
+  guardrails: GuardrailItem[];
+  environment: string;
+  timestamp: string;
+}
+
+// ---- Stage 9D: admin audit review ----
+export type AuditReviewRisk = 'HIGH' | 'MEDIUM' | 'LOW';
+
+export interface AuditReviewItem {
+  id: string;
+  occurredAt: string;
+  actorAdminId: string;
+  actorEmail: string | null;
+  action: string;
+  riskLevel: AuditReviewRisk;
+  targetType: string | null;
+  targetId: string | null;
+  reason: string | null;
+  ip: string | null;
+}
+
+export interface AuditReviewResult {
+  items: AuditReviewItem[];
+  nextCursor: string | null;
+  summary: { high: number; medium: number; low: number; total: number };
+}
+
 // ---- Compliance / Enhanced KYC (Stage 5.0) ----
 export type ComplianceKycStatus =
   | 'NOT_STARTED' | 'DRAFT' | 'SUBMITTED' | 'NEEDS_MORE_INFO'
