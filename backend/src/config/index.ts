@@ -161,6 +161,62 @@ export const config = {
     runInWorker: env.SCAN_RUN_IN_WORKER,
   },
 
+  // ----------------------------------------------------------------------
+  // Master-wallet USDT deposits V1 (Stage 12). Deposit-only: a user sends USDT
+  // to ONE EXORA master address per chain and submits the tx hash; the backend
+  // verifies it on-chain before crediting. No private keys, no withdrawals, no
+  // sweeping, no per-user addresses here.
+  //
+  // SECURITY: `rpcUrl` / `apiUrl` / `apiKey` are SERVER-ONLY (they may embed
+  // provider keys) and must NEVER be returned to any client. The public DTO
+  // mapper (crypto-deposit.config.ts) strips them — only masterAddress,
+  // networkName, decimals and minConfirmations are user-visible.
+  cryptoDeposits: {
+    enabled: env.CRYPTO_DEPOSITS_ENABLED,
+    networks: {
+      BSC: {
+        chain: 'BSC' as const,
+        family: 'EVM' as const,
+        networkName: 'BNB Smart Chain (BEP20)',
+        assetSymbol: 'USDT',
+        // BEP20 USDT uses 18 decimals (unlike ERC20/TRC20 USDT at 6).
+        decimals: 18,
+        masterAddress: env.BSC_USDT_MASTER_ADDRESS ?? null,
+        tokenContract: env.BSC_USDT_CONTRACT ?? null,
+        minConfirmations: env.DEPOSIT_MIN_CONFIRMATIONS_BSC,
+        rpcUrl: env.BSC_RPC_URL ?? null,
+        apiUrl: null as string | null,
+        apiKey: null as string | null,
+      },
+      ETH: {
+        chain: 'ETH' as const,
+        family: 'EVM' as const,
+        networkName: 'Ethereum (ERC20)',
+        assetSymbol: 'USDT',
+        decimals: 6,
+        masterAddress: env.ETH_USDT_MASTER_ADDRESS ?? null,
+        tokenContract: env.ETH_USDT_CONTRACT ?? null,
+        minConfirmations: env.DEPOSIT_MIN_CONFIRMATIONS_ETH,
+        rpcUrl: env.ETH_RPC_URL ?? null,
+        apiUrl: null as string | null,
+        apiKey: null as string | null,
+      },
+      TRON: {
+        chain: 'TRON' as const,
+        family: 'TRON' as const,
+        networkName: 'Tron (TRC20)',
+        assetSymbol: 'USDT',
+        decimals: 6,
+        masterAddress: env.TRON_USDT_MASTER_ADDRESS ?? null,
+        tokenContract: env.TRON_USDT_CONTRACT ?? null,
+        minConfirmations: env.DEPOSIT_MIN_CONFIRMATIONS_TRON,
+        rpcUrl: null as string | null,
+        apiUrl: env.TRON_API_URL ?? null,
+        apiKey: env.TRONGRID_API_KEY ?? null,
+      },
+    },
+  },
+
   withdrawal: {
     signer: env.WITHDRAWAL_SIGNER,
     feeUsdt: env.WITHDRAWAL_FEE_USDT,

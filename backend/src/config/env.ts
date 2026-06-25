@@ -472,6 +472,42 @@ export const envSchema = z
   GOLIVE_PENTEST_DONE: optionalNonEmptyString,
   GOLIVE_SMOKE_TEST_PASSED: optionalNonEmptyString,
 
+  // ---- MASTER-WALLET USDT DEPOSITS V1 (Stage 12) ----
+  // Deposit-only real USDT via ONE EXORA master receiving address per chain.
+  // A user sends USDT to the master address and submits the tx hash; the backend
+  // verifies it on-chain before crediting. NO private keys, NO withdrawals, NO
+  // sweeping, NO per-user addresses in V1 (the models are designed so those are
+  // a future additive upgrade). RPC URLs / API keys are SERVER-ONLY and are
+  // NEVER returned to the frontend.
+  //
+  // Master kill switch. When false, the user/admin crypto-deposit surfaces still
+  // load but report the feature as disabled and accept no submissions.
+  CRYPTO_DEPOSITS_ENABLED: z.string().default('false').transform((v) => v === 'true'),
+
+  // EXORA master RECEIVING addresses (public — shown to users). Optional: a
+  // chain with no master address is treated as not-configured / disabled.
+  BSC_USDT_MASTER_ADDRESS: optionalNonEmptyString,
+  ETH_USDT_MASTER_ADDRESS: optionalNonEmptyString,
+  TRON_USDT_MASTER_ADDRESS: optionalNonEmptyString,
+
+  // USDT token contract addresses per chain (public). A transfer is only
+  // accepted when its log address matches the configured contract for the chain.
+  BSC_USDT_CONTRACT: optionalNonEmptyString,
+  ETH_USDT_CONTRACT: optionalNonEmptyString,
+  TRON_USDT_CONTRACT: optionalNonEmptyString,
+
+  // JSON-RPC / API endpoints used SERVER-SIDE for on-chain verification.
+  // SECRET-ish (may embed keys): never exposed to the frontend.
+  BSC_RPC_URL: optionalUrl,
+  ETH_RPC_URL: optionalUrl,
+  TRON_API_URL: optionalUrl, // TronGrid base, e.g. https://api.trongrid.io
+  // NOTE: TRONGRID_API_KEY is already defined above (scanner) and is reused here.
+
+  // Required confirmations before a deposit is credited (per chain).
+  DEPOSIT_MIN_CONFIRMATIONS_BSC: z.coerce.number().int().min(1).default(15),
+  DEPOSIT_MIN_CONFIRMATIONS_ETH: z.coerce.number().int().min(1).default(12),
+  DEPOSIT_MIN_CONFIRMATIONS_TRON: z.coerce.number().int().min(1).default(20),
+
   // ---- PRODUCTION SAFETY OVERRIDES (Stage 4.2) ----
   // Staging runs NODE_ENV=production with offline/mock services and may run
   // admins without TOTP. Each unsafe-in-production toggle is blocked at startup

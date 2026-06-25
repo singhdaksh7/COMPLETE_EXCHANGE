@@ -372,6 +372,7 @@ model User {
   withdrawalAddrs   WithdrawalAddress[]
   cryptoDeposits    CryptoDeposit[]
   cryptoWithdrawals CryptoWithdrawal[]
+  masterWalletDeposits MasterWalletDeposit[]
   inrTransactions   InrTransaction[]
   bankAccounts      BankAccount[]
   orders            Order[]
@@ -2978,4 +2979,81 @@ model ComplianceSlaTracker {
 
   @@index([status])
   @@map("compliance_sla_trackers")
+}
+
+// ============================================================================
+// STAGE 12 — MASTER-WALLET USDT DEPOSITS V1 (deposit-only, manual tx-hash)
+//
+// Intentionally SEPARATE from the scanner-based custody flow (CryptoDeposit /
+// DepositAddress / Sweep). V1 has NO per-user addresses, NO sweeping, NO keys
+// and NO withdrawals. A user sends USDT to one EXORA master address per chain
+// and submits the tx hash; the backend verifies on-chain before crediting.
+//
+// These models are shaped so a future upgrade (per-user deposit addresses,
+// sweeping into hot/cold wallets) is purely additive — e.g. a nullable
+// depositAddressId can be added later without reworking the credit path.
+// ============================================================================
+
+enum MasterWalletDepositStatus {
+  SUBMITTED // accepted; verification not yet conclusive
+  PENDING_CONFIRMATION // seen on-chain but below required confirmations
+  CONFIRMED // verified + credited exactly once
+  REJECTED // verification failed (wrong contract/recipient/amount/etc.)
+  DUPLICATE // this (chain, txHash) was already submitted/credited
+  FAILED // transient verification error (provider down) — safe to recheck
+}
+
+// Per-chain master receiving configuration (public projection of env config).
+// Source of truth for masterAddress / tokenContract / decimals / confirmations
+// is the env-derived `config.cryptoDeposits`; this table persists the PUBLIC
+// fields for admin visibility and the future per-user-address upgrade. RPC URLs
+// and API keys are NEVER stored here — they stay server-only in env/config.
+model DepositNetworkConfig {
+  id               String   @id @default(uuid()) @db.Uuid
+  assetSymbol      String   @map("asset_symbol") @db.Citext
+  chain            String   @db.Citext
+  networkName      String   @map("network_name")
+  masterAddress    String?  @map("master_address")
+  tokenContract    String?  @map("token_contract")
+  decimals         Int      @default(6)
+  minConfirmations Int      @map("min_confirmations")
+  isEnabled        Boolean  @default(false) @map("is_enabled")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@unique([assetSymbol, chain])
+  @@index([chain])
+  @@map("deposit_network_configs")
+}
+
+model MasterWalletDeposit {
+  id            String                    @id @default(uuid()) @db.Uuid
+  userId        String                    @map("user_id") @db.Uuid
+  assetSymbol   String                    @map("asset_symbol") @db.Citext
+  chain         String                    @db.Citext
+  masterAddress String                    @map("master_address")
+  fromAddress   String?                   @map("from_address")
+  txHash        String                    @map("tx_hash")
+  logIndex      Int?                      @map("log_index")
+  // Human-readable amount (token units). 0 until a transfer is parsed.
+  amount        Decimal                   @default(0) @db.Decimal(38, 18)
+  confirmations Int                       @default(0)
+  status        MasterWalletDepositStatus @default(SUBMITTED)
+  rejectionReason       String?           @map("rejection_reason")
+  rawVerificationSummary Json?            @map("raw_verification_summary")
+  // Bound to the ledger transaction that credited the user — set exactly once.
+  creditedLedgerTxnId   String?           @map("credited_ledger_txn_id") @db.Uuid
+  creditedAt    DateTime?                 @map("credited_at")
+  createdAt     DateTime                  @default(now()) @map("created_at")
+  updatedAt     DateTime                  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  // Idempotency: at most one deposit row per (chain, txHash). Prevents a
+  // resubmitted hash from ever creating a second creditable row.
+  @@unique([chain, txHash])
+  @@index([userId])
+  @@index([status])
+  @@index([chain, status])
+  @@map("master_wallet_deposits")
 }
