@@ -8,6 +8,7 @@ import { errorMessage } from '@/lib/api';
 import { useRealtime } from '@/lib/use-realtime';
 import { useGuard } from '@/components/guards';
 import { UserShell } from '@/components/user-shell';
+import { AccessUnavailable } from '@/components/feature-gate';
 import { MarketChart } from '@/components/market-chart';
 import { StatusBadge } from '@/components/ui';
 import type {
@@ -94,6 +95,19 @@ function TradeInner() {
   const { connected: live } = useRealtime(symbol);
 
   if (!ready) return null;
+
+  // Stage 15: trading can be disabled per-user or globally (effective features
+  // from /me). Show a clean access surface instead of the trading UI when off.
+  if (me?.features && !me.features.trading) {
+    return (
+      <UserShell className="max-w-[1440px]">
+        <AccessUnavailable
+          title="Trading unavailable"
+          message="Spot trading is currently unavailable for your account."
+        />
+      </UserShell>
+    );
+  }
 
   return (
     <UserShell className="max-w-[1440px]">

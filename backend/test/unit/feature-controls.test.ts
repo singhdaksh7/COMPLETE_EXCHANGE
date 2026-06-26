@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import type { UserFeatureControls } from '@prisma/client';
@@ -36,6 +36,7 @@ vi.mock('../../src/lib/audit', () => ({
 
 import { featureControlsRepository } from '../../src/modules/feature-controls/feature-controls.repository';
 import { featureControlsService } from '../../src/modules/feature-controls/feature-controls.service';
+import { config } from '../../src/config';
 import {
   requireOrderPlacementAllowed,
   requireUserFeature,
@@ -56,6 +57,7 @@ function makeControls(over: Partial<UserFeatureControls> = {}): UserFeatureContr
     canWithdrawInr: true,
     canDepositCrypto: true,
     canWithdrawCrypto: true,
+    canAccessCryptoWallet: true,
     forceKycReview: false,
     requireEnhancedKyc: false,
     underComplianceReview: false,
@@ -74,15 +76,23 @@ beforeEach(() => {
 });
 
 describe('featureControlsService.assertEnabled', () => {
-  it('allows everything when the user has no control row (defaults)', async () => {
+  it('allows INR + trading when the user has no control row (defaults)', async () => {
     repo.findByUserId.mockResolvedValue(null);
     await expect(
       featureControlsService.assertEnabled('user-1', [
         'canTradeSpot',
-        'canWithdrawCrypto',
+        'canDepositInr',
+        'canWithdrawInr',
         'blockHighRiskActivity',
       ]),
     ).resolves.toBeUndefined();
+  });
+
+  it('denies crypto by default (no row): crypto user-flag defaults OFF', async () => {
+    repo.findByUserId.mockResolvedValue(null);
+    await expect(
+      featureControlsService.assertEnabled('user-1', ['canDepositCrypto']),
+    ).rejects.toMatchObject({ errorCode: 'FEATURE_DISABLED_FOR_USER', statusCode: 403 });
   });
 
   it('denies when a positive flag is OFF', async () => {
@@ -166,6 +176,32 @@ describe('featureControlsService.updateForAdmin', () => {
       changes: [{ field: 'canWithdrawCrypto', value: false }],
     });
   });
+
+  it('first edit (no row): enabling crypto registers a change from the OFF default', async () => {
+    repo.findUserState.mockResolvedValue({
+      id: 'user-1',
+      status: 'ACTIVE',
+      riskLevel: 'LOW',
+      withdrawalsBlocked: false,
+    } as never);
+    repo.findByUserId.mockResolvedValue(null); // no existing row
+    repo.create.mockImplementation((userId, data) =>
+      Promise.resolve(makeControls({ userId, ...(data as object) })),
+    );
+
+    await featureControlsService.updateForAdmin(
+      'user-1',
+      { canDepositCrypto: true, reason: 'internal testing access' },
+      { actorId: 'admin-1', ip: '127.0.0.1', requestId: 'req-2' },
+    );
+
+    expect(repo.create).toHaveBeenCalledOnce();
+    const logArg = repo.writeAdminLog.mock.calls[0][0];
+    // The crypto default is OFF, so enabling it is a real change (from:false).
+    expect(logArg.afterState).toMatchObject({
+      changes: [{ field: 'canDepositCrypto', value: true }],
+    });
+  });
 });
 
 describe('requireUserFeature middleware (backend enforcement, not UI)', () => {
@@ -218,5 +254,77 @@ describe('requireUserFeature middleware (backend enforcement, not UI)', () => {
       .post('/probe')
       .send({ side: 'SELL' });
     expect(res.status).toBe(403);
+  });
+
+  it('crypto-deposit gate returns 403 by default (global crypto off)', async () => {
+    repo.findByUserId.mockResolvedValue(null);
+    const res = await request(appWith(requireUserFeature('canDepositCrypto'))).post('/probe');
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('FEATURE_DISABLED_FOR_USER');
+  });
+});
+
+describe('Stage 15 — global compliance flags AND per-user controls', () => {
+  const flags = config.featureFlags as {
+    cryptoDepositsGlobalEnabled: boolean;
+    cryptoWithdrawalsGlobalEnabled: boolean;
+    cryptoWalletGlobalEnabled: boolean;
+    tradingGlobalEnabled: boolean;
+    inrDepositsGlobalEnabled: boolean;
+  };
+  const original = { ...flags };
+  afterEach(() => Object.assign(flags, original));
+
+  it('denies crypto deposit when the user flag is ON but the global flag is OFF', async () => {
+    flags.cryptoDepositsGlobalEnabled = false;
+    repo.findByUserId.mockResolvedValue(makeControls({ canDepositCrypto: true }));
+    await expect(
+      featureControlsService.assertEnabled('user-1', ['canDepositCrypto']),
+    ).rejects.toMatchObject({ errorCode: 'FEATURE_DISABLED_FOR_USER' });
+  });
+
+  it('allows crypto deposit only when BOTH global and user flags are ON', async () => {
+    flags.cryptoDepositsGlobalEnabled = true;
+    repo.findByUserId.mockResolvedValue(makeControls({ canDepositCrypto: true }));
+    await expect(
+      featureControlsService.assertEnabled('user-1', ['canDepositCrypto']),
+    ).resolves.toBeUndefined();
+  });
+
+  it('still denies crypto deposit when global is ON but the user flag is OFF', async () => {
+    flags.cryptoDepositsGlobalEnabled = true;
+    repo.findByUserId.mockResolvedValue(makeControls({ canDepositCrypto: false }));
+    await expect(
+      featureControlsService.assertEnabled('user-1', ['canDepositCrypto']),
+    ).rejects.toMatchObject({ errorCode: 'FEATURE_DISABLED_FOR_USER' });
+  });
+
+  it('blocks INR deposit when the user feature is disabled (global on)', async () => {
+    repo.findByUserId.mockResolvedValue(makeControls({ canDepositInr: false }));
+    await expect(
+      featureControlsService.assertEnabled('user-1', ['canDepositInr']),
+    ).rejects.toMatchObject({ errorCode: 'FEATURE_DISABLED_FOR_USER' });
+  });
+
+  it('getMeFeatures returns the effective map + INR_ONLY mode by default', async () => {
+    repo.findByUserId.mockResolvedValue(null);
+    const { features, globalFeatureStatus } =
+      await featureControlsService.getMeFeatures('user-1');
+    expect(features).toMatchObject({
+      inrDeposit: true,
+      inrWithdrawal: true,
+      trading: true,
+      cryptoDeposit: false,
+      cryptoWithdrawal: false,
+      cryptoWallet: false,
+    });
+    expect(globalFeatureStatus.mode).toBe('INR_ONLY');
+  });
+
+  it('getMeFeatures reflects crypto enabled when global + user are both on', async () => {
+    flags.cryptoDepositsGlobalEnabled = true;
+    repo.findByUserId.mockResolvedValue(makeControls({ canDepositCrypto: true }));
+    const { features } = await featureControlsService.getMeFeatures('user-1');
+    expect(features.cryptoDeposit).toBe(true);
   });
 });

@@ -430,9 +430,13 @@ model UserFeatureControls {
   canDepositInr  Boolean @default(true) @map("can_deposit_inr")
   canWithdrawInr Boolean @default(true) @map("can_withdraw_inr")
 
-  // Crypto controls
-  canDepositCrypto  Boolean @default(true) @map("can_deposit_crypto")
-  canWithdrawCrypto Boolean @default(true) @map("can_withdraw_crypto")
+  // Crypto controls. Default OFF (Stage 15 compliance posture): a brand-new user
+  // gets no crypto access until an admin explicitly enables it AND the matching
+  // global flag is on. canAccessCryptoWallet gates the crypto wallet surface
+  // (addresses/pages) independently of deposit/withdrawal.
+  canDepositCrypto      Boolean @default(false) @map("can_deposit_crypto")
+  canWithdrawCrypto     Boolean @default(false) @map("can_withdraw_crypto")
+  canAccessCryptoWallet Boolean @default(false) @map("can_access_crypto_wallet")
 
   // Compliance controls
   forceKycReview        Boolean @default(false) @map("force_kyc_review")

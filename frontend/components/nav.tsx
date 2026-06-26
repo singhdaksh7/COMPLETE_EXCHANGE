@@ -160,16 +160,20 @@ export function UserNav() {
     router.replace('/login');
   };
 
+  // Stage 15: effective feature access drives which modules are shown. Until
+  // /me resolves, default to all-on so the nav is never momentarily empty for a
+  // legitimately-enabled user (cosmetic only — the backend enforces access).
+  const features = me?.features;
   const navLinks = [
     { href: '/dashboard', label: 'Dashboard', icon: <DashboardIcon /> },
     { href: '/portfolio', label: 'Portfolio', icon: <PortfolioIcon /> },
     { href: '/wallet', label: 'Wallet', icon: <WalletIcon /> },
     { href: '/transactions', label: 'Transactions', icon: <WalletIcon /> },
     { href: '/markets', label: 'Markets', icon: <MarketsIcon /> },
-    { href: '/trade', label: 'Trade', icon: <TradeIcon /> },
+    { href: '/trade', label: 'Trade', icon: <TradeIcon />, hidden: features ? !features.trading : false },
     { href: '/orders', label: 'Orders', icon: <OrdersIcon /> },
     { href: '/notifications', label: 'Notifications', icon: <BellIcon /> },
-  ];
+  ].filter((l) => !('hidden' in l && l.hidden));
 
   const accountLinks = [
     { href: '/profile', label: 'Profile', icon: <ProfileIcon /> },

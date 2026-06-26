@@ -28,9 +28,13 @@ walletInfraRouter.get(
   asyncHandler(walletController.overview),
 );
 
+// Crypto wallet surfaces (deposit networks + per-user addresses) are gated by
+// the crypto-wallet feature. /overview stays open because it also carries INR
+// balances; the frontend hides the crypto sections when the feature is off.
 walletInfraRouter.get(
   '/networks',
   authenticate,
+  requireUserFeature('canAccessCryptoWallet'),
   validate({ query: networksQuerySchema }),
   asyncHandler(walletController.networks),
 );
@@ -38,6 +42,7 @@ walletInfraRouter.get(
 walletInfraRouter.get(
   '/addresses',
   authenticate,
+  requireUserFeature('canAccessCryptoWallet'),
   validate({ query: addressQuerySchema }),
   asyncHandler(walletController.listAddresses),
 );
@@ -46,7 +51,7 @@ walletInfraRouter.post(
   '/addresses',
   authenticate,
   validate({ body: createDepositAddressSchema }),
-  requireUserFeature('canDepositCrypto'),
+  requireUserFeature('canAccessCryptoWallet', 'canDepositCrypto'),
   idempotency(),
   asyncHandler(walletController.createAddress),
 );

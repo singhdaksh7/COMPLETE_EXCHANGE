@@ -1,3 +1,8 @@
+import type {
+  GlobalFeatureStatus,
+  UserFeatureMap,
+} from '../feature-controls/feature-controls.types';
+
 export interface PublicUser {
   id: string;
   email: string;
@@ -38,6 +43,14 @@ export interface MeResult {
    * The UI uses this to show a non-blocking testing/demo notice. Not a secret.
    */
   emailVerificationBypass: boolean;
+  /**
+   * Effective per-user feature access (Stage 15) — already AND-ed with the
+   * global compliance flags. The frontend uses THIS to hide modules; it must
+   * not re-derive access from raw settings.
+   */
+  features: UserFeatureMap;
+  /** Platform-wide compliance flag status + mode (INR_ONLY vs FULL). */
+  globalFeatureStatus: GlobalFeatureStatus;
 }
 
 export interface SessionDto {

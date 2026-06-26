@@ -4,6 +4,7 @@ import { getReadiness, type ReadinessReport } from '../health/health.service';
 import { scannerService } from '../scanner/scanner.service';
 import type { ScannerStatusSummary } from '../scanner/scanner.types';
 import { systemRepository, type LargePendingWithdrawal } from './system.repository';
+import { toGlobalFeatureStatus } from '../feature-controls/feature-controls.types';
 
 /**
  * Admin System / Ops Center service (Stage 4.3).
@@ -109,11 +110,45 @@ export interface SystemOverview {
     largePendingWithdrawals: number;
   };
   flags: SystemFlags;
+  /**
+   * Compliance feature mode (Stage 15). Reflects the global feature flags that
+   * sit above per-user controls. In INR_ONLY mode every crypto rail is globally
+   * disabled regardless of any per-user toggle, pending FIU / licensing /
+   * travel-rule readiness. Read-only surface; never a secret.
+   */
+  compliance: {
+    mode: 'INR_ONLY' | 'FULL';
+    reason: string;
+    cryptoDepositsGloballyEnabled: boolean;
+    cryptoWithdrawalsGloballyEnabled: boolean;
+    cryptoWalletGloballyEnabled: boolean;
+    inrDepositsGloballyEnabled: boolean;
+    inrWithdrawalsGloballyEnabled: boolean;
+    tradingGloballyEnabled: boolean;
+  };
   deployment: {
     version: string;
     environment: string;
     apiPrefix: string;
     adminApiPrefix: string;
+  };
+}
+
+/** Build the Stage 15 compliance-mode snapshot from the global feature flags. */
+function buildComplianceMode(): SystemOverview['compliance'] {
+  const status = toGlobalFeatureStatus();
+  return {
+    mode: status.mode,
+    reason:
+      status.mode === 'INR_ONLY'
+        ? 'Crypto deposits and withdrawals are globally disabled pending FIU / licensing / travel-rule compliance.'
+        : 'Crypto features are globally enabled.',
+    cryptoDepositsGloballyEnabled: status.cryptoDepositsGlobalEnabled,
+    cryptoWithdrawalsGloballyEnabled: status.cryptoWithdrawalsGlobalEnabled,
+    cryptoWalletGloballyEnabled: status.cryptoWalletGlobalEnabled,
+    inrDepositsGloballyEnabled: status.inrDepositsGlobalEnabled,
+    inrWithdrawalsGloballyEnabled: status.inrWithdrawalsGlobalEnabled,
+    tradingGloballyEnabled: status.tradingGlobalEnabled,
   };
 }
 
@@ -290,6 +325,7 @@ export const systemService = {
         largePendingWithdrawals: risk.largePendingWithdrawals.count,
       },
       flags: buildFlags(),
+      compliance: buildComplianceMode(),
       deployment: {
         version: readiness.version,
         environment: readiness.environment,

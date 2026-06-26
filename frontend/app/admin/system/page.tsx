@@ -661,6 +661,41 @@ export default function AdminSystemPage() {
           </p>
         </Panel>
 
+        {/* Compliance feature mode (Stage 15) */}
+        <Panel title="Compliance Mode">
+          {o ? (
+            <>
+              <div className="mb-3 flex flex-wrap items-center gap-3">
+                <span
+                  className={`rounded-md px-3 py-1 text-xs font-black uppercase tracking-wider ${
+                    o.compliance.mode === 'INR_ONLY'
+                      ? 'border border-amber-500/40 bg-amber-500/10 text-amber-300'
+                      : 'border border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
+                  }`}
+                >
+                  Current mode: {o.compliance.mode}
+                </span>
+                <span className="text-[11px] text-white/50">{o.compliance.reason}</span>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <FlagRow label="Crypto deposits (global)" value={o.compliance.cryptoDepositsGloballyEnabled ? 'ENABLED' : 'disabled'} tone={o.compliance.cryptoDepositsGloballyEnabled ? 'warn' : 'ok'} />
+                <FlagRow label="Crypto withdrawals (global)" value={o.compliance.cryptoWithdrawalsGloballyEnabled ? 'ENABLED' : 'disabled'} tone={o.compliance.cryptoWithdrawalsGloballyEnabled ? 'warn' : 'ok'} />
+                <FlagRow label="Crypto wallet (global)" value={o.compliance.cryptoWalletGloballyEnabled ? 'ENABLED' : 'disabled'} tone={o.compliance.cryptoWalletGloballyEnabled ? 'warn' : 'ok'} />
+                <FlagRow label="INR deposits (global)" value={o.compliance.inrDepositsGloballyEnabled ? 'enabled' : 'DISABLED'} tone={o.compliance.inrDepositsGloballyEnabled ? 'ok' : 'bad'} />
+                <FlagRow label="INR withdrawals (global)" value={o.compliance.inrWithdrawalsGloballyEnabled ? 'enabled' : 'DISABLED'} tone={o.compliance.inrWithdrawalsGloballyEnabled ? 'ok' : 'bad'} />
+                <FlagRow label="Trading (global)" value={o.compliance.tradingGloballyEnabled ? 'enabled' : 'DISABLED'} tone={o.compliance.tradingGloballyEnabled ? 'ok' : 'bad'} />
+              </div>
+              <p className="mt-3 text-[10px] text-white/30">
+                Global flags sit above per-user feature controls — effective access is
+                global AND per-user. Crypto stays disabled for all users until these
+                global flags are turned on (FIU/compliance pending).
+              </p>
+            </>
+          ) : (
+            <p className="text-xs text-white/40">{overview.isLoading ? 'Loading…' : 'Unavailable.'}</p>
+          )}
+        </Panel>
+
         {/* 7. Deployment safety panel */}
         <Panel title="Deployment / Safety Flags">
           {o ? (

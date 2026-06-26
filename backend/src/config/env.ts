@@ -493,6 +493,42 @@ export const envSchema = z
   // load but report the feature as disabled and accept no submissions.
   CRYPTO_DEPOSITS_ENABLED: z.string().default('false').transform((v) => v === 'true'),
 
+  // ---- COMPLIANCE FEATURE CONTROLS — GLOBAL FLAGS (Stage 15) ----
+  // Global kill-switches that sit ABOVE per-user feature controls. A feature is
+  // effectively available to a user only when BOTH the global flag here AND the
+  // user's per-user control are enabled (logical AND). These exist so the whole
+  // platform can run in an "INR-only" compliance mode: INR deposit/withdrawal
+  // and trading stay on, while ALL crypto rails stay off until FIU / licensing /
+  // travel-rule compliance is ready — regardless of any per-user toggle.
+  //
+  // Crypto defaults are OFF (staging compliance posture). INR + trading default
+  // ON. Existing Stage 12 master-wallet deposit code is untouched; it simply
+  // becomes inaccessible while the crypto globals are off.
+  CRYPTO_DEPOSITS_GLOBAL_ENABLED: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
+  CRYPTO_WITHDRAWALS_GLOBAL_ENABLED: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
+  CRYPTO_WALLET_GLOBAL_ENABLED: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
+  INR_DEPOSITS_GLOBAL_ENABLED: z
+    .string()
+    .default('true')
+    .transform((v) => v !== 'false'),
+  INR_WITHDRAWALS_GLOBAL_ENABLED: z
+    .string()
+    .default('true')
+    .transform((v) => v !== 'false'),
+  TRADING_GLOBAL_ENABLED: z
+    .string()
+    .default('true')
+    .transform((v) => v !== 'false'),
+
   // EXORA master RECEIVING addresses (public — shown to users). Optional: a
   // chain with no master address is treated as not-configured / disabled.
   BSC_USDT_MASTER_ADDRESS: optionalNonEmptyString,

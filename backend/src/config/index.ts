@@ -220,6 +220,24 @@ export const config = {
     },
   },
 
+  // ----------------------------------------------------------------------
+  // Compliance feature controls — GLOBAL flags (Stage 15).
+  //
+  // These are the platform-wide kill switches that sit above the per-user
+  // feature controls (UserFeatureControls). Effective access for a gated
+  // feature is `globalFlag && userFlag`. With the crypto flags off and the
+  // INR/trading flags on, the platform runs in INR-only compliance mode until
+  // FIU / licensing / travel-rule readiness. NOT secrets — surfaced read-only
+  // to the user (/auth/me) and to the admin system console.
+  featureFlags: {
+    cryptoDepositsGlobalEnabled: env.CRYPTO_DEPOSITS_GLOBAL_ENABLED,
+    cryptoWithdrawalsGlobalEnabled: env.CRYPTO_WITHDRAWALS_GLOBAL_ENABLED,
+    cryptoWalletGlobalEnabled: env.CRYPTO_WALLET_GLOBAL_ENABLED,
+    inrDepositsGlobalEnabled: env.INR_DEPOSITS_GLOBAL_ENABLED,
+    inrWithdrawalsGlobalEnabled: env.INR_WITHDRAWALS_GLOBAL_ENABLED,
+    tradingGlobalEnabled: env.TRADING_GLOBAL_ENABLED,
+  },
+
   withdrawal: {
     signer: env.WITHDRAWAL_SIGNER,
     feeUsdt: env.WITHDRAWAL_FEE_USDT,

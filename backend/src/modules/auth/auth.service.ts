@@ -32,6 +32,7 @@ import {
 import { mailer } from '../../lib/mailer';
 import { logger } from '../../lib/logger';
 import { notificationService } from '../notification/notification.service';
+import { featureControlsService } from '../feature-controls/feature-controls.service';
 import { recordAudit, AuditAction } from '../../lib/audit';
 import type {
   AuthResult,
@@ -958,6 +959,10 @@ export const authService = {
     const user = await authRepository.findUserById(userId);
     if (!user) throw new UnauthorizedError('User not found');
     const { roles, permissions } = await this.getUserPermissions(userId);
+    // Effective feature access (per-user controls AND global compliance flags)
+    // + the global flag status, so the UI hides disabled modules consistently.
+    const { features, globalFeatureStatus } =
+      await featureControlsService.getMeFeatures(userId);
     return {
       user: toPublicUser(user),
       roles,
@@ -965,6 +970,8 @@ export const authService = {
       // Lets the UI show a non-blocking "email verification temporarily
       // disabled for testing" notice (Stage 13). No secrets — just the flag.
       emailVerificationBypass: config.auth.allowUnverifiedLogin,
+      features,
+      globalFeatureStatus,
     };
   },
 

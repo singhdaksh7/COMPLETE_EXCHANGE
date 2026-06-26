@@ -9,6 +9,7 @@ import { UserShell } from '@/components/user-shell';
 import { StatusBadge } from '@/components/ui';
 import { CopyButton, ExplorerLink, KycRequiredNotice } from '@/components/wallet-bits';
 import { MasterWalletDepositPanel } from '@/components/master-deposit-panel';
+import { useUserFeatures } from '@/components/feature-gate';
 
 type TabMode = 'INR' | 'CRYPTO';
 type InrMethod = 'UPI' | 'IMPS' | 'NEFT' | 'QR';
@@ -16,6 +17,10 @@ type InrMethod = 'UPI' | 'IMPS' | 'NEFT' | 'QR';
 export default function DepositPage() {
   const ready = useGuard('user');
   const qc = useQueryClient();
+  // Stage 15: only offer the crypto deposit tab when the feature is effectively
+  // enabled (per-user AND global). Defaults off in INR-only mode.
+  const { features } = useUserFeatures();
+  const cryptoEnabled = features.cryptoDeposit;
   const [activeTab, setActiveTab] = useState<TabMode>('INR');
   const [inrMethod, setInrMethod] = useState<InrMethod>('UPI');
   const [amount, setAmount] = useState('500');
@@ -44,7 +49,7 @@ export default function DepositPage() {
   const cryptoDeposits = useQuery({
     queryKey: ['crypto-deposits'],
     queryFn: () => userApi.listCryptoDeposits(),
-    enabled: ready,
+    enabled: ready && cryptoEnabled,
   });
 
   // Create gateway order
@@ -94,19 +99,21 @@ export default function DepositPage() {
         >
           🇮🇳 INR Deposit
         </button>
-        <button
-          onClick={() => setActiveTab('CRYPTO')}
-          className={`px-5 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-all ${
-            activeTab === 'CRYPTO'
-              ? 'border-gold text-gold bg-gold/5'
-              : 'border-transparent text-white/50 hover:text-white'
-          }`}
-        >
-          🪙 Crypto Deposit
-        </button>
+        {cryptoEnabled && (
+          <button
+            onClick={() => setActiveTab('CRYPTO')}
+            className={`px-5 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-all ${
+              activeTab === 'CRYPTO'
+                ? 'border-gold text-gold bg-gold/5'
+                : 'border-transparent text-white/50 hover:text-white'
+            }`}
+          >
+            🪙 Crypto Deposit
+          </button>
+        )}
       </div>
 
-      {activeTab === 'INR' ? (
+      {activeTab === 'INR' || !cryptoEnabled ? (
         <div className="space-y-8 animate-fadeIn">
           {/* Header */}
           <div>

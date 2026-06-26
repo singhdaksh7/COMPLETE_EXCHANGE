@@ -11,14 +11,20 @@ import {
   FEATURE_DISABLED_MESSAGE,
   POSITIVE_FLAGS,
   RESTRICTION_FLAGS,
+  defaultEffectiveControls,
   deriveDefaultsFromUser,
   toControlsDto,
+  toEffectiveAccess,
   toEffectiveControls,
+  toGlobalFeatureStatus,
+  toUserFeatureMap,
   type ControlFlag,
   type EffectiveControls,
+  type GlobalFeatureStatus,
   type PositiveFlag,
   type RestrictionFlag,
   type UserFeatureControlsDto,
+  type UserFeatureMap,
 } from './feature-controls.types';
 
 export interface ControlsContext {
@@ -43,17 +49,46 @@ export const featureControlsService = {
   },
 
   /**
+   * Effective ACCESS for enforcement = per-user controls AND the global
+   * compliance flags. This is the value the gates actually check, so a feature
+   * that is on for the user but off globally (e.g. crypto in INR-only mode) is
+   * correctly denied. Read-only / side-effect free.
+   */
+  async getEffectiveAccessControls(userId: string): Promise<EffectiveControls> {
+    const eff = await this.getEffective(userId);
+    return toEffectiveAccess(eff);
+  },
+
+  /**
+   * Compact effective feature map + global status for /auth/me. The frontend
+   * uses `features` (already AND-ed with the global flags), never the raw
+   * per-user settings, so hidden modules and the INR-only mode stay consistent.
+   */
+  async getMeFeatures(
+    userId: string,
+  ): Promise<{ features: UserFeatureMap; globalFeatureStatus: GlobalFeatureStatus }> {
+    const access = await this.getEffectiveAccessControls(userId);
+    return {
+      features: toUserFeatureMap(access),
+      globalFeatureStatus: toGlobalFeatureStatus(),
+    };
+  },
+
+  /**
    * Throw FEATURE_DISABLED_FOR_USER if any requested flag denies the action.
-   * Positive flags must be true; restriction flags must be false.
+   * Positive flags must be true in EFFECTIVE access (per-user AND global);
+   * restriction flags must be false. This is the single enforcement gate behind
+   * requireUserFeature — the global compliance flags are honoured here, so a
+   * direct API call can never bypass an INR-only / globally-disabled feature.
    */
   async assertEnabled(userId: string, flags: ControlFlag[]): Promise<void> {
     if (flags.length === 0) return;
-    const eff = await this.getEffective(userId);
+    const access = await this.getEffectiveAccessControls(userId);
     for (const flag of flags) {
-      if (POSITIVE_SET.has(flag) && eff[flag as PositiveFlag] !== true) {
+      if (POSITIVE_SET.has(flag) && access[flag as PositiveFlag] !== true) {
         throw new ForbiddenError(FEATURE_DISABLED_MESSAGE, FEATURE_DISABLED_CODE);
       }
-      if (RESTRICTION_SET.has(flag) && eff[flag as RestrictionFlag] === true) {
+      if (RESTRICTION_SET.has(flag) && access[flag as RestrictionFlag] === true) {
         throw new ForbiddenError(FEATURE_DISABLED_MESSAGE, FEATURE_DISABLED_CODE);
       }
     }
@@ -174,12 +209,14 @@ export const featureControlsService = {
   },
 };
 
-/** A fully-enabled row skeleton used only to compute first-edit diffs. */
+/**
+ * Default row skeleton used only to compute first-edit diffs. It MUST mirror
+ * the real column/effective defaults (crypto positive flags OFF, INR + trading
+ * ON, restrictions OFF) — otherwise enabling a crypto flag on a user with no
+ * row yet would not register as a change.
+ */
 function defaultRow(userId: string): Record<string, unknown> {
-  const r: Record<string, unknown> = { userId };
-  for (const f of POSITIVE_FLAGS) r[f] = true;
-  for (const f of RESTRICTION_FLAGS) r[f] = false;
-  return r;
+  return { userId, ...defaultEffectiveControls() };
 }
 
 export type FeatureControlsService = typeof featureControlsService;

@@ -5,18 +5,29 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '@/lib/admin-api';
 import { errorMessage } from '@/lib/api';
 import { Alert, Button, Card, EmptyState } from '@/components/ui';
-import type { UserControlFlag, UserFeatureControls } from '@/lib/types';
+import type {
+  GlobalFeatureStatus,
+  UserControlFlag,
+  UserFeatureControls,
+} from '@/lib/types';
 
 interface FlagDef {
   key: UserControlFlag;
   label: string;
   /** Restriction flags read "blocked" when ON; positive flags read "allowed". */
   restriction?: boolean;
+  /**
+   * For globally-gated crypto flags: which global flag also gates this feature.
+   * When present, the row shows User / Global / Effective access (Stage 15).
+   */
+  globalKey?: keyof GlobalFeatureStatus;
 }
 
 interface FlagGroup {
   title: string;
   flags: FlagDef[];
+  /** Optional warning shown under the group title (e.g. global crypto lock). */
+  warning?: string;
 }
 
 const GROUPS: FlagGroup[] = [
@@ -38,9 +49,14 @@ const GROUPS: FlagGroup[] = [
   },
   {
     title: 'Crypto controls',
+    warning:
+      'Crypto features are disabled globally until FIU/compliance approval. ' +
+      'Enabling a per-user toggle here is saved, but effective access stays ' +
+      'disabled while the global flag is off.',
     flags: [
-      { key: 'canDepositCrypto', label: 'Can deposit crypto' },
-      { key: 'canWithdrawCrypto', label: 'Can withdraw crypto' },
+      { key: 'canAccessCryptoWallet', label: 'Can access crypto wallet', globalKey: 'cryptoWalletGlobalEnabled' },
+      { key: 'canDepositCrypto', label: 'Can deposit crypto', globalKey: 'cryptoDepositsGlobalEnabled' },
+      { key: 'canWithdrawCrypto', label: 'Can withdraw crypto', globalKey: 'cryptoWithdrawalsGlobalEnabled' },
     ],
   },
   {
@@ -211,32 +227,51 @@ export function FeatureControls({
           {GROUPS.map((group) => (
             <div key={group.title}>
               <div className="mb-2 text-xs font-semibold text-muted">{group.title}</div>
+              {group.warning && (
+                <div className="mb-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-300">
+                  ⚠️ {group.warning}
+                </div>
+              )}
               <div className="space-y-2">
-                {group.flags.map((f) => (
-                  <div
-                    key={f.key}
-                    className="flex items-center justify-between gap-3 border-b border-line pb-2 last:border-0"
-                  >
-                    <div className="text-sm text-ink">
-                      {f.label}
-                      {draft[f.key] !== controls[f.key] && (
-                        <span className="ml-2 text-[11px] text-brand">changed</span>
-                      )}
+                {group.flags.map((f) => {
+                  const globalOn = f.globalKey ? controls.globalStatus[f.globalKey] : true;
+                  const effectiveOn = controls.effective[f.key];
+                  return (
+                    <div
+                      key={f.key}
+                      className="flex items-center justify-between gap-3 border-b border-line pb-2 last:border-0"
+                    >
+                      <div className="text-sm text-ink">
+                        {f.label}
+                        {draft[f.key] !== controls[f.key] && (
+                          <span className="ml-2 text-[11px] text-brand">changed</span>
+                        )}
+                        {f.globalKey && (
+                          <div className="mt-0.5 text-[11px] text-muted-2">
+                            User permission: {draft[f.key] ? 'Enabled' : 'Disabled'}
+                            {' · '}Global status: {globalOn ? 'Enabled' : 'Disabled'}
+                            {' · '}
+                            <span className={effectiveOn ? 'text-brand' : 'text-muted'}>
+                              Effective access: {effectiveOn ? 'Enabled' : 'Disabled'}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] text-muted">
+                          {draft[f.key] ? 'ON' : 'OFF'}
+                        </span>
+                        <Toggle
+                          on={draft[f.key]}
+                          disabled={!canUpdate || save.isPending}
+                          onChange={(next) =>
+                            setDraft((d) => (d ? { ...d, [f.key]: next } : d))
+                          }
+                        />
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] text-muted">
-                        {draft[f.key] ? 'ON' : 'OFF'}
-                      </span>
-                      <Toggle
-                        on={draft[f.key]}
-                        disabled={!canUpdate || save.isPending}
-                        onChange={(next) =>
-                          setDraft((d) => (d ? { ...d, [f.key]: next } : d))
-                        }
-                      />
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ))}

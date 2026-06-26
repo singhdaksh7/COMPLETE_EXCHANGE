@@ -112,12 +112,41 @@ export interface UserActivityEvent {
   occurredAt: string;
 }
 
+/** Effective per-user feature access (Stage 15), already AND-ed with globals. */
+export interface UserFeatureMap {
+  inrDeposit: boolean;
+  inrWithdrawal: boolean;
+  trading: boolean;
+  cryptoWallet: boolean;
+  cryptoDeposit: boolean;
+  cryptoWithdrawal: boolean;
+}
+
+/** Platform-wide compliance flag status + mode. */
+export interface GlobalFeatureStatus {
+  cryptoDepositsGlobalEnabled: boolean;
+  cryptoWithdrawalsGlobalEnabled: boolean;
+  cryptoWalletGlobalEnabled: boolean;
+  inrDepositsGlobalEnabled: boolean;
+  inrWithdrawalsGlobalEnabled: boolean;
+  tradingGlobalEnabled: boolean;
+  mode: 'INR_ONLY' | 'FULL';
+}
+
 export interface MeData {
   user: PublicUser;
   roles: string[];
   permissions: string[];
   /** Stage 13: true when ALLOW_UNVERIFIED_LOGIN is on (testing/demo bypass). */
   emailVerificationBypass?: boolean;
+  /**
+   * Stage 15: effective feature access. The UI MUST use this (not raw user
+   * settings) to show/hide modules. Optional for backward-compat with older
+   * cached responses; treat missing as "all enabled" only at call sites that
+   * explicitly choose to.
+   */
+  features?: UserFeatureMap;
+  globalFeatureStatus?: GlobalFeatureStatus;
 }
 
 /** Generic, enumeration-safe result of requesting/resending an email OTP. */
@@ -348,6 +377,7 @@ export interface UserFeatureControls {
   // Crypto
   canDepositCrypto: boolean;
   canWithdrawCrypto: boolean;
+  canAccessCryptoWallet: boolean;
   // Compliance
   forceKycReview: boolean;
   requireEnhancedKyc: boolean;
@@ -358,6 +388,9 @@ export interface UserFeatureControls {
   notes: string | null;
   updatedByAdminId: string | null;
   updatedAt: string | null;
+  /** Stage 15: global flag status + the resulting effective access per flag. */
+  globalStatus: GlobalFeatureStatus;
+  effective: Record<UserControlFlag, boolean>;
 }
 
 /** A single control flag (keys of UserFeatureControls that are booleans). */
@@ -370,6 +403,7 @@ export type UserControlFlag =
   | 'canWithdrawInr'
   | 'canDepositCrypto'
   | 'canWithdrawCrypto'
+  | 'canAccessCryptoWallet'
   | 'forceKycReview'
   | 'requireEnhancedKyc'
   | 'underComplianceReview'
@@ -1265,6 +1299,17 @@ export interface SystemOverview {
     largePendingWithdrawals: number;
   };
   flags: SystemFlags;
+  /** Stage 15: compliance feature mode (INR_ONLY vs FULL) + global flags. */
+  compliance: {
+    mode: 'INR_ONLY' | 'FULL';
+    reason: string;
+    cryptoDepositsGloballyEnabled: boolean;
+    cryptoWithdrawalsGloballyEnabled: boolean;
+    cryptoWalletGloballyEnabled: boolean;
+    inrDepositsGloballyEnabled: boolean;
+    inrWithdrawalsGloballyEnabled: boolean;
+    tradingGloballyEnabled: boolean;
+  };
   deployment: {
     version: string;
     environment: string;
