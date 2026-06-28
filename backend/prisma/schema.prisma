@@ -158,6 +158,22 @@ enum InrTxnType {
   WITHDRAWAL
 }
 
+// Phase 16: manual INR withdrawal lifecycle. Distinct from InrTxnStatus so the
+// withdrawal queue reads cleanly for audit (PENDING -> APPROVED -> PAID, or
+// PENDING/APPROVED -> REJECTED). FAILED covers the rare reserve-race rollback.
+enum InrWithdrawalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  PAID
+  FAILED
+}
+
+enum InrPayoutMethod {
+  UPI
+  BANK
+}
+
 enum ConversionSide {
   INR_TO_USDT
   USDT_TO_INR
@@ -374,6 +390,7 @@ model User {
   cryptoWithdrawals CryptoWithdrawal[]
   masterWalletDeposits MasterWalletDeposit[]
   inrTransactions   InrTransaction[]
+  inrWithdrawals    InrWithdrawal[]
   bankAccounts      BankAccount[]
   orders            Order[]
   conversions       Conversion[]
@@ -1263,6 +1280,60 @@ model BankAccount {
 
   @@index([userId])
   @@map("bank_accounts")
+}
+
+// ============================================================================
+// MANUAL INR WITHDRAWAL (Phase 16) — manual payout, no automatic bank transfer.
+// Funds are reserved (USER_AVAILABLE -> USER_LOCKED) on request, released on
+// reject, and finalized (USER_LOCKED -> MANUAL_BANK_CLEARING) when an admin
+// marks the payout PAID with a UTR. Crediting/locking flows EXCLUSIVELY through
+// the double-entry ledger; this table only tracks withdrawal STATE + an
+// immutable snapshot of the payout destination at request time.
+// ============================================================================
+model InrWithdrawal {
+  id        String              @id @default(uuid()) @db.Uuid
+  userId    String              @map("user_id") @db.Uuid
+  amount    Decimal             @db.Decimal(20, 2)
+  status    InrWithdrawalStatus @default(PENDING)
+
+  // Payout destination snapshot. For UPI only `upiId` is set; for BANK the
+  // (encrypted) account number + IFSC + holder name are set. `accountLast4` is a
+  // non-sensitive display hint so the user/admin lists never need decryption.
+  payoutMethod     InrPayoutMethod @map("payout_method")
+  upiId            String?         @map("upi_id")
+  accountNumberEnc Bytes?          @map("account_number_enc")
+  accountLast4     String?         @map("account_last4")
+  ifsc             String?         @map("ifsc")
+  holderName       String?         @map("holder_name")
+  bankName         String?         @map("bank_name")
+
+  // Ledger references (idempotency anchors): the reserve posting and the final
+  // payout posting. referenceType='inr_withdrawal'; referenceId is the row id
+  // for the lock and `${id}:payout` / `${id}:release` for the others.
+  lockLedgerTxnId  String? @map("lock_ledger_txn_id") @db.Uuid
+  finalLedgerTxnId String? @map("final_ledger_txn_id") @db.Uuid
+
+  // Admin action trail (plain ids — the hash-chained admin log + audit log hold
+  // the authoritative record; these are for quick display).
+  approvedBy      String?   @map("approved_by") @db.Uuid
+  approvedAt      DateTime? @map("approved_at")
+  reviewedBy      String?   @map("reviewed_by") @db.Uuid // admin who rejected
+  reviewedAt      DateTime? @map("reviewed_at")
+  paidBy          String?   @map("paid_by") @db.Uuid
+  paidAt          DateTime? @map("paid_at")
+  utr             String?   @map("utr") // payout reference, set on mark-paid
+  adminNote       String?   @map("admin_note")
+  rejectionReason String?   @map("rejection_reason")
+
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, status])
+  @@index([status, createdAt]) // pending-queue dashboard
+  @@map("inr_withdrawals")
 }
 
 // Short-lived signed price quote (INR<->USDT)

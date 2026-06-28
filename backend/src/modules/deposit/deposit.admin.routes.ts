@@ -3,6 +3,7 @@ import { asyncHandler } from '../../utils/async-handler';
 import { validate } from '../../middleware/validate';
 import { adminAuthenticate } from '../../middleware/admin-authenticate';
 import { adminAuthorize } from '../../middleware/admin-authorize';
+import { adminSensitiveRateLimiter } from '../../middleware/rate-limit';
 import { adminDepositController } from './deposit.admin.controller';
 import {
   adminDepositExportSchema,
@@ -35,10 +36,13 @@ adminDepositRouter.get(
   asyncHandler(adminDepositController.exportCsv),
 );
 
+// Sensitive admin money-movement actions are throttled in the dedicated
+// admin-sensitive bucket (Stage 9E pattern), in addition to RBAC + audit.
 adminDepositRouter.post(
   '/:id/approve',
   adminAuthenticate,
   adminAuthorize('inr.approve'),
+  adminSensitiveRateLimiter,
   validate({ params: depositIdParamSchema }),
   asyncHandler(adminDepositController.approve),
 );
@@ -47,6 +51,7 @@ adminDepositRouter.post(
   '/:id/reject',
   adminAuthenticate,
   adminAuthorize('inr.approve'),
+  adminSensitiveRateLimiter,
   validate({ params: depositIdParamSchema, body: manualDecisionSchema }),
   asyncHandler(adminDepositController.reject),
 );

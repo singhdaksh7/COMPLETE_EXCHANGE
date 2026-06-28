@@ -859,6 +859,60 @@ export interface CreateManualDepositInput {
   proofKey?: string;
 }
 
+// ---- INR withdrawal (Phase 16, manual payout) ----
+export type InrPayoutMethod = 'UPI' | 'BANK';
+export type InrWithdrawalStatus =
+  | 'PENDING'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'PAID'
+  | 'FAILED';
+
+/** Payout destination as shown to the owning user (already masked). */
+export interface InrPayoutMasked {
+  method: string;
+  upiId: string | null;
+  accountLast4: string | null;
+  ifsc: string | null;
+  holderName: string | null;
+  bankName: string | null;
+}
+
+export interface InrWithdrawal {
+  id: string;
+  userId: string;
+  amount: string;
+  status: string;
+  payout: InrPayoutMasked;
+  utr: string | null;
+  rejectionReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+  approvedAt: string | null;
+  paidAt: string | null;
+}
+
+/** Admin view — adds the full (decrypted) account number + admin trail. */
+export interface AdminInrWithdrawal extends Omit<InrWithdrawal, 'payout'> {
+  payout: InrPayoutMasked & { accountNumber: string | null };
+  lockLedgerTxnId: string | null;
+  finalLedgerTxnId: string | null;
+  approvedBy: string | null;
+  reviewedBy: string | null;
+  paidBy: string | null;
+  adminNote: string | null;
+}
+
+export interface CreateInrWithdrawalInput {
+  amount: string;
+  method: InrPayoutMethod;
+  upiId?: string;
+  accountNumber?: string;
+  ifsc?: string;
+  holderName?: string;
+  bankName?: string;
+}
+
 // ---- conversion ----
 export type ConversionSide = 'INR_TO_USDT' | 'USDT_TO_INR';
 

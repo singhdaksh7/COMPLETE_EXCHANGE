@@ -20,6 +20,25 @@ import type {
 } from '@/lib/types';
 
 const DEFAULT_SYMBOL = 'USDT-INR';
+// Preferred fallback when the requested symbol isn't a real market yet.
+const PREFERRED_FALLBACK = 'BTC-USDT';
+
+/**
+ * Resolve the symbol to actually trade. If the requested symbol exists in the
+ * loaded market list, use it. Otherwise fall back to BTC-USDT, then the first
+ * ACTIVE market, then the first market — so a stale/bookmarked ?symbol= never
+ * spams "Market not found". While markets are still loading we keep the
+ * requested symbol (the market-data panels render their own empty states).
+ */
+function resolveSymbol(markets: Market[], requested: string): string {
+  if (markets.length === 0) return requested;
+  if (markets.some((m) => m.symbol === requested)) return requested;
+  const fallback =
+    markets.find((m) => m.symbol === PREFERRED_FALLBACK && m.status === 'ACTIVE') ??
+    markets.find((m) => m.status === 'ACTIVE') ??
+    markets[0];
+  return fallback?.symbol ?? requested;
+}
 
 export default function TradePage() {
   return (
@@ -33,7 +52,7 @@ function TradeInner() {
   const ready = useGuard('user');
   const router = useRouter();
   const params = useSearchParams();
-  const symbol = (params.get('symbol') ?? DEFAULT_SYMBOL).toUpperCase();
+  const requestedSymbol = (params.get('symbol') ?? DEFAULT_SYMBOL).toUpperCase();
 
   const marketsQ = useQuery({
     queryKey: ['markets'],
@@ -41,6 +60,8 @@ function TradeInner() {
     enabled: ready,
   });
   const markets = marketsQ.data?.data.items ?? [];
+  // Fall back to a real market when the requested symbol isn't seeded/available.
+  const symbol = resolveSymbol(markets, requestedSymbol);
   const market = markets.find((m) => m.symbol === symbol);
 
   const meQ = useQuery({

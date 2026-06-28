@@ -7,6 +7,8 @@ import type {
   Conversion,
   ConversionSide,
   CreateManualDepositInput,
+  CreateInrWithdrawalInput,
+  InrWithdrawal,
   CryptoWithdrawal,
   CryptoDepositNetworksResponse,
   MasterCryptoDeposit,
@@ -238,6 +240,16 @@ export const userApi = {
     }),
 
   listInrDeposits: () => authed<Page<InrDeposit>>('/inr/deposits'),
+
+  // ---- INR withdrawal (Phase 16: manual payout, admin-processed) ----
+  createInrWithdrawal: (input: CreateInrWithdrawalInput) =>
+    authed<InrWithdrawal>('/inr/withdrawals', {
+      method: 'POST',
+      body: input,
+      headers: { 'Idempotency-Key': idemKey() },
+    }),
+
+  listInrWithdrawals: () => authed<Page<InrWithdrawal>>('/inr/withdrawals'),
 
   // ---- conversion ----
   createQuote: (side: ConversionSide, amount: string) =>

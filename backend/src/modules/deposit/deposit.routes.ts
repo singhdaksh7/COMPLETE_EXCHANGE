@@ -30,6 +30,7 @@ depositRouter.post('/webhook', asyncHandler(depositController.webhook));
 depositRouter.post(
   '/',
   authenticate,
+  sensitiveRateLimiter,
   validate({ body: createDepositSchema }),
   requireUserFeature('canDepositInr'),
   idempotency(),

@@ -302,6 +302,15 @@ export const envSchema = z
     .string()
     .regex(/^\d+(\.\d{1,2})?$/)
     .default('50000.00'),
+  // INR withdrawal bounds (rupees, scale 2). Enforced before funds are reserved.
+  INR_WITHDRAWAL_MIN: z
+    .string()
+    .regex(/^\d+(\.\d{1,2})?$/)
+    .default('100.00'),
+  INR_WITHDRAWAL_MAX: z
+    .string()
+    .regex(/^\d+(\.\d{1,2})?$/)
+    .default('1000000.00'),
 
   // ---- CRYPTO DEPOSIT SCANNER (TRON / TRC20 USDT) ----
   // Provider selection. 'mock' is fully offline/deterministic (dev + tests);

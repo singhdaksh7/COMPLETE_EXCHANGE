@@ -8,6 +8,7 @@ import {
   walletRouter,
 } from '../modules/ledger/ledger.routes';
 import { depositRouter } from '../modules/deposit/deposit.routes';
+import { inrWithdrawalRouter } from '../modules/inr-withdrawal/inr-withdrawal.routes';
 import { walletInfraRouter } from '../modules/wallet/wallet.routes';
 import { cryptoDepositRouter } from '../modules/scanner/scanner.routes';
 import { cryptoDepositRouter as masterWalletDepositRouter } from '../modules/crypto-deposit/crypto-deposit.routes';
@@ -47,6 +48,9 @@ apiRouter.use('/wallets', walletRouter);
 // distinct from the scanner-based custody deposit routes above.
 apiRouter.use('/deposits/crypto', masterWalletDepositRouter);
 apiRouter.use('/inr/deposits', depositRouter);
+// Manual INR withdrawal (Phase 16). Registered before the generic /inr ledger
+// router so the specific /inr/withdrawals paths match first.
+apiRouter.use('/inr/withdrawals', inrWithdrawalRouter);
 apiRouter.use('/inr', inrLedgerRouter);
 apiRouter.use('/inr', conversionRouter);
 apiRouter.use('/ledger', ledgerRouter);

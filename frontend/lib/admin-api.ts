@@ -32,6 +32,7 @@ import type {
   CryptoWithdrawal,
   FeeReport,
   InrDeposit,
+  AdminInrWithdrawal,
   KycDecisionBody,
   KycProfile,
   KycQueueFilters,
@@ -382,6 +383,39 @@ export const adminApi = {
 
   approveDeposit: (id: string) =>
     adminApiFetch<InrDeposit>(`/inr/deposits/${id}/approve`, 'POST'),
+
+  // ---- manual INR withdrawal queue + decisions (Phase 16) ----
+  inrWithdrawals: (
+    params: {
+      status?: string;
+      userId?: string;
+      email?: string;
+      fromDate?: string;
+      toDate?: string;
+      cursor?: string;
+      limit?: number;
+    } = {},
+  ) =>
+    adminApiFetch<Page<AdminInrWithdrawal>>(
+      `/inr/withdrawals${buildQuery({ limit: 50, ...params })}`,
+      'GET',
+    ),
+
+  inrWithdrawal: (id: string) =>
+    adminApiFetch<AdminInrWithdrawal>(`/inr/withdrawals/${id}`, 'GET'),
+
+  approveInrWithdrawal: (id: string) =>
+    adminApiFetch<AdminInrWithdrawal>(`/inr/withdrawals/${id}/approve`, 'POST'),
+
+  rejectInrWithdrawal: (id: string, reason: string) =>
+    adminApiFetch<AdminInrWithdrawal>(`/inr/withdrawals/${id}/reject`, 'POST', {
+      body: { reason },
+    }),
+
+  markInrWithdrawalPaid: (id: string, utr: string, note?: string) =>
+    adminApiFetch<AdminInrWithdrawal>(`/inr/withdrawals/${id}/mark-paid`, 'POST', {
+      body: { utr, ...(note ? { note } : {}) },
+    }),
 
   // ---- master-wallet USDT crypto deposits (Stage 12) ----
   cryptoDeposits: (

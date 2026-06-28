@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { adminRbacRouter } from '../modules/admin-rbac/admin-rbac.routes';
 import { adminKycRouter } from '../modules/kyc/kyc.admin.routes';
 import { adminDepositRouter } from '../modules/deposit/deposit.admin.routes';
+import { adminInrWithdrawalRouter } from '../modules/inr-withdrawal/inr-withdrawal.admin.routes';
 import { adminCryptoDepositRouter } from '../modules/crypto-deposit/crypto-deposit.admin.routes';
 import { adminWalletRouter } from '../modules/wallet/wallet.admin.routes';
 import { adminScannerRouter } from '../modules/scanner/scanner.admin.routes';
@@ -51,6 +52,9 @@ adminApiRouter.use('/', healthRouter);
 adminApiRouter.use('/', adminRbacRouter);
 adminApiRouter.use('/kyc', adminKycRouter);
 adminApiRouter.use('/inr/deposits', adminDepositRouter);
+// Manual INR withdrawal queue + decisions (Phase 16). Distinct path from the
+// crypto `/withdrawals` admin router above.
+adminApiRouter.use('/inr/withdrawals', adminInrWithdrawalRouter);
 // Master-wallet USDT deposits V1 (Stage 12) → /admin/v1/crypto/deposits
 adminApiRouter.use('/crypto', adminCryptoDepositRouter);
 adminApiRouter.use('/wallets', adminWalletRouter);

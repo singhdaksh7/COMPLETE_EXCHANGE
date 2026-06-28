@@ -149,6 +149,9 @@ export const config = {
   inrOps: {
     // Maker-checker threshold for manual INR deposits (rupees, scale 2).
     dualApprovalThreshold: env.MANUAL_INR_DUAL_APPROVAL_THRESHOLD,
+    // Manual INR withdrawal bounds (rupees, scale 2).
+    withdrawalMin: env.INR_WITHDRAWAL_MIN,
+    withdrawalMax: env.INR_WITHDRAWAL_MAX,
   },
 
   scanner: {

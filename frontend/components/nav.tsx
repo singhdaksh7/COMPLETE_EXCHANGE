@@ -168,6 +168,7 @@ export function UserNav() {
     { href: '/dashboard', label: 'Dashboard', icon: <DashboardIcon /> },
     { href: '/portfolio', label: 'Portfolio', icon: <PortfolioIcon /> },
     { href: '/wallet', label: 'Wallet', icon: <WalletIcon /> },
+    { href: '/inr-withdraw', label: 'INR Withdraw', icon: <WalletIcon />, hidden: features ? !features.inrWithdrawal : false },
     { href: '/transactions', label: 'Transactions', icon: <WalletIcon /> },
     { href: '/markets', label: 'Markets', icon: <MarketsIcon /> },
     { href: '/trade', label: 'Trade', icon: <TradeIcon />, hidden: features ? !features.trading : false },
@@ -432,6 +433,7 @@ const ADMIN_GROUPS: AdminGroup[] = [
     title: 'INR & Wallets',
     links: [
       { href: '/admin/deposits', label: 'INR Deposits', requiredPermissions: ['inr.view'] },
+      { href: '/admin/inr-withdrawals', label: 'INR Withdrawals', requiredPermissions: ['inr.view'] },
       { href: '/admin/crypto/deposits', label: 'Crypto deposits', requiredPermissions: ['operations.view'] },
       { href: '/admin/withdrawals', label: 'Withdrawals', requiredPermissions: ['withdrawals.view'] },
       { href: '/admin/conversions', label: 'Conversions ledger', requiredPermissions: ['inr.view'] },
