@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { AsyncBoundary, Button, Card, EmptyState, Muted, Screen } from '@/components/ui';
 import { useApi } from '@/hooks/useApi';
 import { userApi } from '@/api/userApi';
-import { colors, font, spacing } from '@/theme';
+import { colors, font } from '@/theme';
 import { fmtDate } from '@/utils/format';
 import type { NotificationList } from '@/types/api';
 
