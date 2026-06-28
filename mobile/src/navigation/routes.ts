@@ -8,6 +8,7 @@ export const ROUTES = {
   login: '/(auth)/login',
   register: '/(auth)/register',
   verifyEmail: '/(auth)/verify-email',
+  forgotPassword: '/(auth)/forgot-password',
   home: '/(tabs)',
   markets: '/(tabs)/markets',
   portfolio: '/(tabs)/portfolio',

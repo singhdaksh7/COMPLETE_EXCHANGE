@@ -3,17 +3,24 @@
  * consistent and a future iOS build inherits the same look.
  */
 export const colors = {
-  bg: '#0B0E11',
-  bgElevated: '#12161C',
-  panel: '#161B22',
-  panel2: '#1C2129',
-  line: '#252B33',
-  ink: '#EAECEF',
-  muted: '#8B95A3',
-  muted2: '#5C6673',
+  bg: '#06060A', // deep premium black
+  bgElevated: '#0E0E14',
+  panel: '#12121A',
+  panel2: '#181820',
+  line: '#26262F',
+  ink: '#F4F5F7',
+  muted: '#9AA0AC',
+  muted2: '#5C6068',
   brand: '#F5C242', // EXORA gold
+  brandLight: '#F7D879',
+  brandDeep: '#C8881A',
   brandDim: '#8a6f25',
   brandSoft: 'rgba(245,194,66,0.12)',
+  // Glassmorphism surfaces
+  glass: 'rgba(22,22,30,0.72)',
+  glassBorder: 'rgba(255,255,255,0.08)',
+  glassBorderGold: 'rgba(245,194,66,0.22)',
+  glow: 'rgba(245,194,66,0.20)',
   up: '#16C784',
   upSoft: 'rgba(22,199,132,0.12)',
   down: '#EA3943',
@@ -22,6 +29,13 @@ export const colors = {
   warn: '#F59E0B',
   overlay: 'rgba(0,0,0,0.6)',
 } as const;
+
+/** Gold gradient stops for buttons, the brand wordmark and accents. */
+export const goldGradient = ['#F8DE8A', '#F5C242', '#D99A2B'] as const;
+/** Subtle top-of-screen radial-ish glow (approximated with a vertical fade). */
+export const glowGradient = ['rgba(245,194,66,0.16)', 'rgba(245,194,66,0.04)', 'transparent'] as const;
+/** Glass card vertical sheen. */
+export const glassGradient = ['rgba(255,255,255,0.05)', 'rgba(255,255,255,0.01)'] as const;
 
 /** Subtle elevation shadow used on primary cards (cross-platform). */
 export const cardShadow = {

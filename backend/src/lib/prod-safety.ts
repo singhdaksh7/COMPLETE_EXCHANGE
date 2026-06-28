@@ -30,6 +30,10 @@ export interface ProdSafetyInput {
   withdrawalSigner: string;
   mailProvider: string;
   requireEmailVerification: boolean;
+  // Stage 13 temporary login-gate bypass: lets unverified-email accounts log in
+  // while SES approval is pending. Unlike the toggles below it has NO override —
+  // it must never be true in a real production deployment.
+  allowUnverifiedLogin: boolean;
   // Explicit, clearly-named acknowledgements (staging sets these to true).
   allowMockProviders: boolean;
   allowMockWithdrawalSigner: boolean;
@@ -92,6 +96,16 @@ export function productionSafetyIssues(input: ProdSafetyInput): SafetyIssue[] {
     issues.push({
       path: 'REQUIRE_EMAIL_VERIFICATION',
       message: `REQUIRE_EMAIL_VERIFICATION=false is unsafe in production — ${OVERRIDE_HINT('ALLOW_UNVERIFIED_EMAIL_LOGIN')}`,
+    });
+  }
+
+  // 5. Stage 13 login-gate bypass — must NEVER be on in production. There is no
+  //    override: a real deployment serves only verified accounts.
+  if (input.allowUnverifiedLogin) {
+    issues.push({
+      path: 'ALLOW_UNVERIFIED_LOGIN',
+      message:
+        'ALLOW_UNVERIFIED_LOGIN=true (Stage 13 email-verification bypass) is unsafe in production and has no override — set it to false',
     });
   }
 

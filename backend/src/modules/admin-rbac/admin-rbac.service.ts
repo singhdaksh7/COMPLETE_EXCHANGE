@@ -12,16 +12,19 @@ import {
   signAdminRefreshToken,
 } from '../../lib/jwt';
 import {
+  authRedisCall,
   authRedisDel,
   authRedisGet,
   authRedisSet,
 } from '../../lib/redis';
 import { config } from '../../config';
+import { encryptPII, decryptPII } from '../../lib/encryption';
 import {
   BadRequestError,
   ConflictError,
   ForbiddenError,
   NotFoundError,
+  TooManyRequestsError,
   UnauthorizedError,
 } from '../../lib/errors';
 import { isIpAllowed, isValidIpv4OrCidr } from '../../lib/ip-allowlist';
@@ -51,6 +54,41 @@ const ADMIN_RBAC_KEY = (adminId: string): string => `admin:rbac:perms:${adminId}
 const SUPER_ADMIN = 'SUPER_ADMIN';
 
 /**
+ * Account-level brute-force lockout for admin login (parity with the user login
+ * lockout in auth.service). The IP-keyed `authRateLimiter` on the route blunts a
+ * single source, but it does not stop a slow/distributed credential-spray
+ * against one admin account; this Redis counter does. Keyed per (email, IP) and
+ * reusing the same threshold/window as the user lockout. Blocked attempts are
+ * NOT counted, so an active attacker cannot indefinitely extend the lockout
+ * against the legitimate owner trying to get back in.
+ */
+const ADMIN_LOCKOUT_KEY = (email: string, ip?: string): string =>
+  `admin:lockout:${email.trim().toLowerCase()}:${ip ?? 'noip'}`;
+
+async function adminLockoutCount(email: string, ip?: string): Promise<number> {
+  const raw = await authRedisGet(ADMIN_LOCKOUT_KEY(email, ip)).catch(() => null);
+  return raw ? Number(raw) : 0;
+}
+
+async function recordAdminLoginFailure(email: string, ip?: string): Promise<void> {
+  const key = ADMIN_LOCKOUT_KEY(email, ip);
+  const count = await authRedisCall<number>('INCR', key).catch(() => 0);
+  // Set the rolling window only on the first failure so the window does not keep
+  // sliding forward on every subsequent attempt.
+  if (count === 1) {
+    await authRedisCall(
+      'PEXPIRE',
+      key,
+      String(config.loginLockout.windowMs),
+    ).catch(() => undefined);
+  }
+}
+
+async function clearAdminLoginFailures(email: string, ip?: string): Promise<void> {
+  await authRedisDel(ADMIN_LOCKOUT_KEY(email, ip)).catch(() => undefined);
+}
+
+/**
  * The full set of known admin permission codes (from the RBAC baseline). Used to
  * expand a SUPER_ADMIN's effective permissions for the `/auth/me` payload so a
  * permission-aware frontend never hides a module from a master admin, even if
@@ -74,8 +112,37 @@ function ttlToMs(ttl: string): number {
   return value * factor;
 }
 
+function normalizeBase32Str(input: string): string {
+  return input.replace(/=+$/g, '').replace(/\s+/g, '').toUpperCase();
+}
+
 function normalizeBase32(input: Buffer): string {
-  return input.toString('utf8').replace(/=+$/g, '').replace(/\s+/g, '').toUpperCase();
+  return normalizeBase32Str(input.toString('utf8'));
+}
+
+/**
+ * Seal a base32 TOTP secret for storage in the `totp_secret_enc` column using
+ * the same authenticated AES-256-GCM envelope as KYC PII. Previously the secret
+ * was written as plaintext base32 bytes, so a database read exposed every admin
+ * 2FA seed; sealing it means a DB leak alone no longer defeats the second factor.
+ */
+function sealTotpSecret(base32: string): Buffer {
+  return encryptPII(base32);
+}
+
+/**
+ * Open a stored TOTP secret back to its base32 form. New rows are AES-GCM
+ * sealed; legacy rows hold plaintext base32 bytes — if authenticated decryption
+ * fails we fall back to treating the bytes as legacy plaintext so already-
+ * enrolled admins keep working until their next (re-)enrollment re-seals it.
+ */
+function openTotpSecret(stored: Buffer): string {
+  if (stored.length === 0) return '';
+  try {
+    return normalizeBase32Str(decryptPII(stored));
+  } catch {
+    return normalizeBase32(stored);
+  }
 }
 
 function base32ToBuffer(input: string): Buffer {
@@ -142,7 +209,7 @@ function otpauthUri(email: string, secret: string): string {
 }
 
 function verifyTotp(secretEnc: Buffer, code: string): boolean {
-  const secret = base32ToBuffer(normalizeBase32(secretEnc));
+  const secret = base32ToBuffer(openTotpSecret(secretEnc));
   if (secret.length === 0) return false;
   const presented = Buffer.from(code);
   for (const skew of [-30_000, 0, 30_000]) {
@@ -198,11 +265,24 @@ function ensureSuperAdminOrHasPermission(
 
 export const adminRbacService = {
   async login(input: AdminLoginInput): Promise<AdminTokenPair> {
+    // Account-level brute-force lockout (checked BEFORE any credential work so a
+    // locked account spends no CPU and the block is not extended by the attack).
+    if (
+      (await adminLockoutCount(input.email, input.ip)) >=
+      config.loginLockout.maxAttempts
+    ) {
+      throw new TooManyRequestsError(
+        'Too many failed admin login attempts. Please try again later.',
+        'ADMIN_ACCOUNT_LOCKED',
+      );
+    }
+
     const admin = await adminRbacRepository.findAdminByEmail(input.email);
     const ok = admin
       ? await verify(admin.passwordHash, input.password).catch(() => false)
       : false;
     if (!admin || !ok) {
+      await recordAdminLoginFailure(input.email, input.ip);
       throw new UnauthorizedError('Invalid credentials', 'INVALID_CREDENTIALS');
     }
     if (admin.status !== 'ACTIVE') {
@@ -210,6 +290,7 @@ export const adminRbacService = {
     }
     if (admin.totpEnabled) {
       if (!verifyTotp(Buffer.from(admin.totpSecretEnc), input.totp)) {
+        await recordAdminLoginFailure(input.email, input.ip);
         throw new UnauthorizedError('Invalid TOTP code', 'INVALID_TOTP');
       }
     } else if (
@@ -250,6 +331,8 @@ export const adminRbacService = {
         'IP_NOT_ALLOWED',
       );
     }
+    // Successful authentication clears the brute-force counter for this pair.
+    await clearAdminLoginFailures(input.email, input.ip);
     const tokens = await this.issueSession(admin, input);
     await adminRbacRepository.writeAdminLog({
       adminId: admin.id,
@@ -732,7 +815,7 @@ export const adminRbacService = {
     if (!admin) throw new UnauthorizedError('Admin not found');
     const secret = newTotpSecret();
     await adminRbacRepository.setAdminTotp(adminId, {
-      secretEnc: Buffer.from(secret, 'utf8'),
+      secretEnc: sealTotpSecret(secret),
       enabled: false,
     });
     await audit({ ...ctx, adminId }, {

@@ -634,6 +634,7 @@ export const envSchema = z
       withdrawalSigner: val.WITHDRAWAL_SIGNER,
       mailProvider: val.MAIL_PROVIDER,
       requireEmailVerification: val.REQUIRE_EMAIL_VERIFICATION,
+      allowUnverifiedLogin: val.ALLOW_UNVERIFIED_LOGIN,
       allowMockProviders: val.ALLOW_MOCK_PROVIDERS,
       allowMockWithdrawalSigner: val.ALLOW_MOCK_WITHDRAWAL_SIGNER,
       allowLogMailProvider: val.ALLOW_LOG_MAIL_PROVIDER,

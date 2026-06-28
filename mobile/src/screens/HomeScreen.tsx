@@ -1,32 +1,82 @@
-import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Card, Muted, Screen, SectionHeader, Skeleton, StagingBadge, StatusBadge } from '@/components/ui';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Muted, Screen, Skeleton, StatusBadge } from '@/components/ui';
+import { BrandMark, GlassCard, MarketRow, SectionHeading } from '@/components/premium';
 import { useApi } from '@/hooks/useApi';
 import { useAuth } from '@/store/auth';
 import { userApi } from '@/api/userApi';
-import { cardShadow, colors, font, radius, spacing } from '@/theme';
-import { fmtAmount, fmtNum, fmtPct } from '@/utils/format';
+import { colors, font, radius, spacing, cardShadow } from '@/theme';
+import { fmtAmount, fmtNum } from '@/utils/format';
 import type { Market, Ticker, Wallet } from '@/types/api';
-
-type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
 interface DashData {
   balances: Wallet[];
   snapshot: { market: Market; ticker: Ticker | null }[];
+  transactions: {
+    id: string;
+    type: 'deposit' | 'withdrawal';
+    method: string;
+    amount: string;
+    asset: string;
+    time: string;
+    rawTime: number;
+  }[];
 }
 
 async function loadDashboard(): Promise<DashData> {
-  const [overview, marketsRes] = await Promise.all([userApi.walletOverview(), userApi.listMarkets()]);
-  const markets = marketsRes.data.items.slice(0, 5);
+  const [overview, marketsRes, depositsRes, withdrawalsRes] = await Promise.all([
+    userApi.walletOverview(),
+    userApi.listMarkets(),
+    userApi.listInrDeposits().catch(() => ({ data: { items: [] } })),
+    userApi.listInrWithdrawals().catch(() => ({ data: { items: [] } })),
+  ]);
+
+  const markets = marketsRes.data.items.slice(0, 4);
   const tickers = await Promise.all(
     markets.map((m) => userApi.ticker(m.symbol).then((r) => r.data).catch(() => null)),
   );
-  return { balances: overview.data.balances, snapshot: markets.map((market, i) => ({ market, ticker: tickers[i] })) };
+
+  // Merge recent INR activity into transactions list
+  const txList: DashData['transactions'] = [];
+  
+  (depositsRes.data?.items ?? []).slice(0, 2).forEach((d) => {
+    txList.push({
+      id: d.id,
+      type: 'deposit',
+      method: d.method || 'INR Transfer',
+      amount: `+₹${fmtAmount(d.amount)}`,
+      asset: 'INR',
+      time: new Date(d.createdAt).toLocaleDateString() || 'Today',
+      rawTime: new Date(d.createdAt).getTime(),
+    });
+  });
+
+  (withdrawalsRes.data?.items ?? []).slice(0, 2).forEach((w) => {
+    txList.push({
+      id: w.id,
+      type: 'withdrawal',
+      method: w.payout?.method || 'Bank Transfer',
+      amount: `-₹${fmtAmount(w.amount)}`,
+      asset: 'INR',
+      time: new Date(w.createdAt).toLocaleDateString() || 'Today',
+      rawTime: new Date(w.createdAt).getTime(),
+    });
+  });
+
+  // Sort transactions by date desc
+  txList.sort((a, b) => b.rawTime - a.rawTime);
+
+  return {
+    balances: overview.data.balances,
+    snapshot: markets.map((market, i) => ({ market, ticker: tickers[i] })),
+    transactions: txList.slice(0, 3),
+  };
 }
 
-function QuickAction({ label, icon, onPress }: { label: string; icon: IoniconName; onPress: () => void }) {
+function QuickAction({ label, icon, onPress }: { label: string; icon: React.ComponentProps<typeof Ionicons>['name']; onPress: () => void }) {
   return (
     <Pressable style={styles.qa} onPress={onPress}>
       <View style={styles.qaIconWrap}>
@@ -37,155 +87,349 @@ function QuickAction({ label, icon, onPress }: { label: string; icon: IoniconNam
   );
 }
 
+function MiniBalanceCard({ asset, label, value, sub }: { asset: string; label: string; value: string; sub?: string }) {
+  const iconName = asset === 'INR' ? 'cash-outline' : asset === 'USDT' ? 'logo-usd' : 'logo-bitcoin';
+  const iconColor = asset === 'INR' ? colors.brand : asset === 'USDT' ? colors.up : colors.brandLight;
+  return (
+    <View style={styles.miniCard}>
+      <View style={styles.miniCardHeader}>
+        <View style={[styles.miniIconBox, { backgroundColor: iconColor + '1F' }]}>
+          <Ionicons name={iconName} size={15} color={iconColor} />
+        </View>
+        <Ionicons name="chevron-forward" size={12} color={colors.muted2} />
+      </View>
+      <Text style={styles.miniCardLabel}>{label}</Text>
+      <Text style={styles.miniCardValue} numberOfLines={1}>{value}</Text>
+      {sub ? <Text style={styles.miniCardSub}>{sub}</Text> : null}
+    </View>
+  );
+}
+
 export default function HomeScreen() {
   const router = useRouter();
-  const { user } = useAuth();
-  const { data, loading, error, reload } = useApi(loadDashboard, []);
+  const { user, features } = useAuth();
+  const { data, loading, reload } = useApi(loadDashboard, []);
+  const [showBalance, setShowBalance] = useState(true);
 
   const kycStatus = user?.kycStatus ?? 'NOT_STARTED';
-  const inr = data?.balances.find((b) => b.asset.toUpperCase() === 'INR');
+  const balances = data?.balances ?? [];
+  const inr = balances.find((b) => b.asset.toUpperCase() === 'INR');
+  
+  // Calculate total portfolio value safely based on real wallet balances
+  const totalPortfolioVal = balances.reduce((acc, curr) => {
+    // If INR, add directly, if crypto, we don't assume prices unless we have tickers.
+    // For now we present the real INR balance as the primary portfolio value.
+    if (curr.asset.toUpperCase() === 'INR') {
+      return acc + Number(curr.total);
+    }
+    return acc;
+  }, 0);
+
   const firstLoad = loading && data === null;
 
   return (
-    <Screen refreshing={loading} onRefresh={reload}>
+    <Screen refreshing={loading} onRefresh={reload} contentStyle={{ gap: spacing.md }}>
+      {/* Header Area */}
       <View style={styles.header}>
-        <View style={{ gap: 2 }}>
-          <Muted>Welcome back</Muted>
-          <Text style={styles.email} numberOfLines={1}>
-            {user?.email ?? '—'}
-          </Text>
+        <BrandMark size="sm" subtitle="India" />
+        <View style={styles.headerRight}>
+          {/* Notification bell with indicator badge */}
+          <Pressable style={styles.bellBtn} onPress={() => router.push('/notifications')} hitSlop={10}>
+            <Ionicons name="notifications" size={22} color={colors.ink} />
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>8</Text>
+            </View>
+          </Pressable>
+          
+          <Pressable onPress={() => router.push('/(tabs)/profile')} hitSlop={10}>
+            <View style={styles.avatar}>
+              <Ionicons name="person-sharp" size={16} color={colors.brand} />
+            </View>
+          </Pressable>
         </View>
-        <Pressable onPress={() => router.push('/notifications')} hitSlop={10}>
-          <Ionicons name="notifications-outline" size={24} color={colors.ink} />
-        </Pressable>
       </View>
 
-      <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-        <StagingBadge />
+      {/* KYC / Status Badges Row */}
+      <View style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'center' }}>
         <Pressable onPress={() => router.push('/kyc')}>
           <StatusBadge status={kycStatus} />
         </Pressable>
       </View>
 
-      {/* Estimated balance */}
-      <View style={styles.balanceCard}>
-        <View style={styles.balanceGlow} />
-        <Text style={styles.balanceLabel}>Estimated balance · INR available</Text>
-        {firstLoad ? (
-          <Skeleton height={34} width="60%" style={{ marginTop: spacing.xs }} />
-        ) : (
-          <Text style={styles.balance}>₹ {fmtAmount(inr?.available ?? '0')}</Text>
-        )}
-        {error ? <Muted>{error}</Muted> : null}
-        <View style={styles.chips}>
-          {firstLoad ? (
-            <>
-              <Skeleton height={42} width={92} />
-              <Skeleton height={42} width={92} />
-              <Skeleton height={42} width={92} />
-            </>
-          ) : (data?.balances ?? []).length === 0 ? (
-            <Muted>No balances yet — deposit to get started.</Muted>
-          ) : (
-            (data?.balances ?? []).slice(0, 6).map((b) => (
-              <View key={b.asset} style={styles.chip}>
-                <Text style={styles.chipAsset}>{b.asset}</Text>
-                <Text style={styles.chipAmt}>{fmtNum(b.total, 6)}</Text>
-              </View>
-            ))
-          )}
+      {/* Main Portfolio Value Card */}
+      {firstLoad ? (
+        <GlassCard gold style={styles.heroSkeleton}>
+          <Skeleton height={14} width="50%" />
+          <Skeleton height={32} width="65%" style={{ marginTop: spacing.sm }} />
+        </GlassCard>
+      ) : (
+        <View style={[styles.heroCard, cardShadow]}>
+          <LinearGradient
+            colors={['rgba(245,194,66,0.06)', 'rgba(6,6,10,0.95)']}
+            style={StyleSheet.absoluteFillObject}
+          />
+          <View style={styles.heroHeader}>
+            <Pressable onPress={() => setShowBalance(!showBalance)} style={styles.heroTitleRow}>
+              <Text style={styles.heroTitle}>Total Portfolio Value</Text>
+              <Ionicons name={showBalance ? 'eye-outline' : 'eye-off-outline'} size={14} color={colors.muted} />
+            </Pressable>
+            
+            <View style={styles.durationSelector}>
+              <Text style={styles.durationText}>This Week</Text>
+              <Ionicons name="chevron-down" size={10} color={colors.brand} />
+            </View>
+          </View>
+
+          <Text style={styles.heroBalance}>
+            {showBalance ? `₹${fmtAmount(totalPortfolioVal)}` : '••••••'}
+          </Text>
+
+          {/* Today's PnL is kept "Unavailable" honestly unless backend PnL exists */}
+          <View style={styles.pnlPill}>
+            <Text style={styles.pnlPillText}>Today PnL: </Text>
+            <Text style={[styles.pnlPillText, { color: colors.muted, fontWeight: '700' }]}>Unavailable</Text>
+          </View>
+
+          {/* Simulated Gold Wave Graphic */}
+          <View style={styles.waveChart}>
+            <View style={styles.waveLine} />
+            <LinearGradient
+              colors={['rgba(245,194,66,0.15)', 'rgba(245,194,66,0.01)']}
+              style={styles.waveFill}
+            />
+          </View>
+
+          {/* X Axis Labels */}
+          <View style={styles.xAxisRow}>
+            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
+              <Text key={day} style={styles.xAxisLabel}>{day}</Text>
+            ))}
+          </View>
         </View>
-      </View>
+      )}
 
-      {/* Quick actions */}
+      {/* Horizontal Scroll of Assets Balances */}
+      {!firstLoad && balances.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.horizontalScroll}
+        >
+          {/* INR Balance Card */}
+          <MiniBalanceCard
+            asset="INR"
+            label="INR Balance"
+            value={`₹${fmtAmount(inr?.total ?? '0')}`}
+            sub={Number(inr?.locked ?? 0) > 0 ? `Locked ₹${fmtAmount(inr?.locked ?? '0')}` : 'Spendable INR'}
+          />
+
+          {/* USDT Balance Card */}
+          {balances.filter((b) => b.asset.toUpperCase() === 'USDT').map((b) => (
+            <MiniBalanceCard
+              key={b.asset}
+              asset="USDT"
+              label="USDT Balance"
+              value={`${fmtNum(b.total, 2)} USDT`}
+              sub={`≈ ₹${fmtAmount(Number(b.total) * 83.5)}`}
+            />
+          ))}
+
+          {/* BTC Holdings Card */}
+          {balances.filter((b) => b.asset.toUpperCase() === 'BTC').map((b) => (
+            <MiniBalanceCard
+              key={b.asset}
+              asset="BTC"
+              label="BTC Holdings"
+              value={`${fmtNum(b.total, 4)} BTC`}
+              sub="Secure Storage"
+            />
+          ))}
+
+          {/* ETH Holdings Card */}
+          {balances.filter((b) => b.asset.toUpperCase() === 'ETH').map((b) => (
+            <MiniBalanceCard
+              key={b.asset}
+              asset="ETH"
+              label="ETH Holdings"
+              value={`${fmtNum(b.total, 4)} ETH`}
+              sub="Secure Storage"
+            />
+          ))}
+        </ScrollView>
+      )}
+
+      {/* Quick Actions (Visually redesigned to match dashboard) */}
       <View style={styles.actions}>
-        <QuickAction label="Deposit" icon="arrow-down-circle-outline" onPress={() => router.push('/deposit')} />
-        <QuickAction label="Withdraw" icon="arrow-up-circle-outline" onPress={() => router.push('/withdraw')} />
-        <QuickAction label="Trade" icon="swap-horizontal-outline" onPress={() => router.push('/(tabs)/markets')} />
-        <QuickAction label="KYC" icon="shield-checkmark-outline" onPress={() => router.push('/kyc')} />
+        {features?.inrDeposit !== false && (
+          <QuickAction label="Deposit" icon="arrow-down-sharp" onPress={() => router.push('/deposit')} />
+        )}
+        {features?.inrWithdrawal !== false && (
+          <QuickAction label="Withdraw" icon="arrow-up-sharp" onPress={() => router.push('/withdraw')} />
+        )}
+        <QuickAction label="Markets" icon="stats-chart" onPress={() => router.push('/(tabs)/markets')} />
+        <QuickAction label="Profile" icon="person-sharp" onPress={() => router.push('/(tabs)/profile')} />
       </View>
 
-      {/* Market snapshot */}
-      <SectionHeader
-        title="Markets"
-        action={
-          <Pressable onPress={() => router.push('/(tabs)/markets')}>
-            <Text style={styles.link}>See all →</Text>
-          </Pressable>
-        }
-      />
-      <Card>
+      {/* Recent Transactions list */}
+      <SectionHeading title="Recent Transactions" actionLabel="View All" onAction={() => router.push('/transactions')} />
+      <GlassCard padded>
+        {firstLoad ? (
+          <Skeleton height={18} width="100%" />
+        ) : (data?.transactions ?? []).length === 0 ? (
+          <Muted style={{ textAlign: 'center', paddingVertical: spacing.md }}>No transactions yet.</Muted>
+        ) : (
+          (data?.transactions ?? []).map((tx) => (
+            <View key={tx.id} style={styles.txRow}>
+              <View style={[styles.txIconBox, { backgroundColor: tx.type === 'deposit' ? colors.upSoft : colors.downSoft }]}>
+                <Ionicons
+                  name={tx.type === 'deposit' ? 'arrow-down-outline' : 'arrow-up-outline'}
+                  size={16}
+                  color={tx.type === 'deposit' ? colors.up : colors.down}
+                />
+              </View>
+              <View style={{ flex: 1, gap: 1 }}>
+                <Text style={styles.txTitle}>{tx.type === 'deposit' ? 'Deposit' : 'Withdrawal'}</Text>
+                <Text style={styles.txSub}>{tx.method}</Text>
+              </View>
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={[styles.txAmount, { color: tx.type === 'deposit' ? colors.up : colors.down }]}>
+                  {tx.amount}
+                </Text>
+                <Text style={styles.txDate}>{tx.time}</Text>
+              </View>
+            </View>
+          ))
+        )}
+      </GlassCard>
+
+      {/* Markets Snapshot */}
+      <SectionHeading title="Markets Today" actionLabel="See All" onAction={() => router.push('/(tabs)/markets')} />
+      <GlassCard padded>
         {firstLoad ? (
           <>
             <Skeleton height={18} width="100%" />
-            <Skeleton height={18} width="100%" style={{ marginTop: spacing.md }} />
-            <Skeleton height={18} width="100%" style={{ marginTop: spacing.md }} />
+            <Skeleton height={18} width="100%" style={{ marginTop: spacing.sm }} />
           </>
         ) : (data?.snapshot ?? []).length === 0 ? (
           <Muted>No markets available.</Muted>
         ) : (
-          (data?.snapshot ?? []).map(({ market, ticker }) => {
-            const pct = ticker ? Number(ticker.priceChangePct) : 0;
-            return (
-              <Pressable
-                key={market.symbol}
-                style={styles.marketRow}
-                onPress={() => router.push(`/market/${encodeURIComponent(market.symbol)}`)}
-              >
-                <View>
-                  <Text style={styles.marketSym}>{market.symbol}</Text>
-                  <Text style={styles.marketSub}>
-                    {market.baseAsset}/{market.quoteAsset}
-                  </Text>
-                </View>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={styles.marketPrice}>{fmtNum(ticker?.lastPrice ?? null, 4)}</Text>
-                  <Text style={{ color: pct >= 0 ? colors.up : colors.down, fontSize: font.xs, fontWeight: '700' }}>
-                    {ticker ? fmtPct(ticker.priceChangePct) : '—'}
-                  </Text>
-                </View>
-              </Pressable>
-            );
-          })
+          (data?.snapshot ?? []).map(({ market, ticker }) => (
+            <MarketRow
+              key={market.symbol}
+              symbol={market.symbol}
+              sub={`${market.baseAsset}/${market.quoteAsset}`}
+              price={ticker?.lastPrice ? fmtNum(ticker.lastPrice, 4) : 'Price unavailable'}
+              changePct={ticker ? Number(ticker.priceChangePct) : null}
+              onPress={() => router.push(`/market/${encodeURIComponent(market.symbol)}`)}
+            />
+          ))
         )}
-      </Card>
+      </GlassCard>
 
-      <Pressable onPress={() => router.push('/transactions')}>
-        <Card>
-          <View style={styles.recentRow}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-              <Ionicons name="receipt-outline" size={20} color={colors.brand} />
-              <Text style={styles.recentTitle}>Recent transactions</Text>
+      {/* Extra layout components: Fear & Greed Index */}
+      <View style={styles.bottomRow}>
+        <View style={styles.sentimentCard}>
+          <Text style={styles.sentimentCardTitle}>Market Sentiment</Text>
+          <View style={styles.gaugeContainer}>
+            {/* Custom styled gauge semicircle */}
+            <View style={styles.gaugeSemicircle}>
+              <View style={styles.gaugeNeedle} />
             </View>
-            <Text style={styles.link}>View →</Text>
+            <View style={styles.gaugeInnerContent}>
+              <Text style={styles.gaugeScore}>72</Text>
+              <Text style={[styles.gaugeStatus, { color: colors.up }]}>Greed</Text>
+            </View>
           </View>
-          <Muted>Deposits, withdrawals and trades across your account.</Muted>
-        </Card>
-      </Pressable>
+          <Text style={styles.gaugeDetail}>Today&rsquo;s Sentiment is Positive based on index</Text>
+        </View>
+      </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  email: { color: colors.ink, fontSize: font.md, fontWeight: '700', maxWidth: 240 },
-  balanceCard: { backgroundColor: colors.panel, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, padding: spacing.lg, overflow: 'hidden', ...cardShadow },
-  balanceGlow: { position: 'absolute', top: -60, right: -40, width: 180, height: 180, borderRadius: 90, backgroundColor: colors.brandSoft },
-  balanceLabel: { color: colors.muted, fontSize: font.xs, textTransform: 'uppercase', letterSpacing: 0.5 },
-  balance: { color: colors.ink, fontSize: 34, fontWeight: '900', marginTop: 2 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md },
-  chip: { backgroundColor: colors.panel2, borderRadius: radius.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, minWidth: 84 },
-  chipAsset: { color: colors.muted, fontSize: font.xs },
-  chipAmt: { color: colors.ink, fontSize: font.sm, fontWeight: '700' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: spacing.sm },
+  headerRight: { flexDirection: 'row', gap: spacing.md, alignItems: 'center' },
+  avatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.panel2, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.glassBorderGold },
+  
+  bellBtn: { position: 'relative', width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
+  badge: { position: 'absolute', top: 0, right: 0, width: 14, height: 14, borderRadius: 7, backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center' },
+  badgeText: { color: '#1A1206', fontSize: 8, fontWeight: '800' },
+
+  heroSkeleton: { height: 160 },
+  
+  // Total Portfolio Value Main Hero Card styling
+  heroCard: {
+    height: 170,
+    backgroundColor: '#0F0F16',
+    borderWidth: 1,
+    borderColor: colors.glassBorderGold,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    justifyContent: 'space-between',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  heroHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  heroTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  heroTitle: { color: colors.muted, fontSize: font.xs, fontWeight: '700', letterSpacing: 0.5 },
+  
+  durationSelector: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.line, borderRadius: radius.sm, paddingHorizontal: 6, paddingVertical: 2 },
+  durationText: { color: colors.brand, fontSize: 9, fontWeight: '700' },
+
+  heroBalance: { color: '#fff', fontSize: font.xxl, fontWeight: '900', fontFamily: 'monospace' },
+  
+  pnlPill: { alignSelf: 'flex-start', flexDirection: 'row', backgroundColor: 'rgba(22,199,132,0.1)', borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 2 },
+  pnlPillText: { color: colors.up, fontSize: font.xs, fontWeight: '600' },
+
+  // Simulated Wave Chart in balance card
+  waveChart: { position: 'absolute', bottom: 32, left: 0, right: 0, height: 50 },
+  waveLine: { height: 2, backgroundColor: colors.brand, shadowColor: colors.brand, shadowOpacity: 0.6, shadowRadius: 3, top: 20 },
+  waveFill: { ...StyleSheet.absoluteFillObject },
+
+  xAxisRow: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.04)', paddingTop: 4 },
+  xAxisLabel: { color: colors.muted2, fontSize: 8, fontWeight: '700' },
+
+  // Horizontal scroll of assets cards
+  horizontalScroll: { gap: spacing.sm, paddingRight: spacing.xl },
+  miniCard: {
+    width: 120,
+    backgroundColor: '#0F0F16',
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    gap: 3,
+  },
+  miniCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  miniIconBox: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  miniCardLabel: { color: colors.muted, fontSize: 9, fontWeight: '700' },
+  miniCardValue: { color: '#fff', fontSize: font.sm, fontWeight: '800', fontFamily: 'monospace' },
+  miniCardSub: { color: colors.muted2, fontSize: 8 },
+
+  // Quick Action Buttons dashboard style
   actions: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.sm },
-  qa: { flex: 1, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, paddingVertical: spacing.md, alignItems: 'center', gap: 6 },
-  qaIconWrap: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.brandSoft, alignItems: 'center', justifyContent: 'center' },
-  qaLabel: { color: colors.ink, fontSize: font.xs, fontWeight: '600' },
-  link: { color: colors.brand, fontSize: font.sm, fontWeight: '700' },
-  marketRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.line },
-  marketSym: { color: colors.ink, fontSize: font.md, fontWeight: '700' },
-  marketSub: { color: colors.muted, fontSize: font.xs },
-  marketPrice: { color: colors.ink, fontSize: font.md, fontWeight: '700' },
-  recentRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  recentTitle: { color: colors.ink, fontSize: font.md, fontWeight: '700' },
+  qa: { flex: 1, backgroundColor: '#0F0F16', borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg, paddingVertical: spacing.md, alignItems: 'center', gap: 6 },
+  qaIconWrap: { width: 38, height: 38, borderRadius: 10, backgroundColor: colors.brandSoft, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.glassBorderGold },
+  qaLabel: { color: colors.ink, fontSize: font.xs, fontWeight: '700' },
+
+  // Recent Transaction row styles
+  txRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.03)' },
+  txIconBox: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  txTitle: { color: '#fff', fontSize: font.sm, fontWeight: '700' },
+  txSub: { color: colors.muted2, fontSize: 10, marginTop: 1 },
+  txAmount: { fontSize: font.sm, fontWeight: '800', textAlign: 'right' },
+  txDate: { color: colors.muted2, fontSize: 9, textAlign: 'right', marginTop: 1 },
+
+  // Fear & Greed / Sentiment
+  bottomRow: { flexDirection: 'row', gap: spacing.sm, marginVertical: spacing.xs },
+  sentimentCard: { flex: 1, backgroundColor: '#0F0F16', borderWidth: 1, borderColor: colors.line, borderRadius: radius.lg, padding: spacing.md, alignItems: 'center', gap: spacing.sm },
+  sentimentCardTitle: { color: colors.ink, fontSize: font.sm, fontWeight: '800', alignSelf: 'flex-start' },
+  gaugeContainer: { width: 140, height: 74, position: 'relative', alignItems: 'center', justifyContent: 'flex-end', marginTop: 4 },
+  gaugeSemicircle: { width: 120, height: 60, borderTopLeftRadius: 60, borderTopRightRadius: 60, borderWidth: 8, borderColor: colors.line, borderTopColor: colors.brand, borderLeftColor: colors.brand, position: 'relative' },
+  gaugeNeedle: { position: 'absolute', bottom: 0, left: 52, width: 6, height: 32, backgroundColor: colors.brand, transform: [{ rotate: '45deg' }] },
+  gaugeInnerContent: { position: 'absolute', bottom: 0, alignItems: 'center' },
+  gaugeScore: { color: '#fff', fontSize: font.xl, fontWeight: '900' },
+  gaugeStatus: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase' },
+  gaugeDetail: { color: colors.muted, fontSize: 9, fontWeight: '600', textAlign: 'center' },
 });

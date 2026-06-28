@@ -12,9 +12,11 @@ export default function AuthLayout() {
         contentStyle: { backgroundColor: colors.bg },
       }}
     >
+      <Stack.Screen name="welcome" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ headerShown: false }} />
-      <Stack.Screen name="register" options={{ title: 'Create account' }} />
-      <Stack.Screen name="verify-email" options={{ title: 'Verify email' }} />
+      <Stack.Screen name="register" options={{ headerShown: false }} />
+      <Stack.Screen name="verify-email" options={{ headerShown: false }} />
+      <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
     </Stack>
   );
 }

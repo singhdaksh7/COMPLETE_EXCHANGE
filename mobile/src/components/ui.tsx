@@ -13,8 +13,10 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { cardShadow, colors, font, radius, spacing } from '@/theme';
+import { cardShadow, colors, font, glassGradient, goldGradient, radius, spacing } from '@/theme';
+import { AppBackground } from '@/components/premium';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -34,30 +36,33 @@ export function Screen({
   contentStyle?: ViewStyle;
 }) {
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      {scroll ? (
-        <ScrollView
-          contentContainerStyle={[styles.scrollContent, contentStyle]}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            onRefresh ? (
-              <RefreshControl
-                refreshing={!!refreshing}
-                onRefresh={onRefresh}
-                tintColor={colors.brand}
-                colors={[colors.brand]}
-                progressBackgroundColor={colors.panel}
-              />
-            ) : undefined
-          }
-        >
-          {children}
-        </ScrollView>
-      ) : (
-        <View style={[styles.scrollContent, contentStyle]}>{children}</View>
-      )}
-    </SafeAreaView>
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      <AppBackground />
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+        {scroll ? (
+          <ScrollView
+            contentContainerStyle={[styles.scrollContent, contentStyle]}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              onRefresh ? (
+                <RefreshControl
+                  refreshing={!!refreshing}
+                  onRefresh={onRefresh}
+                  tintColor={colors.brand}
+                  colors={[colors.brand]}
+                  progressBackgroundColor={colors.panel}
+                />
+              ) : undefined
+            }
+          >
+            {children}
+          </ScrollView>
+        ) : (
+          <View style={[styles.scrollContent, contentStyle]}>{children}</View>
+        )}
+      </SafeAreaView>
+    </View>
   );
 }
 
@@ -70,7 +75,17 @@ export function Card({
   style?: ViewStyle;
   elevated?: boolean;
 }) {
-  return <View style={[styles.card, elevated && cardShadow, style]}>{children}</View>;
+  return (
+    <View style={[styles.card, elevated && cardShadow, style]}>
+      <LinearGradient
+        colors={glassGradient}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+      />
+      {children}
+    </View>
+  );
 }
 
 export function Row({ label, value }: { label: string; value: React.ReactNode }) {
@@ -111,7 +126,7 @@ export function Muted({ children, style }: { children: React.ReactNode; style?: 
   return <Text style={[styles.muted, style]}>{children}</Text>;
 }
 
-/** A small accent chip — used for the staging/demo label and tags. */
+/** A small accent chip — used for the environment label and tags. */
 export function Pill({ label, tone = 'brand' }: { label: string; tone?: 'brand' | 'up' | 'down' | 'muted' }) {
   const c = tone === 'up' ? colors.up : tone === 'down' ? colors.down : tone === 'muted' ? colors.muted : colors.brand;
   return (
@@ -121,14 +136,8 @@ export function Pill({ label, tone = 'brand' }: { label: string; tone?: 'brand' 
   );
 }
 
-/** Honest "demo/staging" marker. */
-export function StagingBadge() {
-  return (
-    <View style={styles.staging}>
-      <Ionicons name="flask-outline" size={11} color={colors.warn} />
-      <Text style={styles.stagingText}>DEMO · STAGING</Text>
-    </View>
-  );
+export function EnvironmentBadge() {
+  return null;
 }
 
 /* ---------------- controls ---------------- */
@@ -160,8 +169,32 @@ export function Button({
           : variant === 'ghost'
             ? 'transparent'
             : colors.panel2;
-  const fg = variant === 'primary' || variant === 'success' ? '#0B0E11' : variant === 'danger' ? '#fff' : colors.ink;
+  const fg = variant === 'primary' ? '#1A1206' : variant === 'success' ? '#06231A' : variant === 'danger' ? '#fff' : colors.ink;
   const isOff = disabled || loading;
+  const inner = loading ? (
+    <ActivityIndicator color={fg} />
+  ) : (
+    <View style={styles.buttonInner}>
+      {icon ? <Ionicons name={icon} size={size === 'sm' ? 15 : 18} color={fg} /> : null}
+      <Text style={[styles.buttonText, size === 'sm' && { fontSize: font.sm }, { color: fg }]}>{title}</Text>
+    </View>
+  );
+
+  // Primary uses the gold gradient pill to match the premium brand language.
+  if (variant === 'primary') {
+    return (
+      <Pressable onPress={onPress} disabled={isOff} style={({ pressed }) => [{ opacity: isOff ? 0.5 : pressed ? 0.9 : 1 }]}>
+        <LinearGradient
+          colors={goldGradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={[styles.button, styles.buttonGold, size === 'sm' && styles.buttonSm]}
+        >
+          {inner}
+        </LinearGradient>
+      </Pressable>
+    );
+  }
   return (
     <Pressable
       onPress={onPress}
@@ -173,14 +206,7 @@ export function Button({
         variant === 'ghost' && styles.buttonGhost,
       ]}
     >
-      {loading ? (
-        <ActivityIndicator color={fg} />
-      ) : (
-        <View style={styles.buttonInner}>
-          {icon ? <Ionicons name={icon} size={size === 'sm' ? 15 : 18} color={fg} /> : null}
-          <Text style={[styles.buttonText, size === 'sm' && { fontSize: font.sm }, { color: fg }]}>{title}</Text>
-        </View>
-      )}
+      {inner}
     </Pressable>
   );
 }
@@ -337,15 +363,16 @@ export function AsyncBoundary<T>({
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
+  safe: { flex: 1, backgroundColor: 'transparent' },
   scrollContent: { padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl },
   card: {
-    backgroundColor: colors.panel,
+    backgroundColor: colors.glass,
     borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: colors.line,
+    borderColor: colors.glassBorder,
     padding: spacing.lg,
     gap: spacing.sm,
+    overflow: 'hidden',
   },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: spacing.xs },
   rowLabel: { color: colors.muted, fontSize: font.sm },
@@ -357,16 +384,17 @@ const styles = StyleSheet.create({
   muted: { color: colors.muted, fontSize: font.sm },
   pill: { alignSelf: 'flex-start', borderRadius: radius.pill, borderWidth: 1, paddingHorizontal: spacing.sm, paddingVertical: 2 },
   pillText: { fontSize: font.xs, fontWeight: '700' },
-  staging: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', borderRadius: radius.pill, borderWidth: 1, borderColor: colors.warn + '55', backgroundColor: colors.warn + '1A', paddingHorizontal: spacing.sm, paddingVertical: 3 },
-  stagingText: { color: colors.warn, fontSize: 10, fontWeight: '800', letterSpacing: 1 },
-  button: { height: 50, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.lg },
-  buttonSm: { height: 38, paddingHorizontal: spacing.md },
-  buttonGhost: { borderWidth: 1, borderColor: colors.line },
+  environment: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', borderRadius: radius.pill, borderWidth: 1, borderColor: colors.warn + '55', backgroundColor: colors.warn + '1A', paddingHorizontal: spacing.sm, paddingVertical: 3 },
+  environmentText: { color: colors.warn, fontSize: 10, fontWeight: '800', letterSpacing: 1 },
+  button: { height: 52, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.lg },
+  buttonGold: { shadowColor: colors.brand, shadowOpacity: 0.4, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 8 },
+  buttonSm: { height: 40, paddingHorizontal: spacing.md },
+  buttonGhost: { borderWidth: 1, borderColor: colors.glassBorderGold, backgroundColor: 'rgba(245,194,66,0.04)' },
   buttonInner: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   buttonText: { fontSize: font.md, fontWeight: '700' },
   inputWrap: { gap: spacing.xs },
-  inputLabel: { color: colors.muted, fontSize: font.xs, textTransform: 'uppercase', letterSpacing: 0.5 },
-  input: { backgroundColor: colors.panel2, borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, paddingHorizontal: spacing.md, height: 50, color: colors.ink, fontSize: font.md },
+  inputLabel: { color: colors.muted, fontSize: font.xs, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  input: { backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, paddingHorizontal: spacing.md, height: 54, color: colors.ink, fontSize: font.md },
   inputError: { borderColor: colors.down },
   inputErrorText: { color: colors.down, fontSize: font.xs },
   badge: { alignSelf: 'flex-start', borderRadius: radius.pill, borderWidth: 1, paddingHorizontal: spacing.sm, paddingVertical: 2 },
