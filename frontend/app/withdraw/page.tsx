@@ -8,6 +8,7 @@ import { useGuard } from '@/components/guards';
 import { UserShell } from '@/components/user-shell';
 import { StatusBadge } from '@/components/ui';
 import { CopyButton, ExplorerLink, KycRequiredNotice } from '@/components/wallet-bits';
+import { useUserFeatures, AccessUnavailable } from '@/components/feature-gate';
 import type { CryptoWithdrawal } from '@/lib/types';
 
 type TabMode = 'WITHDRAW' | 'WHITELIST' | 'HISTORY';
@@ -17,6 +18,7 @@ const WITHDRAWAL_FEE_USDT = 1;
 export default function WithdrawPage() {
   const ready = useGuard('user');
   const qc = useQueryClient();
+  const { features, loading: featuresLoading } = useUserFeatures();
   const [activeTab, setActiveTab] = useState<TabMode>('WITHDRAW');
 
   // Whitelist Address Forms
@@ -77,6 +79,19 @@ export default function WithdrawPage() {
   });
 
   if (!ready) return null;
+
+  // Crypto withdrawal is hidden while the feature is disabled (INR_ONLY mode).
+  // INR payouts live on /inr-withdraw. The backend enforces this independently.
+  if (!featuresLoading && !features.cryptoWithdrawal) {
+    return (
+      <UserShell className="max-w-[1400px]">
+        <AccessUnavailable
+          title="Crypto withdrawal unavailable"
+          message="Crypto withdrawals are disabled. To withdraw funds, use INR withdrawal."
+        />
+      </UserShell>
+    );
+  }
 
   const allow = addresses.data?.data.items ?? [];
   const wdHistory = history.data?.data.items ?? [];

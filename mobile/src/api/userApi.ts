@@ -1,9 +1,11 @@
 import { apiFetch, authedFetch } from './client';
 import type {
+  CreateInrWithdrawalInput,
   CreateManualDepositInput,
   CryptoWithdrawal,
   DepositAddress,
   InrDeposit,
+  InrWithdrawal,
   KycProfile,
   LedgerEntry,
   LoginData,
@@ -86,7 +88,17 @@ export const userApi = {
     }),
   listInrDeposits: () => authedFetch<Page<InrDeposit>>('/inr/deposits'),
 
-  // ---- withdrawal ----
+  // ---- INR withdrawal (manual payout: UPI / bank, admin-processed) ----
+  createInrWithdrawal: (input: CreateInrWithdrawalInput) =>
+    authedFetch<InrWithdrawal>('/inr/withdrawals', {
+      method: 'POST',
+      body: input,
+      headers: { 'Idempotency-Key': idemKey() },
+    }),
+  listInrWithdrawals: () => authedFetch<Page<InrWithdrawal>>('/inr/withdrawals'),
+
+  // ---- crypto withdrawal (DISABLED in INR-only mode; kept for parity, not
+  //      surfaced in any funding screen while crypto is globally off) ----
   listWithdrawalAddresses: () =>
     authedFetch<{ items: WithdrawalAddress[] }>('/withdrawals/addresses'),
   addWithdrawalAddress: (body: { chain: string; address: string; label?: string }) =>

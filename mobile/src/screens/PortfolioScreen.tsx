@@ -35,7 +35,7 @@ export default function PortfolioScreen() {
               <EmptyState
                 icon="wallet-outline"
                 title="No balances yet"
-                hint="Deposit crypto or INR to fund your account, then start trading."
+                hint="Deposit INR to fund your account, then start trading."
                 actionLabel="Make a deposit"
                 onAction={() => router.push('/deposit')}
               />

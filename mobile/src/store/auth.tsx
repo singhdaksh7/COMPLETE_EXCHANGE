@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { tokenStore } from './tokenStore';
 import { setUnauthorizedHandler } from '@/api/client';
 import { userApi } from '@/api/userApi';
-import type { PublicUser } from '@/types/api';
+import type { PublicUser, UserFeatureMap } from '@/types/api';
 
 /**
  * Central auth/session context. Holds the current user, bootstraps from secure
@@ -14,6 +14,12 @@ interface AuthState {
   /** Still hydrating tokens / fetching the session on cold start. */
   bootstrapping: boolean;
   user: PublicUser | null;
+  /**
+   * Effective feature map from /auth/me. Screens gate on this so crypto funding
+   * stays hidden and INR withdraw/trade follow the backend's per-user + global
+   * flags. Null until /auth/me has resolved (treat null as "unknown", not "on").
+   */
+  features: UserFeatureMap | null;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<PublicUser>;
   register: (email: string, password: string, phone?: string) => Promise<{ emailVerificationRequired: boolean }>;
@@ -26,15 +32,18 @@ const AuthContext = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [bootstrapping, setBootstrapping] = useState(true);
   const [user, setUser] = useState<PublicUser | null>(null);
+  const [features, setFeatures] = useState<UserFeatureMap | null>(null);
 
   const refreshUser = useCallback(async () => {
     try {
       const res = await userApi.me();
       setUser(res.data.user);
+      setFeatures(res.data.features ?? null);
     } catch {
       // Invalid/expired session — drop to logged-out state.
       await tokenStore.clear();
       setUser(null);
+      setFeatures(null);
     }
   }, []);
 
@@ -58,12 +67,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => setUnauthorizedHandler(null);
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const res = await userApi.login({ email, password });
-    await tokenStore.set(res.data.tokens);
-    setUser(res.data.user);
-    return res.data.user;
-  }, []);
+  const login = useCallback(
+    async (email: string, password: string) => {
+      const res = await userApi.login({ email, password });
+      await tokenStore.set(res.data.tokens);
+      setUser(res.data.user);
+      // The login response has no feature map; pull it from /auth/me so the
+      // session knows what's enabled (crypto stays hidden in INR-only mode).
+      await refreshUser();
+      return res.data.user;
+    },
+    [refreshUser],
+  );
 
   const register = useCallback(async (email: string, password: string, phone?: string) => {
     const res = await userApi.register({ email, password, ...(phone ? { phone } : {}) });
@@ -73,19 +88,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(async () => {
     await tokenStore.clear();
     setUser(null);
+    setFeatures(null);
   }, []);
 
   const value = useMemo<AuthState>(
     () => ({
       bootstrapping,
       user,
+      features,
       isAuthenticated: !!user,
       login,
       register,
       logout,
       refreshUser,
     }),
-    [bootstrapping, user, login, register, logout, refreshUser],
+    [bootstrapping, user, features, login, register, logout, refreshUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

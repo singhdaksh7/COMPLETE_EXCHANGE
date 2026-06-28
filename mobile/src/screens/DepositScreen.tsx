@@ -1,60 +1,73 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Button, Card, H2, Input, Muted, Row, Screen, StatusBadge } from '@/components/ui';
+import {
+  AsyncBoundary,
+  Button,
+  Card,
+  EmptyState,
+  H2,
+  Input,
+  Muted,
+  Row,
+  Screen,
+  StatusBadge,
+} from '@/components/ui';
 import { useApi } from '@/hooks/useApi';
+import { useAuth } from '@/store/auth';
 import { userApi } from '@/api/userApi';
 import { actionErrorMessage } from '@/api/client';
 import { colors, font, radius, spacing } from '@/theme';
-import { fmtAmount } from '@/utils/format';
-import type { DepositAddress, InrDeposit, ManualDepositMethod } from '@/types/api';
+import { fmtAmount, fmtDate } from '@/utils/format';
+import type { InrDeposit, ManualDepositMethod } from '@/types/api';
 
-const CHAINS = ['ETH', 'TRON', 'BSC'];
+// INR-only mode: crypto deposit is intentionally NOT offered here. Funding is
+// limited to manual INR deposit (bank/UPI reference, admin-approved on the web).
 const METHODS: ManualDepositMethod[] = ['UPI', 'IMPS', 'NEFT', 'BANK'];
 
 export default function DepositScreen() {
-  // crypto deposit addresses
-  const addrs = useApi<DepositAddress[]>(
-    () => userApi.listDepositAddresses().then((r) => r.data.items),
+  const { features } = useAuth();
+
+  const history = useApi<InrDeposit[]>(
+    () => userApi.listInrDeposits().then((r) => r.data.items),
     [],
   );
-  const [chain, setChain] = useState('ETH');
-  const [genBusy, setGenBusy] = useState(false);
-  const [genErr, setGenErr] = useState<string | null>(null);
 
-  const generate = async () => {
-    setGenErr(null);
-    setGenBusy(true);
-    try {
-      await userApi.createDepositAddress(chain);
-      addrs.reload();
-    } catch (e) {
-      setGenErr(actionErrorMessage(e));
-    } finally {
-      setGenBusy(false);
-    }
-  };
-
-  // INR manual deposit
   const [amount, setAmount] = useState('');
   const [utr, setUtr] = useState('');
   const [method, setMethod] = useState<ManualDepositMethod>('UPI');
-  const [inrBusy, setInrBusy] = useState(false);
-  const [inrErr, setInrErr] = useState<string | null>(null);
-  const [inrDone, setInrDone] = useState<InrDeposit | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [done, setDone] = useState<InrDeposit | null>(null);
 
-  const submitInr = async () => {
-    setInrErr(null);
-    setInrDone(null);
-    setInrBusy(true);
+  // Gate on the real feature map. `features` is null until /auth/me resolves; we
+  // only block when the backend has explicitly disabled INR deposit.
+  if (features && !features.inrDeposit) {
+    return (
+      <Screen>
+        <H2>Deposit</H2>
+        <EmptyState
+          icon="lock-closed-outline"
+          title="INR deposit unavailable"
+          hint="INR deposits are not enabled for your account right now. Please contact support."
+        />
+      </Screen>
+    );
+  }
+
+  const submit = async () => {
+    setErr(null);
+    setDone(null);
+    setBusy(true);
     try {
       const res = await userApi.createManualInrDeposit({ amount, utr: utr.trim(), method });
-      setInrDone(res.data);
+      setDone(res.data);
       setAmount('');
       setUtr('');
+      history.reload();
     } catch (e) {
-      setInrErr(actionErrorMessage(e));
+      setErr(actionErrorMessage(e));
     } finally {
-      setInrBusy(false);
+      setBusy(false);
     }
   };
 
@@ -65,32 +78,14 @@ export default function DepositScreen() {
   );
 
   return (
-    <Screen refreshing={addrs.loading} onRefresh={addrs.reload}>
-      <H2>Crypto deposit</H2>
+    <Screen refreshing={history.loading} onRefresh={history.reload}>
+      <H2>INR deposit</H2>
       <Card>
-        <Muted>Generate a deposit address, then send funds from your external wallet.</Muted>
-        <View style={styles.chipRow}>
-          {CHAINS.map((c) => (
-            <Chip key={c} value={c} active={chain === c} onPress={() => setChain(c)} />
-          ))}
-        </View>
-        {genErr ? <Text style={{ color: colors.down }}>{genErr}</Text> : null}
-        <Button title={`Generate ${chain} address`} variant="secondary" loading={genBusy} onPress={generate} />
-      </Card>
-
-      {(addrs.data ?? []).map((a) => (
-        <Card key={a.id}>
-          <Row label={a.chain} value={<StatusBadge status={a.isActive ? 'ACTIVE' : 'INACTIVE'} />} />
-          <Text selectable style={styles.addr}>
-            {a.address}
-          </Text>
-          <Muted>Tap and hold to copy. Only send the matching asset on {a.chain}.</Muted>
-        </Card>
-      ))}
-
-      <H2>INR deposit (manual)</H2>
-      <Card>
-        <Muted>Submit your bank/UPI transfer reference. An admin approves it on the web dashboard.</Muted>
+        <Muted>
+          Transfer to the EXORA bank/UPI account, then submit your bank/UPI
+          reference (UTR). An admin verifies and credits it — no money moves until
+          approved.
+        </Muted>
         <Input label="Amount (INR)" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="1000" />
         <Input label="UTR / reference" value={utr} onChangeText={setUtr} placeholder="Bank/UPI reference" />
         <View style={styles.chipRow}>
@@ -98,13 +93,44 @@ export default function DepositScreen() {
             <Chip key={m} value={m} active={method === m} onPress={() => setMethod(m)} />
           ))}
         </View>
-        {inrErr ? <Text style={{ color: colors.down }}>{inrErr}</Text> : null}
-        {inrDone ? (
-          <Row label="Submitted" value={<StatusBadge status={inrDone.status} />} />
+        {err ? <Text style={{ color: colors.down }}>{err}</Text> : null}
+        <Button title="Submit INR deposit" loading={busy} disabled={!amount || !utr} onPress={submit} />
+        {done ? (
+          <View style={{ marginTop: spacing.sm }}>
+            <Row label="Submitted" value={<StatusBadge status={done.status} />} />
+            <Muted>₹ {fmtAmount(done.amount)} submitted — pending admin review.</Muted>
+          </View>
         ) : null}
-        <Button title="Submit INR deposit" loading={inrBusy} disabled={!amount || !utr} onPress={submitInr} />
-        {inrDone ? <Muted>₹ {fmtAmount(inrDone.amount)} submitted — pending admin review.</Muted> : null}
       </Card>
+
+      <H2>Deposit history</H2>
+      <AsyncBoundary
+        loading={history.loading}
+        error={history.error}
+        data={history.data}
+        onRetry={history.reload}
+        empty={{ title: 'No deposits yet', hint: 'Your INR deposit requests will appear here.', icon: 'receipt-outline' }}
+      >
+        {(items) =>
+          items.length === 0 ? (
+            <EmptyState icon="receipt-outline" title="No deposits yet" hint="Your INR deposit requests will appear here." />
+          ) : (
+            <>
+              {items.map((d) => (
+                <Card key={d.id}>
+                  <View style={styles.histTop}>
+                    <Text style={styles.amt}>₹ {fmtAmount(d.amount)}</Text>
+                    <StatusBadge status={d.status} />
+                  </View>
+                  <Row label="Method" value={d.method ?? 'Gateway'} />
+                  <Row label="Reference" value={d.utr ?? '—'} />
+                  <Muted>{fmtDate(d.createdAt)}</Muted>
+                </Card>
+              ))}
+            </>
+          )
+        }
+      </AsyncBoundary>
     </Screen>
   );
 }
@@ -114,5 +140,6 @@ const styles = StyleSheet.create({
   chip: { borderWidth: 1, borderColor: colors.line, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: spacing.xs, backgroundColor: colors.panel },
   chipActive: { backgroundColor: colors.brand, borderColor: colors.brand },
   chipText: { color: colors.ink, fontSize: font.sm, fontWeight: '700' },
-  addr: { color: colors.brand, fontSize: font.sm, fontFamily: 'monospace' },
+  histTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  amt: { color: colors.ink, fontSize: font.lg, fontWeight: '800' },
 });

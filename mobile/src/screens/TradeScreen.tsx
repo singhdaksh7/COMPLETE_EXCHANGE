@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Button, Card, H1, Input, Muted, Row, Screen, StatusBadge } from '@/components/ui';
+import { Button, Card, EmptyState, H1, Input, Muted, Row, Screen, StatusBadge } from '@/components/ui';
 import { userApi } from '@/api/userApi';
+import { useAuth } from '@/store/auth';
 import { actionErrorMessage } from '@/api/client';
 import { colors, font, radius, spacing } from '@/theme';
 import { fmtNum } from '@/utils/format';
@@ -12,6 +13,7 @@ import type { Order, OrderSide, OrderType, Ticker } from '@/types/api';
 export default function TradeScreen() {
   const params = useLocalSearchParams<{ symbol?: string; side?: string }>();
   const router = useRouter();
+  const { features } = useAuth();
   const symbol = String(params.symbol ?? 'USDT-INR');
   const [side, setSide] = useState<OrderSide>((params.side as OrderSide) ?? 'BUY');
   const [type, setType] = useState<OrderType>('LIMIT');
@@ -62,6 +64,21 @@ export default function TradeScreen() {
       <Text style={[styles.toggleText, active && { color: colors.bg }]}>{value}</Text>
     </Pressable>
   );
+
+  // Gate on the real feature map (block only when the backend explicitly
+  // disables spot trading). `features` is null until /auth/me resolves.
+  if (features && !features.trading) {
+    return (
+      <Screen>
+        <H1>{symbol}</H1>
+        <EmptyState
+          icon="lock-closed-outline"
+          title="Trading unavailable"
+          hint="Spot trading is not enabled for your account right now. Please contact support."
+        />
+      </Screen>
+    );
+  }
 
   return (
     <Screen>

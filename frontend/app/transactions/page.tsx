@@ -6,8 +6,9 @@ import { userApi } from '@/lib/user-api';
 import { errorMessage } from '@/lib/api';
 import { useGuard } from '@/components/guards';
 import { UserShell } from '@/components/user-shell';
+import { useUserFeatures } from '@/components/feature-gate';
 
-type TxnKind = 'INR Deposit' | 'Crypto Deposit' | 'Withdrawal';
+type TxnKind = 'INR Deposit' | 'INR Withdrawal' | 'Crypto Deposit' | 'Crypto Withdrawal';
 type Bucket = 'SUCCESS' | 'FAILED' | 'PENDING' | 'NEEDS_SECOND_APPROVAL';
 
 interface Row {
@@ -21,7 +22,7 @@ interface Row {
   reference: string; // UTR / txHash / address
 }
 
-const SUCCESSY = new Set(['SUCCESS', 'CREDITED', 'COMPLETED']);
+const SUCCESSY = new Set(['SUCCESS', 'CREDITED', 'COMPLETED', 'PAID']);
 const FAILEDY = new Set(['FAILED', 'REJECTED', 'REVERSED', 'ORPHANED', 'CANCELLED']);
 
 function bucketOf(status: string, opts: { needsSecond?: boolean } = {}): Bucket {
@@ -50,10 +51,23 @@ function csvCell(v: string): string {
 
 export default function TransactionsPage() {
   const ready = useGuard('user');
+  const { features } = useUserFeatures();
 
+  // INR rails are always fetched. Crypto deposit/withdrawal history is only
+  // fetched when the account actually has that feature — INR_ONLY users never
+  // load or see crypto rows or crypto filters.
   const inrQ = useQuery({ queryKey: ['inr-deposits'], queryFn: () => userApi.listInrDeposits(), enabled: ready });
-  const cryptoQ = useQuery({ queryKey: ['crypto-deposits'], queryFn: () => userApi.listCryptoDeposits(), enabled: ready });
-  const wdQ = useQuery({ queryKey: ['withdrawals'], queryFn: () => userApi.listWithdrawals(), enabled: ready });
+  const inrWdQ = useQuery({ queryKey: ['inr-withdrawals'], queryFn: () => userApi.listInrWithdrawals(), enabled: ready });
+  const cryptoQ = useQuery({
+    queryKey: ['crypto-deposits'],
+    queryFn: () => userApi.listCryptoDeposits(),
+    enabled: ready && features.cryptoDeposit,
+  });
+  const wdQ = useQuery({
+    queryKey: ['withdrawals'],
+    queryFn: () => userApi.listWithdrawals(),
+    enabled: ready && features.cryptoWithdrawal,
+  });
 
   const [type, setType] = useState('');
   const [bucket, setBucket] = useState('');
@@ -76,32 +90,52 @@ export default function TransactionsPage() {
         reference: d.utr ?? d.providerOrderId ?? '',
       });
     }
-    for (const d of cryptoQ.data?.data.items ?? []) {
+    for (const w of inrWdQ.data?.data.items ?? []) {
+      const dest =
+        w.payout.method === 'UPI'
+          ? w.payout.upiId ?? ''
+          : `${w.payout.bankName ?? 'Bank'} ${w.payout.accountLast4 ?? ''}`.trim();
       out.push({
-        id: `cd-${d.id}`,
-        date: d.detectedAt,
-        type: 'Crypto Deposit',
-        asset: d.asset,
-        amount: d.amount,
-        status: d.status,
-        bucket: bucketOf(d.status),
-        reference: d.txHash ?? '',
-      });
-    }
-    for (const w of wdQ.data?.data.items ?? []) {
-      out.push({
-        id: `wd-${w.id}`,
-        date: w.requestedAt,
-        type: 'Withdrawal',
-        asset: w.asset,
-        amount: w.netAmount ?? w.amount,
+        id: `inrwd-${w.id}`,
+        date: w.createdAt,
+        type: 'INR Withdrawal',
+        asset: 'INR',
+        amount: w.amount,
         status: w.status,
         bucket: bucketOf(w.status),
-        reference: w.txHash ?? w.toAddress ?? '',
+        reference: w.utr ?? dest,
       });
     }
+    if (features.cryptoDeposit) {
+      for (const d of cryptoQ.data?.data.items ?? []) {
+        out.push({
+          id: `cd-${d.id}`,
+          date: d.detectedAt,
+          type: 'Crypto Deposit',
+          asset: d.asset,
+          amount: d.amount,
+          status: d.status,
+          bucket: bucketOf(d.status),
+          reference: d.txHash ?? '',
+        });
+      }
+    }
+    if (features.cryptoWithdrawal) {
+      for (const w of wdQ.data?.data.items ?? []) {
+        out.push({
+          id: `wd-${w.id}`,
+          date: w.requestedAt,
+          type: 'Crypto Withdrawal',
+          asset: w.asset,
+          amount: w.netAmount ?? w.amount,
+          status: w.status,
+          bucket: bucketOf(w.status),
+          reference: w.txHash ?? w.toAddress ?? '',
+        });
+      }
+    }
     return out.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [inrQ.data, cryptoQ.data, wdQ.data]);
+  }, [inrQ.data, inrWdQ.data, cryptoQ.data, wdQ.data, features.cryptoDeposit, features.cryptoWithdrawal]);
 
   const assets = useMemo(() => [...new Set(rows.map((r) => r.asset))], [rows]);
 
@@ -136,15 +170,15 @@ export default function TransactionsPage() {
   }
 
   if (!ready) return null;
-  const loading = inrQ.isLoading || cryptoQ.isLoading || wdQ.isLoading;
-  const anyError = inrQ.error || cryptoQ.error || wdQ.error;
+  const loading = inrQ.isLoading || inrWdQ.isLoading || cryptoQ.isLoading || wdQ.isLoading;
+  const anyError = inrQ.error || inrWdQ.error || cryptoQ.error || wdQ.error;
 
   return (
     <UserShell className="max-w-[1200px] space-y-6">
       <div className="border-b border-white/5 pb-4">
         <h1 className="text-2xl font-bold tracking-tight text-white">Transaction History</h1>
         <p className="text-[10px] text-white/45 tracking-wide uppercase mt-1">
-          INR deposits · crypto deposits · withdrawals
+          INR deposits · INR withdrawals{features.cryptoDeposit || features.cryptoWithdrawal ? ' · crypto' : ''}
         </p>
       </div>
 
@@ -153,8 +187,9 @@ export default function TransactionsPage() {
         <select value={type} onChange={(e) => setType(e.target.value)} className="rounded-lg border border-white/10 bg-noir/80 px-2 py-2 text-xs text-white">
           <option value="">All types</option>
           <option>INR Deposit</option>
-          <option>Crypto Deposit</option>
-          <option>Withdrawal</option>
+          <option>INR Withdrawal</option>
+          {features.cryptoDeposit && <option>Crypto Deposit</option>}
+          {features.cryptoWithdrawal && <option>Crypto Withdrawal</option>}
         </select>
         <select value={bucket} onChange={(e) => setBucket(e.target.value)} className="rounded-lg border border-white/10 bg-noir/80 px-2 py-2 text-xs text-white">
           <option value="">All statuses</option>

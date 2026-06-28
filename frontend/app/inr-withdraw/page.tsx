@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { userApi } from '@/lib/user-api';
-import { errorMessage, isKycRequired } from '@/lib/api';
+import { errorMessage, fieldErrors, isKycRequired } from '@/lib/api';
 import { useGuard } from '@/components/guards';
 import { UserShell } from '@/components/user-shell';
 import { StatusBadge } from '@/components/ui';
@@ -13,6 +13,36 @@ import type { CreateInrWithdrawalInput, InrPayoutMethod } from '@/lib/types';
 
 const INPUT_CLS =
   'w-full rounded-lg border border-white/10 bg-noir/80 py-3 px-4 text-sm text-white focus:border-gold/60 focus:outline-none';
+
+// Mirror the backend zod validators (inr-withdrawal.validators.ts) exactly so the
+// user gets a precise inline error before we ever hit the API.
+const AMOUNT_RE = /^(0|[1-9]\d*)(\.\d{1,2})?$/;
+const UPI_RE = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
+const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+const ACCOUNT_RE = /^\d{6,20}$/;
+
+/** Returns a map of field → message for anything the backend would reject. */
+function validateWithdrawal(v: {
+  amount: string;
+  method: InrPayoutMethod;
+  upiId: string;
+  accountNumber: string;
+  ifsc: string;
+  holderName: string;
+}): Record<string, string> {
+  const e: Record<string, string> = {};
+  if (!AMOUNT_RE.test(v.amount.trim()) || /^0(?:\.0{1,2})?$/.test(v.amount.trim())) {
+    e.amount = 'Enter an amount greater than zero (up to 2 decimals).';
+  }
+  if (v.method === 'UPI') {
+    if (!UPI_RE.test(v.upiId.trim())) e.upiId = 'Enter a valid UPI ID (e.g. name@okhdfcbank).';
+  } else {
+    if (!ACCOUNT_RE.test(v.accountNumber.trim())) e.accountNumber = 'Account number must be 6–20 digits.';
+    if (!IFSC_RE.test(v.ifsc.trim().toUpperCase())) e.ifsc = 'Enter a valid IFSC code (e.g. HDFC0000240).';
+    if (v.holderName.trim().length < 2) e.holderName = 'Enter the account holder name.';
+  }
+  return e;
+}
 
 export default function InrWithdrawPage() {
   const ready = useGuard('user');
@@ -26,6 +56,7 @@ export default function InrWithdrawPage() {
   const [ifsc, setIfsc] = useState('');
   const [holderName, setHolderName] = useState('');
   const [bankName, setBankName] = useState('');
+  const [touched, setTouched] = useState(false);
 
   const inrWallet = useQuery({
     queryKey: ['wallet', 'INR'],
@@ -84,13 +115,13 @@ export default function InrWithdrawPage() {
   const available = inrWallet.data?.data.available ?? '0';
   const items = history.data?.data.items ?? [];
 
-  const formValid =
-    Number(amount) > 0 &&
-    (method === 'UPI'
-      ? upiId.trim().length > 3
-      : accountNumber.trim().length >= 6 &&
-        ifsc.trim().length >= 11 &&
-        holderName.trim().length >= 2);
+  const errors = validateWithdrawal({ amount, method, upiId, accountNumber, ifsc, holderName });
+  const serverErrors = submit.isError ? fieldErrors(submit.error) : {};
+  const formValid = Object.keys(errors).length === 0;
+  // Show a client error once the user has tried to submit; otherwise fall back to
+  // any field-specific message the backend returned.
+  const fieldErr = (field: string): string | undefined =>
+    (touched ? errors[field] : undefined) ?? serverErrors[field];
 
   return (
     <UserShell className="max-w-[1400px]">
@@ -119,7 +150,9 @@ export default function InrWithdrawPage() {
               <KycRequiredNotice action="withdraw INR" />
             ) : (
               <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-4 text-xs text-red-300">
-                {errorMessage(submit.error)}
+                {Object.keys(serverErrors).length > 0
+                  ? 'Please correct the highlighted fields and try again.'
+                  : errorMessage(submit.error)}
               </div>
             ))}
 
@@ -151,10 +184,12 @@ export default function InrWithdrawPage() {
             className="space-y-3"
             onSubmit={(e) => {
               e.preventDefault();
+              setTouched(true);
+              if (!formValid) return;
               submit.mutate();
             }}
           >
-            <Field label="Amount (INR)">
+            <Field label="Amount (INR)" error={fieldErr('amount')}>
               <input
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
@@ -165,17 +200,17 @@ export default function InrWithdrawPage() {
             </Field>
 
             {method === 'UPI' ? (
-              <Field label="UPI ID">
+              <Field label="UPI ID" error={fieldErr('upiId')}>
                 <input
                   value={upiId}
                   onChange={(e) => setUpiId(e.target.value)}
-                  placeholder="name@bank"
+                  placeholder="name@okhdfcbank"
                   className={INPUT_CLS}
                 />
               </Field>
             ) : (
               <>
-                <Field label="Account Holder Name">
+                <Field label="Account Holder Name" error={fieldErr('holderName')}>
                   <input
                     value={holderName}
                     onChange={(e) => setHolderName(e.target.value)}
@@ -183,7 +218,7 @@ export default function InrWithdrawPage() {
                     className={INPUT_CLS}
                   />
                 </Field>
-                <Field label="Account Number">
+                <Field label="Account Number" error={fieldErr('accountNumber')}>
                   <input
                     value={accountNumber}
                     onChange={(e) => setAccountNumber(e.target.value)}
@@ -192,7 +227,7 @@ export default function InrWithdrawPage() {
                     className={`${INPUT_CLS} font-mono`}
                   />
                 </Field>
-                <Field label="IFSC Code">
+                <Field label="IFSC Code" error={fieldErr('ifsc')}>
                   <input
                     value={ifsc}
                     onChange={(e) => setIfsc(e.target.value.toUpperCase())}
@@ -200,7 +235,7 @@ export default function InrWithdrawPage() {
                     className={`${INPUT_CLS} font-mono`}
                   />
                 </Field>
-                <Field label="Bank Name (optional)">
+                <Field label="Bank Name (optional)" error={fieldErr('bankName')}>
                   <input
                     value={bankName}
                     onChange={(e) => setBankName(e.target.value)}
@@ -213,7 +248,7 @@ export default function InrWithdrawPage() {
 
             <button
               type="submit"
-              disabled={submit.isPending || !formValid}
+              disabled={submit.isPending || (touched && !formValid)}
               className="w-full rounded-lg bg-gradient-to-r from-gold to-gold-glow px-6 py-3.5 text-xs font-bold text-noir shadow-gold-glow hover:brightness-105 transition disabled:opacity-50 tracking-wider uppercase"
             >
               {submit.isPending ? 'Submitting…' : 'Request Withdrawal'}
@@ -302,13 +337,22 @@ export default function InrWithdrawPage() {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  error,
+  children,
+}: {
+  label: string;
+  error?: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex flex-col gap-1.5">
       <label className="text-[9px] font-bold text-white/45 uppercase tracking-widest">
         {label}
       </label>
       {children}
+      {error ? <span className="text-[10px] text-red-300">{error}</span> : null}
     </div>
   );
 }

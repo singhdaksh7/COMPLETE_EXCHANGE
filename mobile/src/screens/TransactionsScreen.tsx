@@ -1,28 +1,28 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { AsyncBoundary, Card, EmptyState, Muted, Row, Screen, StatusBadge } from '@/components/ui';
+import { AsyncBoundary, Card, EmptyState, Row, Screen, StatusBadge } from '@/components/ui';
 import { useApi } from '@/hooks/useApi';
 import { userApi } from '@/api/userApi';
 import { colors, font, radius, spacing } from '@/theme';
-import { fmtAmount, fmtDate, fmtNum, shortHash } from '@/utils/format';
+import { fmtAmount, fmtDate, fmtNum } from '@/utils/format';
 
 type Tab = 'deposits' | 'withdrawals' | 'trades';
 
+// INR-only mode: history shows INR deposits, INR withdrawals (manual payout) and
+// executed trades. Crypto deposit/withdrawal history is intentionally NOT shown
+// while crypto funding is globally disabled — all values are real from the API.
 export default function TransactionsScreen() {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>('deposits');
 
   const { data, loading, error, reload } = useApi(async () => {
     if (tab === 'deposits') {
-      const [crypto, inr] = await Promise.all([
-        userApi.listCryptoDeposits().then((r) => r.data.items).catch(() => []),
-        userApi.listInrDeposits().then((r) => r.data.items).catch(() => []),
-      ]);
-      return { kind: 'deposits' as const, crypto, inr };
+      const inr = await userApi.listInrDeposits().then((r) => r.data.items);
+      return { kind: 'deposits' as const, inr };
     }
     if (tab === 'withdrawals') {
-      const items = await userApi.listWithdrawals().then((r) => r.data.items);
+      const items = await userApi.listInrWithdrawals().then((r) => r.data.items);
       return { kind: 'withdrawals' as const, items };
     }
     const items = await userApi.tradeHistory(undefined, 50).then((r) => r.data.items);
@@ -46,8 +46,7 @@ export default function TransactionsScreen() {
       <AsyncBoundary loading={loading} error={error} data={data} onRetry={reload}>
         {(d) => {
           if (d.kind === 'deposits') {
-            const empty = d.crypto.length === 0 && d.inr.length === 0;
-            if (empty)
+            if (d.inr.length === 0)
               return (
                 <EmptyState
                   icon="arrow-down-circle-outline"
@@ -59,15 +58,6 @@ export default function TransactionsScreen() {
               );
             return (
               <>
-                {d.crypto.map((x) => (
-                  <Card key={x.id}>
-                    <Row label={`${x.asset} deposit`} value={<StatusBadge status={x.status} />} />
-                    <Row label="Amount" value={fmtNum(x.amount, 8)} />
-                    <Row label="Confirmations" value={`${x.confirmations}/${x.requiredConfirmations}`} />
-                    <Row label="Tx" value={shortHash(x.txHash)} />
-                    <Row label="Detected" value={fmtDate(x.detectedAt)} />
-                  </Card>
-                ))}
                 {d.inr.map((x) => (
                   <Card key={x.id}>
                     <Row label="INR deposit" value={<StatusBadge status={x.status} />} />
@@ -95,12 +85,21 @@ export default function TransactionsScreen() {
               <>
                 {d.items.map((w) => (
                   <Card key={w.id}>
-                    <Row label={`${w.asset} withdrawal`} value={<StatusBadge status={w.status} />} />
-                    <Row label="Amount" value={fmtNum(w.amount, 8)} />
-                    <Row label="Net" value={fmtNum(w.netAmount, 8)} />
-                    <Row label="To" value={shortHash(w.toAddress)} />
-                    <Row label="Requested" value={fmtDate(w.requestedAt)} />
-                    {w.failureReason ? <Muted>Reason: {w.failureReason}</Muted> : null}
+                    <Row label="INR withdrawal" value={<StatusBadge status={w.status} />} />
+                    <Row label="Amount" value={`₹ ${fmtAmount(w.amount)}`} />
+                    <Row
+                      label="Destination"
+                      value={
+                        w.payout.method === 'UPI'
+                          ? w.payout.upiId ?? '—'
+                          : `${w.payout.bankName ?? 'Bank'} ${w.payout.accountLast4 ?? ''}`.trim()
+                      }
+                    />
+                    <Row
+                      label={w.status === 'PAID' ? 'UTR' : 'Note'}
+                      value={w.status === 'PAID' ? w.utr ?? '—' : w.rejectionReason ?? '—'}
+                    />
+                    <Row label="Requested" value={fmtDate(w.createdAt)} />
                   </Card>
                 ))}
               </>

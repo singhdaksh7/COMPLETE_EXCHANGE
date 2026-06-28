@@ -88,6 +88,23 @@ export function errorMessage(err: unknown): string {
   return 'Something went wrong';
 }
 
+/**
+ * Extract field-level messages from a backend VALIDATION_ERROR. The backend
+ * sends `details: [{ path, message }]`; we surface them keyed by field path so
+ * forms can show "UPI ID is required" next to the input instead of a generic
+ * "Request validation failed".
+ */
+export function fieldErrors(err: unknown): Record<string, string> {
+  if (!(err instanceof ApiError) || !Array.isArray(err.details)) return {};
+  const out: Record<string, string> = {};
+  for (const d of err.details as Array<{ path?: string; message?: string }>) {
+    if (d && typeof d.path === 'string' && typeof d.message === 'string' && !out[d.path]) {
+      out[d.path] = d.message;
+    }
+  }
+  return out;
+}
+
 export function withdrawalErrorMessage(err: unknown): string {
   if (!(err instanceof ApiError)) return errorMessage(err);
   const messages: Record<string, string> = {

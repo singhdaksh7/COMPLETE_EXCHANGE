@@ -38,10 +38,37 @@ export interface LoginData {
   tokens: TokenPair;
 }
 
+/**
+ * Effective per-user feature access from /auth/me (already AND-ed with the
+ * global compliance flags on the backend). The app MUST gate UI on THIS map —
+ * never on assumptions — so crypto funding stays hidden in INR-only mode.
+ */
+export interface UserFeatureMap {
+  inrDeposit: boolean;
+  inrWithdrawal: boolean;
+  trading: boolean;
+  cryptoWallet: boolean;
+  cryptoDeposit: boolean;
+  cryptoWithdrawal: boolean;
+}
+
+export interface GlobalFeatureStatus {
+  cryptoDepositsGlobalEnabled: boolean;
+  cryptoWithdrawalsGlobalEnabled: boolean;
+  cryptoWalletGlobalEnabled: boolean;
+  inrDepositsGlobalEnabled: boolean;
+  inrWithdrawalsGlobalEnabled: boolean;
+  tradingGlobalEnabled: boolean;
+  mode: 'INR_ONLY' | 'FULL';
+}
+
 export interface MeData {
   user: PublicUser;
   roles: string[];
   permissions: string[];
+  /** Stage 15 effective feature map. Optional for older backends. */
+  features?: UserFeatureMap;
+  globalFeatureStatus?: GlobalFeatureStatus;
 }
 
 export interface Page<T> {
@@ -150,6 +177,43 @@ export interface CreateManualDepositInput {
   utr: string;
   method: ManualDepositMethod;
   proofKey?: string;
+}
+
+// ---- INR withdrawal (manual payout) ----
+export type InrPayoutMethod = 'UPI' | 'BANK';
+
+/** Payout destination as returned to the owning user (already masked). */
+export interface InrPayoutMasked {
+  method: string;
+  upiId: string | null;
+  accountLast4: string | null;
+  ifsc: string | null;
+  holderName: string | null;
+  bankName: string | null;
+}
+
+export interface InrWithdrawal {
+  id: string;
+  userId: string;
+  amount: string;
+  status: string;
+  payout: InrPayoutMasked;
+  utr: string | null;
+  rejectionReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+  approvedAt: string | null;
+  paidAt: string | null;
+}
+
+export interface CreateInrWithdrawalInput {
+  amount: string;
+  method: InrPayoutMethod;
+  upiId?: string;
+  accountNumber?: string;
+  ifsc?: string;
+  holderName?: string;
+  bankName?: string;
 }
 
 // ---- spot trading ----
