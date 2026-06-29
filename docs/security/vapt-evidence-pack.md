@@ -60,6 +60,11 @@ Related existing docs: `docs/security/AUDIT_SCOPE.md`,
 | Refresh rotation + reuse detection | `auth.service.ts` (`refresh`, `handleReuse`) |
 | User + admin brute-force lockout | `auth.service.ts`, `admin-rbac.service.ts` |
 | Admin TOTP (encrypted at rest) | `admin-rbac.service.ts` (`sealTotpSecret`) |
+| **User TOTP 2FA** (enroll/confirm/disable, encrypted secret, login enforcement) | `backend/src/modules/user-security/`, `backend/src/lib/totp.ts`; login challenge in `auth.service.ts` (`login`, `verify2fa`) |
+| **User backup codes** (hashed-only, one-time, regenerate) | `user-security.service.ts`, model `TotpRecoveryCode` (`backend/prisma/schema.prisma`) |
+| **Step-up re-auth** before withdrawal / address change | `backend/src/middleware/require-step-up.ts`; mounted in `inr-withdrawal.routes.ts`, `withdrawal.routes.ts` |
+| **Admin user-2FA support** (view status / reset, permission-gated) | `backend/src/modules/admin-user-profile/`, permission `users.security.manage` (`admin-rbac.baseline.ts`) |
+| User 2FA / step-up tests | `backend/test/unit/totp.test.ts`, `user-security-service.test.ts`, `step-up-middleware.test.ts`, `admin-user-2fa-routes.test.ts` |
 | Admin RBAC (all-of / any-of) | `backend/src/middleware/admin-authorize.ts` |
 | Admin IP allowlist (every request) | `backend/src/middleware/admin-authenticate.ts` |
 | Last-super-admin / self-action guard | `admin-rbac.service.ts` |
@@ -108,12 +113,13 @@ Related existing docs: `docs/security/AUDIT_SCOPE.md`,
 
 ## 10. Known production blockers
 
-The single source of truth is `docs/compliance/production-blockers.md`. Summary:
-user 2FA/MFA; step-up auth before withdrawal/address change; real KYC/liveness
-provider; real sanctions/PEP/adverse-media provider; KMS/Secrets Manager;
-WAF/private admin edge; centralized SIEM alerts; independent VAPT; independent
-wallet/signer audit before live withdrawals; blockchain-to-ledger reconciliation
-before live crypto.
+The single source of truth is `docs/compliance/production-blockers.md`. Summary
+of items still open: real KYC/liveness provider; real sanctions/PEP/adverse-media
+provider; KMS/Secrets Manager; WAF/private admin edge; centralized SIEM alerts;
+independent VAPT; independent wallet/signer audit before live withdrawals;
+blockchain-to-ledger reconciliation before live crypto. (User 2FA/MFA and step-up
+auth before withdrawal/address change are now implemented — see §5 and
+`docs/security/user-2fa-step-up-auth.md`.)
 
 ---
 

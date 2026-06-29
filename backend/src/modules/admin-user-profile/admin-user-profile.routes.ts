@@ -63,6 +63,25 @@ adminUserProfileRouter.post(
   asyncHandler(adminUserProfileController.revokeSession),
 );
 
+// Stage 3 — admin view + reset of a user's 2FA. Gated by users.security.manage.
+// The status view never returns secrets; the reset clears the user's TOTP secret
+// and all backup codes and is audit-logged. SUPER_ADMIN bypasses the permission.
+adminUserProfileRouter.get(
+  '/:userId/2fa',
+  adminAuthenticate,
+  adminAuthorize('users.security.manage'),
+  validate({ params: userIdParamSchema }),
+  asyncHandler(adminUserProfileController.get2faStatus),
+);
+
+adminUserProfileRouter.post(
+  '/:userId/2fa/reset',
+  adminAuthenticate,
+  adminAuthorize('users.security.manage'),
+  validate({ params: userIdParamSchema }),
+  asyncHandler(adminUserProfileController.resetUser2fa),
+);
+
 // Stage 5D — per-user compliance notes. Reading is part of the compliance
 // surface (compliance.view); creating is a compliance write action
 // (compliance.case.manage). Note creation is audit-logged. Notes are

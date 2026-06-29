@@ -15,6 +15,7 @@ import {
   changePasswordSchema,
   sessionIdParamSchema,
   oauthExchangeSchema,
+  verify2faSchema,
 } from './auth.validators';
 import {
   requestEmailOtpSchema,
@@ -58,6 +59,15 @@ authRouter.post(
   authRateLimiter,
   validate({ body: loginSchema }),
   asyncHandler(authController.login),
+);
+
+// Second step of a 2FA-gated login: exchange the challenge token + TOTP/backup
+// code for real access/refresh tokens.
+authRouter.post(
+  '/2fa/verify',
+  authRateLimiter,
+  validate({ body: verify2faSchema }),
+  asyncHandler(authController.verify2fa),
 );
 
 // ---- Google OAuth (Authorization Code + PKCE, one-time code exchange) ----

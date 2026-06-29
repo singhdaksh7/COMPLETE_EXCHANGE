@@ -71,8 +71,23 @@ export default function InrWithdrawPage() {
     enabled: ready,
   });
 
+  // Whether the account has TOTP 2FA — decides which factor the step-up prompt
+  // asks for (authenticator/backup code vs. account password).
+  const twoFaQ = useQuery({
+    queryKey: ['2fa-status'],
+    queryFn: () => userApi.get2faStatus(),
+    enabled: ready,
+  });
+  const twoFaEnabled = twoFaQ.data?.data.enabled ?? false;
+
+  // Step-up re-authentication: a fresh factor is required immediately before a
+  // payout request is accepted (backend enforces X-Step-Up-Token).
+  const [stepUpOpen, setStepUpOpen] = useState(false);
+  const [stepUpPassword, setStepUpPassword] = useState('');
+  const [stepUpCode, setStepUpCode] = useState('');
+
   const submit = useMutation({
-    mutationFn: () => {
+    mutationFn: (stepUpToken: string) => {
       const body: CreateInrWithdrawalInput =
         method === 'UPI'
           ? { amount, method, upiId: upiId.trim() }
@@ -84,7 +99,7 @@ export default function InrWithdrawPage() {
               holderName: holderName.trim(),
               ...(bankName.trim() ? { bankName: bankName.trim() } : {}),
             };
-      return userApi.createInrWithdrawal(body);
+      return userApi.createInrWithdrawal(body, stepUpToken);
     },
     onSuccess: () => {
       setAmount('500');
@@ -93,10 +108,30 @@ export default function InrWithdrawPage() {
       setIfsc('');
       setHolderName('');
       setBankName('');
+      setStepUpOpen(false);
+      setStepUpPassword('');
+      setStepUpCode('');
       qc.invalidateQueries({ queryKey: ['inr-withdrawals'] });
       qc.invalidateQueries({ queryKey: ['wallet', 'INR'] });
     },
   });
+
+  // Verify the fresh factor → obtain a short-lived step-up token → submit.
+  const verifyStepUp = useMutation({
+    mutationFn: () =>
+      userApi.stepUp(
+        twoFaEnabled ? { code: stepUpCode.trim() } : { password: stepUpPassword },
+      ),
+    onSuccess: (res) => submit.mutate(res.data.stepUpToken),
+  });
+
+  function closeStepUp() {
+    setStepUpOpen(false);
+    setStepUpPassword('');
+    setStepUpCode('');
+    verifyStepUp.reset();
+    submit.reset();
+  }
 
   if (!ready) return null;
 
@@ -186,7 +221,9 @@ export default function InrWithdrawPage() {
               e.preventDefault();
               setTouched(true);
               if (!formValid) return;
-              submit.mutate();
+              verifyStepUp.reset();
+              submit.reset();
+              setStepUpOpen(true);
             }}
           >
             <Field label="Amount (INR)" error={fieldErr('amount')}>
@@ -246,13 +283,33 @@ export default function InrWithdrawPage() {
               </>
             )}
 
-            <button
-              type="submit"
-              disabled={submit.isPending || (touched && !formValid)}
-              className="w-full rounded-lg bg-gradient-to-r from-gold to-gold-glow px-6 py-3.5 text-xs font-bold text-noir shadow-gold-glow hover:brightness-105 transition disabled:opacity-50 tracking-wider uppercase"
-            >
-              {submit.isPending ? 'Submitting…' : 'Request Withdrawal'}
-            </button>
+            {!stepUpOpen ? (
+              <button
+                type="submit"
+                disabled={touched && !formValid}
+                className="w-full rounded-lg bg-gradient-to-r from-gold to-gold-glow px-6 py-3.5 text-xs font-bold text-noir shadow-gold-glow hover:brightness-105 transition disabled:opacity-50 tracking-wider uppercase"
+              >
+                Request Withdrawal
+              </button>
+            ) : (
+              <StepUpPrompt
+                twoFaEnabled={twoFaEnabled}
+                password={stepUpPassword}
+                code={stepUpCode}
+                onPassword={setStepUpPassword}
+                onCode={setStepUpCode}
+                pending={verifyStepUp.isPending || submit.isPending}
+                error={
+                  verifyStepUp.isError
+                    ? errorMessage(verifyStepUp.error)
+                    : submit.isError
+                      ? errorMessage(submit.error)
+                      : null
+                }
+                onConfirm={() => verifyStepUp.mutate()}
+                onCancel={closeStepUp}
+              />
+            )}
             <p className="text-[10px] text-white/40 text-center pt-1">
               The requested amount is reserved from your available balance until the
               payout is completed or rejected.
@@ -353,6 +410,105 @@ function Field({
       </label>
       {children}
       {error ? <span className="text-[10px] text-red-300">{error}</span> : null}
+    </div>
+  );
+}
+
+/**
+ * Step-up re-authentication shown immediately before a payout is submitted.
+ * If the account has TOTP 2FA we require a fresh authenticator/backup code;
+ * otherwise we require the account password. The verified factor yields a
+ * short-lived token that authorises this single request.
+ */
+function StepUpPrompt({
+  twoFaEnabled,
+  password,
+  code,
+  onPassword,
+  onCode,
+  pending,
+  error,
+  onConfirm,
+  onCancel,
+}: {
+  twoFaEnabled: boolean;
+  password: string;
+  code: string;
+  onPassword: (v: string) => void;
+  onCode: (v: string) => void;
+  pending: boolean;
+  error: string | null;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const ready = twoFaEnabled ? code.trim().length >= 6 : password.length > 0;
+  return (
+    <div className="rounded-lg border border-gold/25 bg-gold/[0.04] p-4 space-y-3">
+      <div>
+        <p className="text-xs font-bold text-gold uppercase tracking-wide">
+          Confirm it&rsquo;s you
+        </p>
+        <p className="mt-1 text-[11px] text-white/55">
+          {twoFaEnabled
+            ? 'Enter a code from your authenticator app (or a backup code) to authorise this withdrawal.'
+            : 'Re-enter your account password to authorise this withdrawal.'}
+        </p>
+      </div>
+
+      {twoFaEnabled ? (
+        <input
+          inputMode="text"
+          autoComplete="one-time-code"
+          autoFocus
+          placeholder="Authenticator or backup code"
+          value={code}
+          onChange={(e) => onCode(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && ready && !pending) {
+              e.preventDefault();
+              onConfirm();
+            }
+          }}
+          className="w-full rounded-lg border border-white/10 bg-noir/80 py-2.5 px-3 text-sm text-white focus:border-gold/60 focus:outline-none"
+        />
+      ) : (
+        <input
+          type="password"
+          autoComplete="current-password"
+          autoFocus
+          placeholder="Account password"
+          value={password}
+          onChange={(e) => onPassword(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && ready && !pending) {
+              e.preventDefault();
+              onConfirm();
+            }
+          }}
+          className="w-full rounded-lg border border-white/10 bg-noir/80 py-2.5 px-3 text-sm text-white focus:border-gold/60 focus:outline-none"
+        />
+      )}
+
+      {error ? <p className="text-[11px] text-red-300">{error}</p> : null}
+
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={pending || !ready}
+          className="flex-1 rounded-lg bg-gradient-to-r from-gold to-gold-glow px-4 py-2.5 text-xs font-bold text-noir shadow-gold-glow hover:brightness-105 transition disabled:opacity-50 uppercase tracking-wider"
+        >
+          {pending ? 'Verifying…' : 'Confirm & submit'}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={pending}
+          className="rounded-lg border border-white/10 px-4 py-2.5 text-xs text-white/60 hover:text-white transition disabled:opacity-50"
+        >
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }

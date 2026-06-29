@@ -23,6 +23,7 @@ import { notificationRouter } from '../modules/notification/notification.routes'
 import { legalRouter } from '../modules/legal/legal.routes';
 import { taxRouter } from '../modules/tax/tax.routes';
 import { healthRouter } from '../modules/health/health.routes';
+import { securityRouter } from '../modules/user-security/user-security.routes';
 
 /**
  * Aggregates all versioned API routers mounted under the API prefix
@@ -32,6 +33,8 @@ export const apiRouter = Router();
 
 apiRouter.use('/', healthRouter);
 apiRouter.use('/auth', authRouter);
+// User security: 2FA / MFA (TOTP) + step-up authentication (Stage 3).
+apiRouter.use('/security', securityRouter);
 apiRouter.use('/kyc', kycRouter);
 // Enhanced compliance/KYC (Stage 5.0): distinct paths (/status, /liveness/*,
 // /submit-enhanced) mounted alongside the legacy kycRouter.

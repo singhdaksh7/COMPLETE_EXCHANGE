@@ -26,6 +26,7 @@ export const ADMIN_PERMISSIONS: PermissionDef[] = [
   // Per-user operational feature controls (User Control Center).
   { code: 'users.controls.view', description: 'View a user\'s per-account feature controls' },
   { code: 'users.controls.update', description: 'Enable / disable a user\'s per-account feature controls' },
+  { code: 'users.security.manage', description: 'Reset / disable a user\'s 2FA (never exposes secrets)' },
   { code: 'kyc.view', description: 'View KYC submissions' },
   { code: 'kyc.review', description: 'Approve / reject / request info on KYC' },
   { code: 'compliance.view', description: 'View compliance dashboard and KYC metrics' },
@@ -282,6 +283,8 @@ export const ADMIN_ROLES: RoleDef[] = [
       // The compliance officer is the role trusted to gate a user's operational
       // features (trading / INR / crypto / risk) from the User Control Center.
       'users.controls.update',
+      // Reset a user's 2FA when they are locked out (audited; no secret exposure).
+      'users.security.manage',
       'risk.manage',
       'kyc.view',
       'kyc.review',

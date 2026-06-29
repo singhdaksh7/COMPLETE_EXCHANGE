@@ -90,6 +90,15 @@ export const oauthExchangeSchema = z
   })
   .strict();
 
+// Second step of a 2FA-gated login: the challenge token from the login response
+// + a current TOTP code or a one-time backup code.
+export const verify2faSchema = z
+  .object({
+    challengeToken: opaqueToken,
+    code: z.string().trim().min(6, 'Invalid code').max(32),
+  })
+  .strict();
+
 export type RegisterDto = z.infer<typeof registerSchema>;
 export type LoginDto = z.infer<typeof loginSchema>;
 export type RefreshDto = z.infer<typeof refreshSchema>;

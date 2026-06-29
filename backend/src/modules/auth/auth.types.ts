@@ -25,6 +25,20 @@ export interface AuthResult {
   tokens: TokenPair;
 }
 
+/**
+ * Returned by login when the account has 2FA enabled: NO session is issued yet.
+ * The client must call POST /auth/2fa/verify with the challenge token and a
+ * current TOTP / backup code to receive real tokens. The challenge token is
+ * short-lived and single-purpose.
+ */
+export interface TwoFactorChallenge {
+  twoFactorRequired: true;
+  challengeToken: string;
+  methods: Array<'totp' | 'backup_code'>;
+}
+
+export type LoginResult = AuthResult | TwoFactorChallenge;
+
 export interface RegisterResult {
   user: PublicUser;
   /**

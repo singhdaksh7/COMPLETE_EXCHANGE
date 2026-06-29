@@ -16,6 +16,7 @@ import {
 import { ForbiddenError, NotFoundError } from '../../lib/errors';
 import { AuditAction } from '../../lib/audit';
 import { recordAudit } from '../../lib/audit';
+import { securityService } from '../user-security/user-security.service';
 import {
   PROFILE_PAGE_SIZE,
   adminUserProfileRepository,
@@ -584,6 +585,63 @@ export const adminUserProfileService = {
       });
     }
     return { revoked };
+  },
+
+  /**
+   * Admin view of a user's 2FA posture (enabled + backup codes remaining).
+   * RBAC-gated upstream (users.security.manage). NEVER returns the TOTP secret
+   * or any backup code. The view is audited.
+   */
+  async get2faStatus(userId: string, ctx: ProfileContext = {}) {
+    const exists = await adminUserProfileRepository.findUserState(userId);
+    if (!exists) throw new NotFoundError('User not found', 'USER_NOT_FOUND');
+    const status = await securityService.adminGet2faStatus(userId);
+    await recordAudit({
+      actorType: 'ADMIN',
+      actorId: ctx.actorId,
+      action: AuditAction.ADMIN_USER_2FA_STATUS_VIEWED,
+      entityType: 'user',
+      entityId: userId,
+      ip: ctx.ip,
+      userAgent: ctx.userAgent,
+      requestId: ctx.requestId,
+    });
+    return status;
+  },
+
+  /**
+   * Admin reset/disable of a user's 2FA (e.g. when the user is locked out of
+   * their authenticator). RBAC-gated upstream (users.security.manage). Clears the
+   * sealed secret + all backup codes via the security service — the admin never
+   * sees any secret. Always audit-logged to both trails.
+   */
+  async resetUser2fa(userId: string, ctx: ProfileContext = {}) {
+    const exists = await adminUserProfileRepository.findUserState(userId);
+    if (!exists) throw new NotFoundError('User not found', 'USER_NOT_FOUND');
+    await securityService.adminResetUser2fa(userId);
+    await recordAudit({
+      actorType: 'ADMIN',
+      actorId: ctx.actorId,
+      action: AuditAction.ADMIN_USER_2FA_RESET,
+      entityType: 'user',
+      entityId: userId,
+      ip: ctx.ip,
+      userAgent: ctx.userAgent,
+      requestId: ctx.requestId,
+      metadata: { by: 'ADMIN' },
+    });
+    if (ctx.actorId) {
+      await adminUserProfileRepository.writeAdminLog({
+        adminId: ctx.actorId,
+        action: 'admin.user.2fa_reset',
+        targetType: 'user',
+        targetId: userId,
+        afterState: { twoFaEnabled: false },
+        ip: ctx.ip,
+        requestId: ctx.requestId,
+      });
+    }
+    return { reset: true };
   },
 
   /** Paginated compliance notes for a user (RBAC compliance.view upstream). */

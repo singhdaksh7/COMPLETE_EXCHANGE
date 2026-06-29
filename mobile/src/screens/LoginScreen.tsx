@@ -11,7 +11,7 @@ import { colors, font, spacing, radius } from '@/theme';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function LoginScreen() {
-  const { login } = useAuth();
+  const { login, complete2fa } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -19,6 +19,10 @@ export default function LoginScreen() {
   const [remember, setRemember] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 2FA second step: set once the backend returns a challenge for a valid
+  // password. While set, the TOTP/backup-code card replaces the login form.
+  const [challengeToken, setChallengeToken] = useState<string | null>(null);
+  const [twoFaCode, setTwoFaCode] = useState('');
 
   const emailValid = EMAIL_RE.test(email.trim());
   const canSubmit = emailValid && password.length >= 1;
@@ -27,7 +31,11 @@ export default function LoginScreen() {
     setError(null);
     setBusy(true);
     try {
-      await login(email.trim(), password);
+      const outcome = await login(email.trim(), password);
+      if (outcome.status === '2fa_required') {
+        setChallengeToken(outcome.challengeToken);
+        return;
+      }
       router.replace('/(tabs)');
     } catch (err) {
       setError(actionErrorMessage(err));
@@ -36,9 +44,77 @@ export default function LoginScreen() {
     }
   };
 
+  const onVerify2fa = async () => {
+    if (!challengeToken) return;
+    setError(null);
+    setBusy(true);
+    try {
+      await complete2fa(challengeToken, twoFaCode.trim());
+      router.replace('/(tabs)');
+    } catch (err) {
+      setError(actionErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const cancelChallenge = () => {
+    setChallengeToken(null);
+    setTwoFaCode('');
+    setError(null);
+  };
+
   const handleOAuth = (provider: string) => {
     // Stub OAuth login
   };
+
+  if (challengeToken) {
+    return (
+      <Screen contentStyle={styles.screenContent}>
+        <View style={styles.header}>
+          <BrandMark size="md" />
+          <Text style={styles.title}>Two-Factor Verification</Text>
+          <Text style={styles.subtitle}>
+            Enter the 6-digit code from your authenticator app, or a backup code.
+          </Text>
+        </View>
+
+        <View style={styles.form}>
+          <View style={styles.stackedInputBox}>
+            <View style={{ flex: 1, justifyContent: 'center' }}>
+              <Text style={styles.stackedLabel}>Authentication code</Text>
+              <TextInput
+                value={twoFaCode}
+                onChangeText={setTwoFaCode}
+                keyboardType="number-pad"
+                autoComplete="one-time-code"
+                autoCapitalize="none"
+                autoFocus
+                placeholder="123456 or backup code"
+                placeholderTextColor={colors.muted2}
+                style={styles.stackedInput}
+              />
+            </View>
+            <Ionicons name="shield-checkmark" size={20} color={colors.brand} />
+          </View>
+
+          {error ? <Text style={styles.err}>{error}</Text> : null}
+
+          <GoldButton
+            title="Verify & Sign In"
+            onPress={onVerify2fa}
+            loading={busy}
+            disabled={twoFaCode.trim().length < 6}
+          />
+
+          <Pressable style={styles.backRow} onPress={cancelChallenge} hitSlop={10}>
+            <Ionicons name="arrow-back" size={14} color={colors.muted} />
+            <Text style={styles.muted}>Back to login</Text>
+          </Pressable>
+        </View>
+      </Screen>
+    );
+  }
 
   return (
     <Screen contentStyle={styles.screenContent}>
@@ -232,6 +308,7 @@ const styles = StyleSheet.create({
   oauthBtnText: { color: colors.ink, fontSize: font.sm, fontWeight: '700' },
 
   footerRow: { flexDirection: 'row', justifyContent: 'center', gap: 6, alignItems: 'center', marginTop: spacing.xs },
+  backRow: { flexDirection: 'row', justifyContent: 'center', gap: 6, alignItems: 'center', marginTop: spacing.xs },
   muted: { color: colors.muted, fontSize: font.sm },
 
   // Trust Banner Columns style

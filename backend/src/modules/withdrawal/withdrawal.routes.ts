@@ -5,6 +5,7 @@ import { validate } from '../../middleware/validate';
 import { idempotency } from '../../middleware/idempotency';
 import { sensitiveRateLimiter } from '../../middleware/rate-limit';
 import { requireUserFeature } from '../../middleware/require-user-feature';
+import { requireStepUp } from '../../middleware/require-step-up';
 import { withdrawalController } from './withdrawal.controller';
 import {
   addAddressSchema,
@@ -23,6 +24,10 @@ export const withdrawalRouter = Router();
 withdrawalRouter.post(
   '/addresses',
   authenticate,
+  // Step-up before changing the withdrawal address allowlist (sensitive action).
+  // Crypto remains globally disabled by the feature gate on the request route;
+  // this only adds a verification gate and does not enable crypto.
+  requireStepUp(),
   validate({ body: addAddressSchema }),
   asyncHandler(withdrawalController.addAddress),
 );
@@ -45,6 +50,9 @@ withdrawalRouter.post(
   // block here — crypto withdrawals already enter PENDING_APPROVAL dual-control
   // review, which satisfies the "manual review before withdrawal" requirement.
   requireUserFeature('canWithdrawCrypto', 'blockHighRiskActivity'),
+  // Step-up verification gate (fresh TOTP/backup or password). Verification only;
+  // the withdrawal lifecycle/accounting in the service is unchanged.
+  requireStepUp(),
   idempotency(),
   asyncHandler(withdrawalController.create),
 );

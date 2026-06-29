@@ -33,11 +33,13 @@ import { mailer } from '../../lib/mailer';
 import { logger } from '../../lib/logger';
 import { notificationService } from '../notification/notification.service';
 import { featureControlsService } from '../feature-controls/feature-controls.service';
+import { securityService } from '../user-security/user-security.service';
 import { recordAudit, AuditAction } from '../../lib/audit';
 import type {
   AuthResult,
   AuthContext,
   LoginInput,
+  LoginResult,
   ActivityEventDto,
   MeResult,
   PublicUser,
@@ -272,7 +274,7 @@ export const authService = {
   // ------------------------------------------------------------------
   // Login
   // ------------------------------------------------------------------
-  async login(input: LoginInput): Promise<AuthResult> {
+  async login(input: LoginInput): Promise<LoginResult> {
     // Brute-force lockout: reject before doing any work if this (email, IP) has
     // exceeded the failed-attempt threshold inside the rolling window. We do
     // NOT record the blocked attempt, so an active attack does not perpetually
@@ -362,6 +364,28 @@ export const authService = {
       );
     }
 
+    // 2FA gate: if the account has TOTP enabled, do NOT issue a session here.
+    // Return a short-lived, single-purpose challenge token; the client must call
+    // /auth/2fa/verify with a current TOTP or backup code to receive real tokens.
+    if (user.totpEnabled) {
+      const challengeToken = await securityService.issueLoginChallenge(user.id);
+      await recordAudit({
+        actorType: 'USER',
+        actorId: user.id,
+        action: AuditAction.TWO_FA_LOGIN_REQUIRED,
+        entityType: 'user',
+        entityId: user.id,
+        ip: input.ip,
+        userAgent: input.userAgent,
+        requestId: input.requestId,
+      });
+      return {
+        twoFactorRequired: true,
+        challengeToken,
+        methods: ['totp', 'backup_code'],
+      };
+    }
+
     const tokens = await this.issueSession(user, {
       ip: input.ip,
       userAgent: input.userAgent,
@@ -378,6 +402,73 @@ export const authService = {
       requestId: input.requestId,
     });
 
+    return { user: toPublicUser(user), tokens };
+  },
+
+  /**
+   * Second step of a 2FA-gated login. Redeems the single-use challenge token,
+   * verifies a current TOTP or one-time backup code, and only THEN issues the
+   * access/refresh session. A bad code is audited and rejected; a valid one
+   * mints real tokens exactly as a normal login would.
+   */
+  async verify2fa(
+    challengeToken: string,
+    code: string,
+    ctx: AuthContext = {},
+  ): Promise<AuthResult> {
+    const userId = await securityService.consumeLoginChallenge(challengeToken);
+    if (!userId) {
+      throw new UnauthorizedError(
+        'Invalid or expired 2FA challenge',
+        'TWO_FA_CHALLENGE_INVALID',
+      );
+    }
+    const user = await authRepository.findUserById(userId);
+    if (!user || user.status !== 'ACTIVE') {
+      throw new ForbiddenError('Account is not active', 'ACCOUNT_NOT_ACTIVE');
+    }
+
+    const result = await securityService.verifySecondFactor(userId, code);
+    if (!result.ok) {
+      await recordAudit({
+        actorType: 'USER',
+        actorId: userId,
+        action: AuditAction.TWO_FA_LOGIN_FAILED,
+        entityType: 'user',
+        entityId: userId,
+        ip: ctx.ip,
+        userAgent: ctx.userAgent,
+        requestId: ctx.requestId,
+      });
+      throw new UnauthorizedError('Invalid 2FA code', 'INVALID_TOTP');
+    }
+
+    const tokens = await this.issueSession(user, {
+      ip: ctx.ip,
+      userAgent: ctx.userAgent,
+    });
+    await recordAudit({
+      actorType: 'USER',
+      actorId: userId,
+      action: AuditAction.TWO_FA_LOGIN_SUCCESS,
+      entityType: 'user',
+      entityId: userId,
+      ip: ctx.ip,
+      userAgent: ctx.userAgent,
+      requestId: ctx.requestId,
+      metadata: { method: result.method },
+    });
+    await recordAudit({
+      actorType: 'USER',
+      actorId: userId,
+      action: AuditAction.LOGIN,
+      entityType: 'user',
+      entityId: userId,
+      ip: ctx.ip,
+      userAgent: ctx.userAgent,
+      requestId: ctx.requestId,
+      metadata: { method: 'password+2fa' },
+    });
     return { user: toPublicUser(user), tokens };
   },
 

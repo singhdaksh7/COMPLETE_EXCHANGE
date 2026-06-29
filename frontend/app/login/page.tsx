@@ -10,6 +10,7 @@ import { tokenStore } from '@/lib/auth';
 import { errorMessage } from '@/lib/api';
 import { USER_API_URL } from '@/lib/config';
 import { OtpAuthForm } from '@/components/otp-auth-form';
+import { isTwoFactorChallenge } from '@/lib/types';
 
 /** Map a backend OAuth error code (?error=) to a safe, user-facing message. */
 function oauthErrorMessage(code: string | null): string | null {
@@ -50,9 +51,26 @@ function LoginPageContent() {
   const [remember, setRemember] = useState(true);
   // Branded password login (default, deployed) or passwordless one-time email code.
   const [authMode, setAuthMode] = useState<'password' | 'otp'>('password');
+  // 2FA challenge: set when the backend returns 2FA_REQUIRED after a valid
+  // password. While set, the second-step (TOTP / backup code) card is shown.
+  const [challengeToken, setChallengeToken] = useState<string | null>(null);
+  const [twoFaCode, setTwoFaCode] = useState('');
 
   const m = useMutation({
     mutationFn: () => userApi.login({ email: email.trim(), password }),
+    onSuccess: (res) => {
+      if (isTwoFactorChallenge(res.data)) {
+        setChallengeToken(res.data.challengeToken);
+        return;
+      }
+      const { accessToken, refreshToken } = res.data.tokens;
+      tokenStore.setUser(accessToken, refreshToken);
+      router.replace('/dashboard');
+    },
+  });
+
+  const verify = useMutation({
+    mutationFn: () => userApi.verify2fa(challengeToken ?? '', twoFaCode.trim()),
     onSuccess: (res) => {
       const { accessToken, refreshToken } = res.data.tokens;
       tokenStore.setUser(accessToken, refreshToken);
@@ -68,6 +86,19 @@ function LoginPageContent() {
       <div className="relative z-10 flex flex-1 items-center justify-center px-5 py-10 lg:px-10">
         <div className="grid w-full min-w-0 max-w-6xl items-center gap-10 lg:grid-cols-2 lg:gap-16">
           <HeroSection />
+          {challengeToken ? (
+            <TwoFactorChallengeCard
+              code={twoFaCode}
+              isPending={verify.isPending}
+              error={verify.isError ? errorMessage(verify.error) : null}
+              onCode={setTwoFaCode}
+              onSubmit={() => verify.mutate()}
+              onCancel={() => {
+                setChallengeToken(null);
+                setTwoFaCode('');
+              }}
+            />
+          ) : (
           <LoginCard
             email={email}
             password={password}
@@ -96,6 +127,7 @@ function LoginPageContent() {
             onUseOtp={() => setAuthMode('otp')}
             onUsePassword={() => setAuthMode('password')}
           />
+          )}
         </div>
       </div>
 
@@ -627,5 +659,79 @@ function AppleIcon(p: SVGProps<SVGSVGElement>) {
     <svg viewBox="0 0 24 24" fill="currentColor" {...p}>
       <path d="M16.4 12.7c0-2.4 2-3.6 2-3.6a4.3 4.3 0 0 0-3.4-1.9c-1.4-.1-2.8.9-3.5.9s-1.8-.8-3-.8a4.6 4.6 0 0 0-3.9 2.4c-1.6 2.9-.4 7.2 1.2 9.5.8 1.2 1.7 2.4 3 2.4 1.2-.1 1.6-.8 3-.8s1.8.8 3 .7c1.3 0 2.1-1.1 2.9-2.3a10 10 0 0 0 1.3-2.7s-2.5-1-2.6-3.9ZM14 6.3a4 4 0 0 0 1-3 4.3 4.3 0 0 0-2.8 1.5 3.8 3.8 0 0 0-1 2.9c1.1.1 2.2-.6 2.8-1.4Z" />
     </svg>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Login second step — 2FA challenge (TOTP or backup code)            */
+/* ------------------------------------------------------------------ */
+function TwoFactorChallengeCard({
+  code,
+  isPending,
+  error,
+  onCode,
+  onSubmit,
+  onCancel,
+}: {
+  code: string;
+  isPending: boolean;
+  error: string | null;
+  onCode: (v: string) => void;
+  onSubmit: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="w-full min-w-0 rounded-3xl border border-gold/20 bg-black/40 p-7 backdrop-blur-xl sm:p-9">
+      <h1 className="text-2xl font-semibold text-white">Two-factor authentication</h1>
+      <p className="mt-2 text-sm text-white/60">
+        Enter the 6-digit code from your authenticator app, or one of your backup
+        codes.
+      </p>
+
+      <form
+        className="mt-7 space-y-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!isPending && code.trim().length >= 6) onSubmit();
+        }}
+      >
+        <label className="block text-sm font-medium text-white/80" htmlFor="twofa-code">
+          Authentication code
+        </label>
+        <input
+          id="twofa-code"
+          name="twofa-code"
+          inputMode="text"
+          autoComplete="one-time-code"
+          autoFocus
+          value={code}
+          onChange={(e) => onCode(e.target.value)}
+          placeholder="123456 or backup code"
+          className="w-full rounded-xl border border-white/15 bg-black/50 px-4 py-3 text-center text-lg tracking-widest text-white outline-none focus:border-gold/60"
+        />
+
+        {error ? (
+          <p className="rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-300" role="alert">
+            {error}
+          </p>
+        ) : null}
+
+        <button
+          type="submit"
+          disabled={isPending || code.trim().length < 6}
+          className="w-full rounded-xl bg-gold py-3 font-semibold text-black transition hover:brightness-110 disabled:opacity-50"
+        >
+          {isPending ? 'Verifying…' : 'Verify & sign in'}
+        </button>
+
+        <button
+          type="button"
+          onClick={onCancel}
+          className="w-full rounded-xl border border-white/15 py-2.5 text-sm text-white/70 transition hover:text-white"
+        >
+          Back to login
+        </button>
+      </form>
+    </div>
   );
 }

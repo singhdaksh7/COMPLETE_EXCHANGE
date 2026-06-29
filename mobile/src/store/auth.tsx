@@ -2,7 +2,16 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { tokenStore } from './tokenStore';
 import { setUnauthorizedHandler } from '@/api/client';
 import { userApi } from '@/api/userApi';
-import type { PublicUser, UserFeatureMap } from '@/types/api';
+import { isTwoFactorChallenge, type PublicUser, type UserFeatureMap } from '@/types/api';
+
+/**
+ * Result of a password login. Either the session is established, or the account
+ * has 2FA enabled and a second factor is required to finish (the caller then
+ * collects a code and calls complete2fa with the challenge token).
+ */
+export type LoginOutcome =
+  | { status: 'authenticated'; user: PublicUser }
+  | { status: '2fa_required'; challengeToken: string };
 
 /**
  * Central auth/session context. Holds the current user, bootstraps from secure
@@ -21,7 +30,9 @@ interface AuthState {
    */
   features: UserFeatureMap | null;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<PublicUser>;
+  login: (email: string, password: string) => Promise<LoginOutcome>;
+  /** Finish a 2FA-gated login with the challenge token + TOTP/backup code. */
+  complete2fa: (challengeToken: string, code: string) => Promise<PublicUser>;
   register: (email: string, password: string, phone?: string) => Promise<{ emailVerificationRequired: boolean }>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -68,12 +79,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const login = useCallback(
-    async (email: string, password: string) => {
+    async (email: string, password: string): Promise<LoginOutcome> => {
       const res = await userApi.login({ email, password });
+      // 2FA-enabled accounts get no session here — only a short-lived challenge
+      // token. No tokens are stored until the second factor is verified.
+      if (isTwoFactorChallenge(res.data)) {
+        return { status: '2fa_required', challengeToken: res.data.challengeToken };
+      }
       await tokenStore.set(res.data.tokens);
       setUser(res.data.user);
       // The login response has no feature map; pull it from /auth/me so the
       // session knows what's enabled (crypto stays hidden in INR-only mode).
+      await refreshUser();
+      return { status: 'authenticated', user: res.data.user };
+    },
+    [refreshUser],
+  );
+
+  const complete2fa = useCallback(
+    async (challengeToken: string, code: string) => {
+      const res = await userApi.verify2fa(challengeToken, code);
+      await tokenStore.set(res.data.tokens);
+      setUser(res.data.user);
       await refreshUser();
       return res.data.user;
     },
@@ -98,11 +125,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       features,
       isAuthenticated: !!user,
       login,
+      complete2fa,
       register,
       logout,
       refreshUser,
     }),
-    [bootstrapping, user, features, login, register, logout, refreshUser],
+    [bootstrapping, user, features, login, complete2fa, register, logout, refreshUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

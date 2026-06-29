@@ -38,6 +38,40 @@ export interface LoginData {
   tokens: TokenPair;
 }
 
+// ---- 2FA / MFA (TOTP) + step-up (Stage 3) ----
+export interface TwoFactorChallengeData {
+  twoFactorRequired: true;
+  challengeToken: string;
+  methods: ('totp' | 'backup_code')[];
+}
+
+export type LoginResult = LoginData | TwoFactorChallengeData;
+
+/** Narrow a login result to the 2FA-challenge branch. */
+export function isTwoFactorChallenge(v: LoginResult): v is TwoFactorChallengeData {
+  return (v as TwoFactorChallengeData).twoFactorRequired === true;
+}
+
+export interface TwoFaStatusData {
+  enabled: boolean;
+  backupCodesRemaining: number;
+}
+
+export interface TwoFaSetupData {
+  secret: string;
+  otpauthUri: string;
+}
+
+export interface TwoFaConfirmData {
+  enabled: true;
+  backupCodes: string[];
+}
+
+export interface StepUpData {
+  stepUpToken: string;
+  expiresInSeconds: number;
+}
+
 /**
  * Effective per-user feature access from /auth/me (already AND-ed with the
  * global compliance flags on the backend). The app MUST gate UI on THIS map —

@@ -51,6 +51,22 @@ export const AuditAction = {
   OTP_SIGNUP: 'auth.otp_signup',
   // Session / device security (Stage 3D).
   LOGIN_NEW_DEVICE: 'auth.login_new_device',
+  // User 2FA / MFA (TOTP) lifecycle.
+  TWO_FA_SETUP_STARTED: 'user.2fa_setup_started',
+  TWO_FA_ENABLED: 'user.2fa_enabled',
+  TWO_FA_DISABLE_FAILED: 'user.2fa_disable_failed',
+  TWO_FA_DISABLED: 'user.2fa_disabled',
+  TWO_FA_LOGIN_REQUIRED: 'user.2fa_login_required',
+  TWO_FA_LOGIN_SUCCESS: 'user.2fa_login_success',
+  TWO_FA_LOGIN_FAILED: 'user.2fa_login_failed',
+  BACKUP_CODE_USED: 'user.backup_code_used',
+  BACKUP_CODES_REGENERATED: 'user.backup_codes_regenerated',
+  // Step-up authentication for sensitive user actions.
+  STEP_UP_VERIFIED: 'user.step_up_verified',
+  STEP_UP_FAILED: 'user.step_up_failed',
+  // Admin-initiated user 2FA management.
+  ADMIN_USER_2FA_RESET: 'admin.user_2fa_reset',
+  ADMIN_USER_2FA_STATUS_VIEWED: 'admin.user_2fa_status_viewed',
 } as const;
 
 export async function recordAudit(input: AuditInput): Promise<void> {

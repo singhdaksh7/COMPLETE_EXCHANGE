@@ -76,6 +76,24 @@ export const adminUserProfileController = {
     sendSuccess(res, result);
   },
 
+  async get2faStatus(req: Request, res: Response): Promise<void> {
+    if (!req.admin) throw new UnauthorizedError();
+    const result = await adminUserProfileService.get2faStatus(
+      req.params.userId,
+      ctx(req),
+    );
+    sendSuccess(res, result);
+  },
+
+  async resetUser2fa(req: Request, res: Response): Promise<void> {
+    if (!req.admin) throw new UnauthorizedError();
+    const result = await adminUserProfileService.resetUser2fa(
+      req.params.userId,
+      ctx(req),
+    );
+    sendSuccess(res, result);
+  },
+
   async listNotes(req: Request, res: Response): Promise<void> {
     if (!req.admin) throw new UnauthorizedError();
     const q = req.query as unknown as NotesQueryDto;

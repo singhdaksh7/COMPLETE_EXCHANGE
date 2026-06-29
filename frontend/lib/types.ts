@@ -94,6 +94,42 @@ export interface LoginData {
   tokens: TokenPair;
 }
 
+/** Login response when the account has 2FA enabled — no session yet. */
+export interface TwoFactorChallengeData {
+  twoFactorRequired: true;
+  challengeToken: string;
+  methods: Array<'totp' | 'backup_code'>;
+}
+
+export type LoginResult = LoginData | TwoFactorChallengeData;
+
+/** Narrow a login result to the 2FA-challenge branch. */
+export function isTwoFactorChallenge(
+  v: LoginResult,
+): v is TwoFactorChallengeData {
+  return (v as TwoFactorChallengeData).twoFactorRequired === true;
+}
+
+export interface TwoFaStatusData {
+  enabled: boolean;
+  backupCodesRemaining: number;
+}
+
+export interface TwoFaSetupData {
+  secret: string;
+  otpauthUri: string;
+}
+
+export interface TwoFaConfirmData {
+  enabled: true;
+  backupCodes: string[];
+}
+
+export interface StepUpData {
+  stepUpToken: string;
+  expiresInSeconds: number;
+}
+
 export interface UserSession {
   id: string;
   ip: string | null;

@@ -26,6 +26,11 @@ import type {
   SubmitEnhancedKycInput,
   LedgerEntry,
   LoginData,
+  LoginResult,
+  StepUpData,
+  TwoFaConfirmData,
+  TwoFaSetupData,
+  TwoFaStatusData,
   Market,
   MeData,
   NotificationList,
@@ -102,7 +107,14 @@ export const userApi = {
     apiFetch<RegisterData>(USER_API_URL, '/auth/register', { method: 'POST', body }),
 
   login: (body: { email: string; password: string }) =>
-    apiFetch<LoginData>(USER_API_URL, '/auth/login', { method: 'POST', body }),
+    apiFetch<LoginResult>(USER_API_URL, '/auth/login', { method: 'POST', body }),
+
+  /** Second step of a 2FA-gated login: challenge token + TOTP/backup code. */
+  verify2fa: (challengeToken: string, code: string) =>
+    apiFetch<LoginData>(USER_API_URL, '/auth/2fa/verify', {
+      method: 'POST',
+      body: { challengeToken, code },
+    }),
 
   /** Redeem the one-time OAuth code (from /auth/callback) for a normal session. */
   oauthExchange: (body: { code: string }) =>
@@ -151,6 +163,30 @@ export const userApi = {
     authed<void>(`/auth/sessions/${sessionId}`, { method: 'DELETE' }),
 
   listActivity: () => authed<{ items: UserActivityEvent[] }>('/auth/activity'),
+
+  // ---- 2FA / MFA (TOTP) + step-up (Stage 3) ----
+  get2faStatus: () => authed<TwoFaStatusData>('/security/2fa/status'),
+
+  setup2fa: () => authed<TwoFaSetupData>('/security/2fa/setup', { method: 'POST' }),
+
+  confirm2fa: (code: string) =>
+    authed<TwoFaConfirmData>('/security/2fa/confirm', { method: 'POST', body: { code } }),
+
+  disable2fa: (password: string, code: string) =>
+    authed<{ disabled: true }>('/security/2fa/disable', {
+      method: 'POST',
+      body: { password, code },
+    }),
+
+  regenerateBackupCodes: (code: string) =>
+    authed<{ backupCodes: string[] }>('/security/2fa/backup-codes/regenerate', {
+      method: 'POST',
+      body: { code },
+    }),
+
+  /** Verify a fresh factor (TOTP/backup if 2FA on, else password) → step-up token. */
+  stepUp: (input: { password?: string; code?: string }) =>
+    authed<StepUpData>('/security/step-up', { method: 'POST', body: input }),
 
   // ---- notifications ----
   listNotifications: (cursor?: string) =>
@@ -242,11 +278,16 @@ export const userApi = {
   listInrDeposits: () => authed<Page<InrDeposit>>('/inr/deposits'),
 
   // ---- INR withdrawal (Phase 16: manual payout, admin-processed) ----
-  createInrWithdrawal: (input: CreateInrWithdrawalInput) =>
+  // Requires a step-up token (X-Step-Up-Token) obtained from stepUp(); the
+  // backend rejects the request with STEP_UP_REQUIRED otherwise.
+  createInrWithdrawal: (input: CreateInrWithdrawalInput, stepUpToken?: string) =>
     authed<InrWithdrawal>('/inr/withdrawals', {
       method: 'POST',
       body: input,
-      headers: { 'Idempotency-Key': idemKey() },
+      headers: {
+        'Idempotency-Key': idemKey(),
+        ...(stepUpToken ? { 'X-Step-Up-Token': stepUpToken } : {}),
+      },
     }),
 
   listInrWithdrawals: () => authed<Page<InrWithdrawal>>('/inr/withdrawals'),

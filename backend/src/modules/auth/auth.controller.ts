@@ -47,6 +47,15 @@ export const authController = {
     sendSuccess(res, result);
   },
 
+  async verify2fa(req: Request, res: Response): Promise<void> {
+    const result = await authService.verify2fa(
+      req.body.challengeToken,
+      req.body.code,
+      ctx(req),
+    );
+    sendSuccess(res, result);
+  },
+
   // ---- Google OAuth ----
   async googleStart(_req: Request, res: Response): Promise<void> {
     try {

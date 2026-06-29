@@ -9,6 +9,7 @@ import type {
   KycProfile,
   LedgerEntry,
   LoginData,
+  LoginResult,
   Market,
   MeData,
   NotificationList,
@@ -18,8 +19,12 @@ import type {
   Page,
   PlaceOrderInput,
   RegisterData,
+  StepUpData,
   Ticker,
   Trade,
+  TwoFaConfirmData,
+  TwoFaSetupData,
+  TwoFaStatusData,
   UserCompliance,
   UserCryptoDeposit,
   UserSession,
@@ -47,7 +52,14 @@ export const userApi = {
     apiFetch<RegisterData>('/auth/register', { method: 'POST', body }),
 
   login: (body: { email: string; password: string }) =>
-    apiFetch<LoginData>('/auth/login', { method: 'POST', body }),
+    apiFetch<LoginResult>('/auth/login', { method: 'POST', body }),
+
+  /** Second step of a 2FA-gated login: challenge token + TOTP/backup code. */
+  verify2fa: (challengeToken: string, code: string) =>
+    apiFetch<LoginData>('/auth/2fa/verify', {
+      method: 'POST',
+      body: { challengeToken, code },
+    }),
 
   verifyEmail: (body: { token: string }) =>
     apiFetch<void>('/auth/verify-email', { method: 'POST', body }),
@@ -64,6 +76,25 @@ export const userApi = {
 
   revokeSession: (sessionId: string) =>
     authedFetch<void>(`/auth/sessions/${sessionId}`, { method: 'DELETE' }),
+
+  // ---- 2FA / MFA (TOTP) + step-up (Stage 3) ----
+  get2faStatus: () => authedFetch<TwoFaStatusData>('/security/2fa/status'),
+  setup2fa: () => authedFetch<TwoFaSetupData>('/security/2fa/setup', { method: 'POST' }),
+  confirm2fa: (code: string) =>
+    authedFetch<TwoFaConfirmData>('/security/2fa/confirm', { method: 'POST', body: { code } }),
+  disable2fa: (password: string, code: string) =>
+    authedFetch<{ disabled: true }>('/security/2fa/disable', {
+      method: 'POST',
+      body: { password, code },
+    }),
+  regenerateBackupCodes: (code: string) =>
+    authedFetch<{ backupCodes: string[] }>('/security/2fa/backup-codes/regenerate', {
+      method: 'POST',
+      body: { code },
+    }),
+  /** Verify a fresh factor (TOTP/backup if 2FA on, else password) → step-up token. */
+  stepUp: (input: { password?: string; code?: string }) =>
+    authedFetch<StepUpData>('/security/step-up', { method: 'POST', body: input }),
 
   // ---- portfolio / wallet ----
   walletOverview: () => authedFetch<WalletOverview>('/wallets/overview'),
@@ -89,11 +120,16 @@ export const userApi = {
   listInrDeposits: () => authedFetch<Page<InrDeposit>>('/inr/deposits'),
 
   // ---- INR withdrawal (manual payout: UPI / bank, admin-processed) ----
-  createInrWithdrawal: (input: CreateInrWithdrawalInput) =>
+  // Requires a fresh step-up token (X-Step-Up-Token) from stepUp(); the backend
+  // rejects the request with STEP_UP_REQUIRED otherwise.
+  createInrWithdrawal: (input: CreateInrWithdrawalInput, stepUpToken?: string) =>
     authedFetch<InrWithdrawal>('/inr/withdrawals', {
       method: 'POST',
       body: input,
-      headers: { 'Idempotency-Key': idemKey() },
+      headers: {
+        'Idempotency-Key': idemKey(),
+        ...(stepUpToken ? { 'X-Step-Up-Token': stepUpToken } : {}),
+      },
     }),
   listInrWithdrawals: () => authedFetch<Page<InrWithdrawal>>('/inr/withdrawals'),
 

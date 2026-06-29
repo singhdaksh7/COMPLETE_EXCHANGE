@@ -10,7 +10,7 @@ import { userApi } from '@/api/userApi';
 import { actionErrorMessage } from '@/api/client';
 import { colors, font, radius, spacing } from '@/theme';
 import { fmtDate } from '@/utils/format';
-import type { UserSession } from '@/types/api';
+import type { TwoFaSetupData, TwoFaStatusData, UserSession } from '@/types/api';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -28,6 +28,316 @@ function SecurityOptionRow({ icon, title, sub }: { icon: IoniconName; title: str
         <Text style={styles.comingSoonText}>Coming soon</Text>
       </View>
     </View>
+  );
+}
+
+/** One-time reveal of backup codes — never retrievable again. */
+function BackupCodesPanel({ codes }: { codes: string[] }) {
+  return (
+    <View style={styles.backupPanel}>
+      <Text style={styles.backupHeading}>SAVE YOUR BACKUP CODES</Text>
+      <Text style={styles.backupSub}>
+        Each code works once if you lose your authenticator. They will not be shown
+        again — store them somewhere safe now.
+      </Text>
+      <View style={styles.backupGrid}>
+        {codes.map((c) => (
+          <Text key={c} style={styles.backupCode}>
+            {c}
+          </Text>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Real authenticator (TOTP) 2FA management. Enrollment shows the secret +
+ * otpauth URI for manual entry, confirms with a code, and reveals one-time
+ * backup codes. When enabled, supports regenerating backup codes and disabling
+ * (password + current code). No fake "enabled" state — reflects backend status.
+ */
+function TwoFactorSection() {
+  const status = useApi<TwoFaStatusData>(() => userApi.get2faStatus().then((r) => r.data), []);
+
+  const [setupData, setSetupData] = useState<TwoFaSetupData | null>(null);
+  const [confirmCode, setConfirmCode] = useState('');
+  const [revealedCodes, setRevealedCodes] = useState<string[] | null>(null);
+  const [mode, setMode] = useState<'idle' | 'disable' | 'regen'>('idle');
+  const [disablePw, setDisablePw] = useState('');
+  const [factorCode, setFactorCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const enabled = status.data?.enabled ?? false;
+  const remaining = status.data?.backupCodesRemaining ?? 0;
+
+  function resetForms() {
+    setSetupData(null);
+    setConfirmCode('');
+    setMode('idle');
+    setDisablePw('');
+    setFactorCode('');
+    setErr(null);
+  }
+
+  const beginSetup = async () => {
+    setErr(null);
+    setMsg(null);
+    setBusy(true);
+    try {
+      const res = await userApi.setup2fa();
+      setSetupData(res.data);
+    } catch (e) {
+      setErr(actionErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmSetup = async () => {
+    setErr(null);
+    setBusy(true);
+    try {
+      const res = await userApi.confirm2fa(confirmCode.trim());
+      setSetupData(null);
+      setConfirmCode('');
+      setRevealedCodes(res.data.backupCodes);
+      setMsg('Two-factor authentication is now enabled.');
+      status.reload();
+    } catch (e) {
+      setErr(actionErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const regenerate = async () => {
+    setErr(null);
+    setBusy(true);
+    try {
+      const res = await userApi.regenerateBackupCodes(factorCode.trim());
+      resetForms();
+      setRevealedCodes(res.data.backupCodes);
+      setMsg('New backup codes generated. Previous codes are now void.');
+      status.reload();
+    } catch (e) {
+      setErr(actionErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const disable = async () => {
+    setErr(null);
+    setBusy(true);
+    try {
+      await userApi.disable2fa(disablePw, factorCode.trim());
+      resetForms();
+      setRevealedCodes(null);
+      setMsg('Two-factor authentication has been disabled.');
+      status.reload();
+    } catch (e) {
+      setErr(actionErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <GlassCard padded style={{ gap: spacing.md }}>
+      <View style={styles.twoFaHeaderRow}>
+        <View style={styles.secIcon}>
+          <Ionicons name="key-outline" size={18} color={colors.brand} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.secTitle}>Authenticator App</Text>
+          <Text style={styles.secSub}>Code required at sign-in and for withdrawals.</Text>
+        </View>
+        <View style={[styles.statusPill, enabled ? styles.statusPillOn : styles.statusPillOff]}>
+          <Text style={[styles.statusPillText, { color: enabled ? colors.up : colors.muted2 }]}>
+            {status.loading ? '…' : enabled ? 'ENABLED' : 'OFF'}
+          </Text>
+        </View>
+      </View>
+
+      {msg ? <Text style={styles.successText}>{msg}</Text> : null}
+      {err ? <Text style={styles.errorText}>{err}</Text> : null}
+
+      {revealedCodes && (
+        <>
+          <BackupCodesPanel codes={revealedCodes} />
+          <Pressable style={styles.ghostBtn} onPress={() => setRevealedCodes(null)}>
+            <Text style={styles.ghostBtnText}>I&rsquo;ve saved my backup codes</Text>
+          </Pressable>
+        </>
+      )}
+
+      {/* NOT ENABLED — enrollment */}
+      {!enabled && !revealedCodes && (
+        <>
+          {!setupData ? (
+            <Pressable
+              disabled={busy}
+              onPress={beginSetup}
+              style={[styles.submitBtn, busy && styles.submitBtnDisabled]}
+            >
+              <Text style={styles.submitBtnText}>{busy ? 'Starting…' : 'Set up 2FA'}</Text>
+            </Pressable>
+          ) : (
+            <View style={{ gap: spacing.sm }}>
+              <Text style={styles.secSub}>
+                Add this account to your authenticator app (Google Authenticator, Authy,
+                1Password), then enter the 6-digit code it shows.
+              </Text>
+              <Text style={styles.fieldLabel}>Manual entry key</Text>
+              <Text selectable style={styles.codeBlock}>
+                {setupData.secret}
+              </Text>
+              <Text style={styles.fieldLabel}>otpauth URI</Text>
+              <Text selectable style={styles.codeBlockSmall}>
+                {setupData.otpauthUri}
+              </Text>
+              <View style={styles.stackedInputBox}>
+                <Text style={styles.stackedLabel}>6-digit code</Text>
+                <TextInput
+                  value={confirmCode}
+                  onChangeText={setConfirmCode}
+                  keyboardType="number-pad"
+                  placeholder="123456"
+                  placeholderTextColor={colors.muted2}
+                  style={styles.stackedInput}
+                />
+              </View>
+              <Pressable
+                disabled={busy || confirmCode.trim().length < 6}
+                onPress={confirmSetup}
+                style={[
+                  styles.submitBtn,
+                  (busy || confirmCode.trim().length < 6) && styles.submitBtnDisabled,
+                ]}
+              >
+                <Text style={styles.submitBtnText}>{busy ? 'Verifying…' : 'Confirm & enable'}</Text>
+              </Pressable>
+              <Pressable style={styles.ghostBtn} onPress={resetForms}>
+                <Text style={styles.ghostBtnText}>Cancel</Text>
+              </Pressable>
+            </View>
+          )}
+        </>
+      )}
+
+      {/* ENABLED — manage */}
+      {enabled && (
+        <View style={{ gap: spacing.sm }}>
+          <View style={styles.metaRowBetween}>
+            <Text style={styles.secSub}>Backup codes remaining</Text>
+            <Text style={styles.metaVal}>{remaining}</Text>
+          </View>
+
+          {mode === 'idle' && (
+            <View style={{ gap: spacing.sm }}>
+              <Pressable
+                style={styles.ghostBtn}
+                onPress={() => {
+                  setMode('regen');
+                  setErr(null);
+                }}
+              >
+                <Text style={styles.ghostBtnText}>Regenerate backup codes</Text>
+              </Pressable>
+              <Pressable
+                style={styles.dangerBtn}
+                onPress={() => {
+                  setMode('disable');
+                  setErr(null);
+                }}
+              >
+                <Text style={styles.dangerBtnText}>Disable two-factor authentication</Text>
+              </Pressable>
+            </View>
+          )}
+
+          {mode === 'regen' && (
+            <View style={{ gap: spacing.sm }}>
+              <Text style={styles.secSub}>
+                Confirm with a current authenticator or backup code. This voids your
+                existing backup codes.
+              </Text>
+              <View style={styles.stackedInputBox}>
+                <Text style={styles.stackedLabel}>Authenticator or backup code</Text>
+                <TextInput
+                  value={factorCode}
+                  onChangeText={setFactorCode}
+                  autoCapitalize="characters"
+                  placeholder="Code"
+                  placeholderTextColor={colors.muted2}
+                  style={styles.stackedInput}
+                />
+              </View>
+              <Pressable
+                disabled={busy || factorCode.trim().length < 6}
+                onPress={regenerate}
+                style={[
+                  styles.submitBtn,
+                  (busy || factorCode.trim().length < 6) && styles.submitBtnDisabled,
+                ]}
+              >
+                <Text style={styles.submitBtnText}>{busy ? 'Generating…' : 'Generate new codes'}</Text>
+              </Pressable>
+              <Pressable style={styles.ghostBtn} onPress={resetForms}>
+                <Text style={styles.ghostBtnText}>Cancel</Text>
+              </Pressable>
+            </View>
+          )}
+
+          {mode === 'disable' && (
+            <View style={{ gap: spacing.sm }}>
+              <Text style={styles.secSub}>
+                Enter your password and a current authenticator/backup code to turn off
+                2FA. Your backup codes will be deleted.
+              </Text>
+              <View style={styles.stackedInputBox}>
+                <Text style={styles.stackedLabel}>Password</Text>
+                <TextInput
+                  value={disablePw}
+                  onChangeText={setDisablePw}
+                  secureTextEntry
+                  placeholder="••••••••"
+                  placeholderTextColor={colors.muted2}
+                  style={styles.stackedInput}
+                />
+              </View>
+              <View style={styles.stackedInputBox}>
+                <Text style={styles.stackedLabel}>Authenticator or backup code</Text>
+                <TextInput
+                  value={factorCode}
+                  onChangeText={setFactorCode}
+                  autoCapitalize="characters"
+                  placeholder="Code"
+                  placeholderTextColor={colors.muted2}
+                  style={styles.stackedInput}
+                />
+              </View>
+              <Pressable
+                disabled={busy || !disablePw || factorCode.trim().length < 6}
+                onPress={disable}
+                style={[
+                  styles.dangerSolidBtn,
+                  (busy || !disablePw || factorCode.trim().length < 6) && styles.submitBtnDisabled,
+                ]}
+              >
+                <Text style={styles.dangerSolidBtnText}>{busy ? 'Disabling…' : 'Disable 2FA'}</Text>
+              </Pressable>
+              <Pressable style={styles.ghostBtn} onPress={resetForms}>
+                <Text style={styles.ghostBtnText}>Cancel</Text>
+              </Pressable>
+            </View>
+          )}
+        </View>
+      )}
+    </GlassCard>
   );
 }
 
@@ -88,15 +398,13 @@ export default function SecurityScreen() {
           </Text>
         </View>
 
-        {/* Protection list */}
+        {/* Two-factor authentication (REAL — Stage 3) */}
+        <Text style={styles.sectionHeading}>Two-Factor Authentication</Text>
+        <TwoFactorSection />
+
+        {/* Other protection (not yet available — honestly labelled) */}
         <Text style={styles.sectionHeading}>Advanced Protection</Text>
         <GlassCard padded style={{ gap: spacing.sm }}>
-          <SecurityOptionRow
-            icon="key-outline"
-            title="Two-Factor Authentication"
-            sub="Authenticator-based 2FA on sign-in."
-          />
-          <View style={styles.separator} />
           <SecurityOptionRow
             icon="finger-print-outline"
             title="Biometric Login"
@@ -277,4 +585,28 @@ const styles = StyleSheet.create({
   // Logout
   logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, borderWidth: 1, borderColor: 'rgba(234,57,67,0.2)', borderRadius: radius.md, height: 44, backgroundColor: 'rgba(234,57,67,0.02)', marginTop: spacing.xl },
   logoutBtnText: { color: colors.down, fontSize: font.sm, fontWeight: '800' },
+
+  // Two-factor section
+  twoFaHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  statusPill: { borderRadius: radius.sm, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1 },
+  statusPillOn: { backgroundColor: 'rgba(34,197,94,0.08)', borderColor: 'rgba(34,197,94,0.25)' },
+  statusPillOff: { backgroundColor: colors.panel2, borderColor: colors.line },
+  statusPillText: { fontSize: font.xs - 2, fontWeight: '800', letterSpacing: 0.5 },
+  fieldLabel: { color: colors.muted2, fontSize: font.xs - 2, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  codeBlock: { color: colors.brand, fontSize: font.sm, fontFamily: 'monospace', backgroundColor: '#07070B', borderWidth: 1, borderColor: colors.line, borderRadius: radius.sm, padding: spacing.sm },
+  codeBlockSmall: { color: colors.muted, fontSize: font.xs - 1, fontFamily: 'monospace', backgroundColor: '#07070B', borderWidth: 1, borderColor: colors.line, borderRadius: radius.sm, padding: spacing.sm },
+  metaRowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  ghostBtn: { height: 42, borderRadius: radius.md, borderWidth: 1, borderColor: colors.line, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.glass },
+  ghostBtnText: { color: colors.muted, fontSize: font.sm, fontWeight: '700' },
+  dangerBtn: { height: 42, borderRadius: radius.md, borderWidth: 1, borderColor: 'rgba(234,57,67,0.2)', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(234,57,67,0.02)' },
+  dangerBtnText: { color: colors.down, fontSize: font.sm, fontWeight: '700' },
+  dangerSolidBtn: { height: 44, borderRadius: radius.md, backgroundColor: 'rgba(234,57,67,0.85)', alignItems: 'center', justifyContent: 'center' },
+  dangerSolidBtnText: { color: '#fff', fontSize: font.sm, fontWeight: '800' },
+
+  // Backup codes reveal
+  backupPanel: { borderWidth: 1, borderColor: 'rgba(245,194,66,0.25)', backgroundColor: 'rgba(245,194,66,0.04)', borderRadius: radius.md, padding: spacing.md, gap: 6 },
+  backupHeading: { color: colors.brand, fontSize: font.xs - 1, fontWeight: '800', letterSpacing: 0.5 },
+  backupSub: { color: colors.muted, fontSize: font.xs },
+  backupGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
+  backupCode: { color: '#fff', fontSize: font.sm, fontFamily: 'monospace', backgroundColor: '#07070B', borderRadius: radius.sm, paddingVertical: 6, paddingHorizontal: 10, minWidth: '47%', textAlign: 'center' },
 });

@@ -216,6 +216,32 @@ describe('login', () => {
     );
   });
 
+  it('returns a 2FA challenge (no session) when the account has TOTP enabled', async () => {
+    repo.findUserByEmail.mockResolvedValue(
+      makeUser({ passwordHash: pwHash, totpEnabled: true }),
+    );
+
+    const result = await authService.login({
+      email: 'user@example.com',
+      password: PASSWORD,
+    });
+
+    expect(result).toMatchObject({ twoFactorRequired: true });
+    expect(result).toHaveProperty('challengeToken');
+    expect(result).not.toHaveProperty('tokens'); // no session before 2FA verify
+    expect(repo.createSession).not.toHaveBeenCalled();
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: AuditAction.TWO_FA_LOGIN_REQUIRED }),
+    );
+    // A single-purpose challenge token was persisted (hashed) in Redis.
+    expect(authSet).toHaveBeenCalledWith(
+      expect.stringMatching(/^auth:2fa:challenge:/),
+      'user-1',
+      'PX',
+      expect.any(Number),
+    );
+  });
+
   it('blocks after the global account/email lockout threshold', async () => {
     repo.countRecentFailedAttemptsByEmail.mockResolvedValue(15);
     await expect(

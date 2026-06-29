@@ -5,6 +5,7 @@ import { validate } from '../../middleware/validate';
 import { idempotency } from '../../middleware/idempotency';
 import { sensitiveRateLimiter } from '../../middleware/rate-limit';
 import { requireUserFeature } from '../../middleware/require-user-feature';
+import { requireStepUp } from '../../middleware/require-step-up';
 import { inrWithdrawalController } from './inr-withdrawal.controller';
 import {
   createWithdrawalSchema,
@@ -29,6 +30,10 @@ inrWithdrawalRouter.post(
   sensitiveRateLimiter,
   validate({ body: createWithdrawalSchema }),
   requireUserFeature('canWithdrawInr'),
+  // Step-up: a fresh TOTP/backup code (2FA users) or password (non-2FA users)
+  // must have been verified to obtain the X-Step-Up-Token. Verification gate
+  // only — the withdrawal lifecycle/accounting below is unchanged.
+  requireStepUp(),
   idempotency(),
   asyncHandler(inrWithdrawalController.create),
 );

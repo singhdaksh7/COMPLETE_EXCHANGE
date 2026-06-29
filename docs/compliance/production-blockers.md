@@ -12,8 +12,8 @@ Status legend: ❌ not started · 🟡 partial/mock/abstraction exists · ✅ do
 
 | # | Blocker | Status | Required before | Notes |
 |---|---|---|---|---|
-| 1 | **User 2FA/MFA** | ❌ | Production | Schema field exists; no enrollment/verification/enforcement. |
-| 2 | **Step-up auth before withdrawal / address change** | ❌ | Live withdrawals | No re-auth on money-movement or allowlist changes. |
+| 1 | **User 2FA/MFA** | ✅ | Production | TOTP enrollment/confirm/disable, hashed one-time backup codes, login enforcement (`2FA_REQUIRED` challenge → `/auth/2fa/verify`), rate-limited verification, audit events. Secret AES-256-GCM encrypted at rest. See `docs/security/user-2fa-step-up-auth.md`. |
+| 2 | **Step-up auth before withdrawal / address change** | ✅ | Live withdrawals | `requireStepUp` gate on INR withdrawal + crypto withdrawal/address routes; fresh TOTP/backup (or password if no 2FA) → 5-min single-use token. Does not alter ledger/payout lifecycle. See `docs/security/user-2fa-step-up-auth.md`. |
 | 3 | Admin idle/session timeout | 🟡 | Production | Absolute expiry exists; idle timeout missing. |
 
 ## B. KYC / AML / compliance

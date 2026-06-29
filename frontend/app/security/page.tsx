@@ -6,7 +6,7 @@ import { userApi } from '@/lib/user-api';
 import { errorMessage } from '@/lib/api';
 import { useGuard } from '@/components/guards';
 import { UserShell } from '@/components/user-shell';
-import type { UserActivityEvent } from '@/lib/types';
+import type { TwoFaSetupData, UserActivityEvent } from '@/lib/types';
 
 /** Friendly labels for the audit action codes shown in the activity feed. */
 const ACTION_LABELS: Record<string, string> = {
@@ -20,6 +20,17 @@ const ACTION_LABELS: Record<string, string> = {
   'auth.email_verified': 'Email verified',
   'inr.deposit.manual_submitted': 'INR deposit submitted',
   'kyc.submitted': 'KYC submitted',
+  'user.2fa_setup_started': '2FA setup started',
+  'user.2fa_enabled': 'Two-factor enabled',
+  'user.2fa_disabled': 'Two-factor disabled',
+  'user.2fa_disable_failed': '2FA disable failed',
+  'user.2fa_login_required': '2FA prompted at login',
+  'user.2fa_login_success': '2FA login verified',
+  'user.2fa_login_failed': '2FA login failed',
+  'user.backup_code_used': 'Backup code used',
+  'user.backup_codes_regenerated': 'Backup codes regenerated',
+  'user.step_up_verified': 'Step-up verified',
+  'user.step_up_failed': 'Step-up failed',
 };
 
 function actionLabel(a: string): string {
@@ -49,6 +60,11 @@ export default function SecurityPage() {
     queryFn: () => userApi.listActivity(),
     enabled: ready,
   });
+  const twoFaQ = useQuery({
+    queryKey: ['2fa-status'],
+    queryFn: () => userApi.get2faStatus(),
+    enabled: ready,
+  });
 
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
@@ -76,6 +92,8 @@ export default function SecurityPage() {
   const me = meQ.data?.data;
   const sessions = sessionsQ.data?.data.items ?? [];
   const activity = activityQ.data?.data.items ?? [];
+  const twoFa = twoFaQ.data?.data;
+  const twoFaEnabled = twoFa?.enabled ?? false;
 
   return (
     <UserShell className="max-w-[1100px] space-y-6">
@@ -100,17 +118,24 @@ export default function SecurityPage() {
             <div className="flex justify-between"><dt className="text-white/45">KYC status</dt><dd className="font-mono text-white">{me?.user.kycStatus ?? '—'}</dd></div>
             <div className="flex justify-between">
               <dt className="text-white/45">Two-factor (2FA)</dt>
-              <dd className={me?.user.totpEnabled ? 'text-up' : 'text-white/60'}>
-                {me?.user.totpEnabled ? 'Enabled' : 'Not enabled'}
+              <dd className={twoFaEnabled ? 'text-up' : 'text-white/60'}>
+                {twoFaQ.isLoading ? '…' : twoFaEnabled ? 'Enabled' : 'Not enabled'}
               </dd>
             </div>
           </dl>
-          {!me?.user.totpEnabled && (
-            <p className="mt-3 text-[11px] text-white/40">
-              Authenticator-app 2FA for user login is not yet available on this account.
-            </p>
-          )}
         </Card>
+
+        {/* Two-factor authentication (REAL — Stage 3) */}
+        <TwoFactorCard
+          isLoading={twoFaQ.isLoading}
+          enabled={twoFaEnabled}
+          backupCodesRemaining={twoFa?.backupCodesRemaining ?? 0}
+          onChanged={() => {
+            qc.invalidateQueries({ queryKey: ['2fa-status'] });
+            qc.invalidateQueries({ queryKey: ['me'] });
+            qc.invalidateQueries({ queryKey: ['activity'] });
+          }}
+        />
 
         {/* Change password (REAL) */}
         <Card>
@@ -204,5 +229,358 @@ export default function SecurityPage() {
         </Card>
       </div>
     </UserShell>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Two-factor authentication management (Stage 3 — TOTP + backup codes)*/
+/* ------------------------------------------------------------------ */
+
+/** A one-time reveal of backup codes. They are never retrievable again. */
+function BackupCodes({ codes }: { codes: string[] }) {
+  return (
+    <div className="mt-3 rounded-lg border border-gold/25 bg-gold/[0.04] p-3">
+      <p className="text-[11px] font-bold text-gold uppercase tracking-wide">
+        Save your backup codes
+      </p>
+      <p className="mt-1 text-[11px] text-white/55">
+        Each code works once if you lose your authenticator. They will not be shown
+        again — store them somewhere safe now.
+      </p>
+      <div className="mt-2 grid grid-cols-2 gap-1.5">
+        {codes.map((c) => (
+          <code
+            key={c}
+            className="rounded bg-noir/80 px-2 py-1 text-center font-mono text-xs text-white"
+          >
+            {c}
+          </code>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TwoFactorCard({
+  isLoading,
+  enabled,
+  backupCodesRemaining,
+  onChanged,
+}: {
+  isLoading: boolean;
+  enabled: boolean;
+  backupCodesRemaining: number;
+  onChanged: () => void;
+}) {
+  // Enrollment state (only used while enabling).
+  const [setupData, setSetupData] = useState<TwoFaSetupData | null>(null);
+  const [confirmCode, setConfirmCode] = useState('');
+  // One-time backup code reveal (after enable or regenerate).
+  const [revealedCodes, setRevealedCodes] = useState<string[] | null>(null);
+  // Disable form.
+  const [showDisable, setShowDisable] = useState(false);
+  const [disablePw, setDisablePw] = useState('');
+  const [disableCode, setDisableCode] = useState('');
+  // Regenerate form.
+  const [showRegen, setShowRegen] = useState(false);
+  const [regenCode, setRegenCode] = useState('');
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  function reset() {
+    setSetupData(null);
+    setConfirmCode('');
+    setShowDisable(false);
+    setDisablePw('');
+    setDisableCode('');
+    setShowRegen(false);
+    setRegenCode('');
+  }
+
+  const setup = useMutation({
+    mutationFn: () => userApi.setup2fa(),
+    onSuccess: (res) => {
+      setMsg(null);
+      setSetupData(res.data);
+    },
+    onError: (e) => setMsg({ ok: false, text: errorMessage(e) }),
+  });
+
+  const confirm = useMutation({
+    mutationFn: () => userApi.confirm2fa(confirmCode.trim()),
+    onSuccess: (res) => {
+      setSetupData(null);
+      setConfirmCode('');
+      setRevealedCodes(res.data.backupCodes);
+      setMsg({ ok: true, text: 'Two-factor authentication is now enabled.' });
+      onChanged();
+    },
+    onError: (e) => setMsg({ ok: false, text: errorMessage(e) }),
+  });
+
+  const disable = useMutation({
+    mutationFn: () => userApi.disable2fa(disablePw, disableCode.trim()),
+    onSuccess: () => {
+      reset();
+      setRevealedCodes(null);
+      setMsg({ ok: true, text: 'Two-factor authentication has been disabled.' });
+      onChanged();
+    },
+    onError: (e) => setMsg({ ok: false, text: errorMessage(e) }),
+  });
+
+  const regen = useMutation({
+    mutationFn: () => userApi.regenerateBackupCodes(regenCode.trim()),
+    onSuccess: (res) => {
+      setShowRegen(false);
+      setRegenCode('');
+      setRevealedCodes(res.data.backupCodes);
+      setMsg({ ok: true, text: 'New backup codes generated. Previous codes are now void.' });
+      onChanged();
+    },
+    onError: (e) => setMsg({ ok: false, text: errorMessage(e) }),
+  });
+
+  return (
+    <Card>
+      <div className="flex items-center justify-between border-b border-white/5 pb-2 mb-3">
+        <h3 className="text-sm font-bold text-white">Two-factor authentication</h3>
+        <span
+          className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${
+            enabled ? 'bg-up/15 text-up' : 'bg-white/5 text-white/50'
+          }`}
+        >
+          {isLoading ? '…' : enabled ? 'ENABLED' : 'OFF'}
+        </span>
+      </div>
+
+      {msg && (
+        <p className={`mb-3 text-[11px] ${msg.ok ? 'text-up' : 'text-red-300'}`}>{msg.text}</p>
+      )}
+
+      {/* One-time backup-code reveal sits above everything once present. */}
+      {revealedCodes && (
+        <>
+          <BackupCodes codes={revealedCodes} />
+          <button
+            onClick={() => setRevealedCodes(null)}
+            className="mt-3 rounded-lg border border-white/10 px-3 py-2 text-[11px] text-white/70 hover:text-white transition"
+          >
+            I&rsquo;ve saved my backup codes
+          </button>
+        </>
+      )}
+
+      {/* ---- NOT ENABLED: enrollment flow ---- */}
+      {!enabled && !revealedCodes && (
+        <>
+          {!setupData && (
+            <>
+              <p className="text-xs text-white/55">
+                Protect your account with an authenticator app (Google Authenticator,
+                Authy, 1Password). You&rsquo;ll be asked for a code at sign-in.
+              </p>
+              <button
+                onClick={() => setup.mutate()}
+                disabled={setup.isPending}
+                className="mt-3 rounded-lg bg-gradient-to-r from-gold to-gold-glow px-4 py-2.5 text-xs font-bold text-noir shadow-gold-glow hover:brightness-105 transition disabled:opacity-50"
+              >
+                {setup.isPending ? 'Starting…' : 'Set up 2FA'}
+              </button>
+            </>
+          )}
+
+          {setupData && (
+            <div className="space-y-3">
+              <p className="text-xs text-white/55">
+                Add this account to your authenticator app, then enter the 6-digit code
+                it shows to confirm.
+              </p>
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-white/40">
+                  Manual entry key
+                </p>
+                <code className="mt-1 block break-all rounded-lg border border-white/10 bg-noir/80 px-3 py-2 font-mono text-xs text-gold">
+                  {setupData.secret}
+                </code>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-white/40">
+                  otpauth URI
+                </p>
+                <code className="mt-1 block break-all rounded-lg border border-white/10 bg-noir/80 px-3 py-2 font-mono text-[10px] text-white/70">
+                  {setupData.otpauthUri}
+                </code>
+              </div>
+              <form
+                className="space-y-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  setMsg(null);
+                  confirm.mutate();
+                }}
+              >
+                <input
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder="6-digit code"
+                  value={confirmCode}
+                  onChange={(e) => setConfirmCode(e.target.value)}
+                  className="w-full rounded-lg border border-white/10 bg-noir/80 py-2.5 px-3 text-center tracking-widest text-sm text-white focus:border-gold/60 focus:outline-none"
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    disabled={confirm.isPending || confirmCode.trim().length < 6}
+                    className="rounded-lg bg-gradient-to-r from-gold to-gold-glow px-4 py-2.5 text-xs font-bold text-noir shadow-gold-glow hover:brightness-105 transition disabled:opacity-50"
+                  >
+                    {confirm.isPending ? 'Verifying…' : 'Confirm & enable'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSetupData(null);
+                      setConfirmCode('');
+                      setMsg(null);
+                    }}
+                    className="rounded-lg border border-white/10 px-3 py-2 text-xs text-white/60 hover:text-white transition"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ---- ENABLED: manage (regenerate / disable) ---- */}
+      {enabled && (
+        <div className="space-y-3">
+          <div className="flex justify-between text-xs">
+            <span className="text-white/45">Backup codes remaining</span>
+            <span className="font-mono text-white">{backupCodesRemaining}</span>
+          </div>
+
+          {/* Regenerate backup codes (step-up: current code required) */}
+          {!showRegen ? (
+            <button
+              onClick={() => {
+                setShowRegen(true);
+                setShowDisable(false);
+                setMsg(null);
+              }}
+              className="rounded-lg border border-white/10 px-3 py-2 text-[11px] text-white/70 hover:text-white transition"
+            >
+              Regenerate backup codes
+            </button>
+          ) : (
+            <form
+              className="space-y-2 rounded-lg border border-white/5 bg-white/[0.01] p-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                setMsg(null);
+                regen.mutate();
+              }}
+            >
+              <p className="text-[11px] text-white/50">
+                Confirm with a current authenticator or backup code. This voids your
+                existing backup codes.
+              </p>
+              <input
+                inputMode="text"
+                autoComplete="one-time-code"
+                placeholder="Authenticator or backup code"
+                value={regenCode}
+                onChange={(e) => setRegenCode(e.target.value)}
+                className="w-full rounded-lg border border-white/10 bg-noir/80 py-2 px-3 text-sm text-white focus:border-gold/60 focus:outline-none"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  disabled={regen.isPending || regenCode.trim().length < 6}
+                  className="rounded-lg bg-gold/90 px-3 py-2 text-[11px] font-bold text-noir hover:brightness-105 transition disabled:opacity-50"
+                >
+                  {regen.isPending ? 'Generating…' : 'Generate new codes'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRegen(false);
+                    setRegenCode('');
+                  }}
+                  className="rounded-lg border border-white/10 px-3 py-2 text-[11px] text-white/60 hover:text-white transition"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* Disable 2FA (requires password + current code) */}
+          {!showDisable ? (
+            <button
+              onClick={() => {
+                setShowDisable(true);
+                setShowRegen(false);
+                setMsg(null);
+              }}
+              className="block rounded-lg border border-red-500/20 px-3 py-2 text-[11px] text-red-300 hover:border-red-500/40 transition"
+            >
+              Disable two-factor authentication
+            </button>
+          ) : (
+            <form
+              className="space-y-2 rounded-lg border border-red-500/20 bg-red-500/[0.03] p-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                setMsg(null);
+                disable.mutate();
+              }}
+            >
+              <p className="text-[11px] text-white/55">
+                Enter your password and a current authenticator/backup code to turn off
+                2FA. Your backup codes will be deleted.
+              </p>
+              <input
+                type="password"
+                autoComplete="current-password"
+                placeholder="Password"
+                value={disablePw}
+                onChange={(e) => setDisablePw(e.target.value)}
+                className="w-full rounded-lg border border-white/10 bg-noir/80 py-2 px-3 text-sm text-white focus:border-gold/60 focus:outline-none"
+              />
+              <input
+                inputMode="text"
+                autoComplete="one-time-code"
+                placeholder="Authenticator or backup code"
+                value={disableCode}
+                onChange={(e) => setDisableCode(e.target.value)}
+                className="w-full rounded-lg border border-white/10 bg-noir/80 py-2 px-3 text-sm text-white focus:border-gold/60 focus:outline-none"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  disabled={disable.isPending || !disablePw || disableCode.trim().length < 6}
+                  className="rounded-lg bg-red-500/80 px-3 py-2 text-[11px] font-bold text-white hover:brightness-110 transition disabled:opacity-50"
+                >
+                  {disable.isPending ? 'Disabling…' : 'Disable 2FA'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDisable(false);
+                    setDisablePw('');
+                    setDisableCode('');
+                  }}
+                  className="rounded-lg border border-white/10 px-3 py-2 text-[11px] text-white/60 hover:text-white transition"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      )}
+    </Card>
   );
 }
