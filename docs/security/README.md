@@ -40,6 +40,23 @@ Stage 7.0B/7.0C deliverables. Start with `AUDIT_SCOPE.md`, then the report.
 > (`backend/src/lib/prod-safety.ts`). Staging (`APP_ENV=staging`) is unaffected and
 > keeps crypto OFF. Everything else is docs + a read-only script.
 
+### Stage 6 — admin edge security / WAF audit readiness
+
+| Document | Purpose |
+|----------|---------|
+| [admin-edge-security-readiness.md](./admin-edge-security-readiness.md) | Admin/user surface inventory, implemented controls, observed edge topology (root→Vercel www vs CloudFront/S3), exposure, evidence checks, future hardening. |
+| [waf-readiness-plan.md](./waf-readiness-plan.md) | Staging-safe AWS WAF plan for CloudFront: managed rule groups, rate-based rules, admin protections, monitor-first, rollback, cost/scoping caveats. |
+| [cloudfront-security-headers-readiness.md](./cloudfront-security-headers-readiness.md) | Current header state (captured) + recommended headers + staged CSP (report-only first) + cache-control. |
+| [admin-access-runbook.md](./admin-access-runbook.md) | Who gets admin access, MFA, break-glass, lockout, IP allowlist/VPN, session/RBAC/audit review, offboarding, compromise response. |
+| [admin-endpoint-safe-checks.md](./admin-endpoint-safe-checks.md) | Non-destructive auditor checks: unauth→401/403, rate-limit, RBAC, user-token rejection, audit logging, 2FA. |
+| `scripts/security/plan-waf-readiness.ps1` | WAF plan (dry-run default; `-Apply`+`-ConfirmCreate` to create in COUNT mode; never auto-associates to CloudFront). |
+| `scripts/security/collect-edge-security-evidence.ps1` | Read-only edge evidence: CloudFront status/aliases/cert/WAF, DNS, response headers, ECS refs, alarms; PASS/WARN/FAIL summary. |
+
+> Stage 6 is **docs + dry-run/read-only scripts only** — no WAF created, no AWS
+> resource modified, no backend change, crypto stays OFF. Key finding: the live
+> `www.exorain.com` frontend is on **Vercel**, separate from CloudFront
+> `E36DO8GL4SA61N` (S3) — see the edge readiness doc.
+
 > These documents describe an internal hardening pass. They are **not** a legal,
 > FIU/PMLA, or penetration-test certification. They prepare EXORA for an
 > independent external VAPT. Fill every `<placeholder>` out of band.
