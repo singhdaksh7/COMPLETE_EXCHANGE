@@ -18,6 +18,7 @@ const DEV_ONLY_VALUES = new Set([
   'change_me_refresh_secret_min_32_chars_long_value',
   'dev-only-change-me-kyc-pii-encryption-key',
   'dev-only-kyc-webhook-secret-change-me',
+  'dev-only-change-me-email-otp-hmac-secret',
   'dev-only-razorpay-key-secret-change-me',
   'dev-only-razorpay-webhook-secret-change-me',
 ]);
@@ -614,6 +615,22 @@ export const envSchema = z
           });
         }
       }
+    }
+    // OTP_HASH_SECRET keys the HMAC over every email OTP, so a public dev
+    // default would collapse OTP integrity to "DB access only". A REAL
+    // production deployment must never boot with it. Staging (APP_ENV=staging)
+    // runs the prod build but is allowed to keep the dev default like its other
+    // offline/mock conveniences, so this guard is scoped to real production —
+    // mirroring the prod-safety `realProduction` rule and avoiding a staging
+    // boot regression (OTP_HASH_SECRET is not provisioned on staging).
+    const realProduction = productionLike && val.APP_ENV !== 'staging';
+    if (realProduction && DEV_ONLY_VALUES.has(val.OTP_HASH_SECRET)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['OTP_HASH_SECRET'],
+        message:
+          'OTP_HASH_SECRET must not use a dev/default placeholder in production',
+      });
     }
     if (val.MAIL_PROVIDER === 'ses' && !val.AWS_REGION) {
       ctx.addIssue({

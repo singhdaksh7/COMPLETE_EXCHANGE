@@ -546,7 +546,7 @@ export const adminUserProfileService = {
   /**
    * Admin-initiated revoke of a single user session (Stage 5C). RBAC-gated
    * upstream (users.manage). Revoking is scoped to the user so an admin can
-   * never revoke another user's session by id. Both the hash-chained audit log
+   * never revoke another user's session by id. Both the append-only audit log
    * and the admin log record who did it. Idempotent: revoking an already
    * revoked/expired session is a no-op success.
    */
@@ -602,7 +602,7 @@ export const adminUserProfileService = {
    * Append a compliance note (Stage 5D). RBAC-gated upstream
    * (compliance.case.manage). Notes are append-only — there is no edit/delete
    * path in this first version. Every note records its author (admin id) and is
-   * written to both the hash-chained audit log and the admin log.
+   * written to both the append-only audit log and the admin log.
    */
   async addComplianceNote(
     userId: string,

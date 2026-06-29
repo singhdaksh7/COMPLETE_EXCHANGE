@@ -332,7 +332,7 @@ export const cryptoDepositService = {
 
   /**
    * Admin recheck: re-run verification and credit once if now confirmed. Writes
-   * the hash-chained audit + an admin_logs entry. Reuses the same idempotent
+   * the append-only audit log + an admin_logs entry. Reuses the same idempotent
    * credit path, so a recheck can never double-credit.
    */
   async adminRecheck(

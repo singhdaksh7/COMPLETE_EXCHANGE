@@ -443,7 +443,7 @@ export const inrWithdrawalService = {
     return toAdminInrWithdrawalDto(row, decryptAccountNumber(row));
   },
 
-  /** Write both the hash-chained audit log and the admin log for an admin action. */
+  /** Write both the append-only audit log and the admin log for an admin action. */
   async audit(
     action: string,
     row: InrWithdrawal,

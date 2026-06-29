@@ -32,6 +32,13 @@ export const corsMiddleware: RequestHandler = cors({
     }
     return callback(new ForbiddenError('Origin not allowed', 'CORS_FORBIDDEN'));
   },
+  // `credentials: true` is currently LOW RISK here: this API authenticates with
+  // Bearer access tokens (Authorization header), NOT cookie-based sessions, so
+  // the usual CORS+credentials cookie-exfiltration/CSRF concern does not apply,
+  // and no-Origin requests are intentionally allowed for the mobile app and
+  // server-to-server callers. REVIEW BEFORE PRODUCTION: if any browser flow ever
+  // relies on credentialed cross-origin requests, re-evaluate; otherwise this can
+  // be set to `false` since no cookie credentials are actually used.
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'x-request-id'],

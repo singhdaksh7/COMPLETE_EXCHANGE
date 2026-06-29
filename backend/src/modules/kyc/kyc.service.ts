@@ -610,7 +610,7 @@ export const kycService = {
   },
 
   // ------------------------------------------------------------------
-  // Audit helpers (admin actions land in BOTH the hash-chained audit_logs
+  // Audit helpers (admin actions land in BOTH the append-only audit_logs
   // and the admin_logs trail, mirroring the admin-rbac module's convention).
   // ------------------------------------------------------------------
   async auditAdmin(

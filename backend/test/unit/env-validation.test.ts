@@ -10,6 +10,7 @@ const baseEnv = {
   CORS_ORIGINS: 'https://app.example.com,https://admin.example.com',
   KYC_ENCRYPTION_KEY: 'prod_kyc_encryption_secret_32_chars_value',
   KYC_WEBHOOK_SECRET: 'prod_kyc_webhook_secret_value',
+  OTP_HASH_SECRET: 'prod_otp_hash_secret_value',
   RAZORPAY_KEY_SECRET: 'prod_razorpay_secret_value',
   RAZORPAY_WEBHOOK_SECRET: 'prod_razorpay_webhook_secret',
   // baseEnv runs NODE_ENV=production on the default (mock/log) providers, so it
@@ -43,6 +44,34 @@ describe('env validation', () => {
         JWT_ACCESS_SECRET: 'change_me_access_secret_min_32_chars_long_value',
       }),
     ).toThrow(/JWT_ACCESS_SECRET/);
+  });
+
+  it('rejects the dev/default OTP_HASH_SECRET in real production', () => {
+    expect(() =>
+      validateEnv({
+        ...baseEnv,
+        OTP_HASH_SECRET: 'dev-only-change-me-email-otp-hmac-secret',
+      }),
+    ).toThrow(/OTP_HASH_SECRET/);
+  });
+
+  it('rejects an omitted OTP_HASH_SECRET (its dev default) in real production', () => {
+    const env = { ...baseEnv };
+    delete (env as Partial<typeof env>).OTP_HASH_SECRET;
+    expect(() => validateEnv(env)).toThrow(/OTP_HASH_SECRET/);
+  });
+
+  it('ALLOWS the dev/default OTP_HASH_SECRET on staging (APP_ENV=staging)', () => {
+    // Staging runs NODE_ENV=production with offline/mock services; it must not
+    // be forced to provision OTP_HASH_SECRET, so the dev default is accepted.
+    const env = validateEnv({
+      ...baseEnv,
+      ...stagingOverrides,
+      APP_ENV: 'staging',
+      OTP_HASH_SECRET: 'dev-only-change-me-email-otp-hmac-secret',
+    });
+    expect(env.APP_ENV).toBe('staging');
+    expect(env.OTP_HASH_SECRET).toBe('dev-only-change-me-email-otp-hmac-secret');
   });
 
   it('requires live provider dependencies only when enabled', () => {

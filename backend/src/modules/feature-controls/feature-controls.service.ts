@@ -115,7 +115,7 @@ export const featureControlsService = {
   /**
    * Admin update. Requires a reason (validated upstream). Only the flags that
    * actually change are recorded; every change is written to the admin log
-   * (adminId, userId, field, old, new, reason, timestamp) and the hash-chained
+   * (adminId, userId, field, old, new, reason, timestamp) and the append-only
    * audit log. Returns the refreshed DTO.
    */
   async updateForAdmin(

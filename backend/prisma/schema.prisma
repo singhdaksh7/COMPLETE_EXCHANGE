@@ -1603,7 +1603,11 @@ model AdminLog {
 }
 
 // ============================================================================
-// AUDIT (append-only, hash-chained, partitioned)
+// AUDIT (append-only, partitioned)
+// NOTE: append-only is enforced by a DB trigger (see migrations). The
+// prev_hash / row_hash columns below are RESERVED for a future tamper-evident
+// hash chain and are NOT yet populated by the application (recordAudit writes
+// neither today). Do not describe the trail as hash-chained until they are.
 // ============================================================================
 model AuditLog {
   id          BigInt    @default(autoincrement())
@@ -1618,8 +1622,8 @@ model AuditLog {
   ip          String?   @db.Inet
   userAgent   String?   @map("user_agent")
   requestId   String?   @map("request_id")
-  prevHash    String?   @map("prev_hash") // hash chaining (tamper evidence)
-  rowHash     String?   @map("row_hash")
+  prevHash    String?   @map("prev_hash") // RESERVED for future hash chain (not yet written)
+  rowHash     String?   @map("row_hash")  // RESERVED for future hash chain (not yet written)
   metadata    Json?
 
   @@id([id, occurredAt])
