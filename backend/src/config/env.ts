@@ -626,6 +626,7 @@ export const envSchema = z
     // production unless each is explicitly acknowledged via its ALLOW_* override.
     for (const issue of productionSafetyIssues({
       nodeEnv: val.NODE_ENV,
+      appEnv: val.APP_ENV,
       tronProvider: val.TRON_PROVIDER,
       bscProvider: val.BSC_PROVIDER,
       priceProvider: val.PRICE_PROVIDER,

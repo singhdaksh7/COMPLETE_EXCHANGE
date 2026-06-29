@@ -15,6 +15,7 @@ const safeProd: ProdSafetyInput = {
   withdrawalSigner: 'live',
   mailProvider: 'ses',
   requireEmailVerification: true,
+  allowUnverifiedLogin: false,
   allowMockProviders: false,
   allowMockWithdrawalSigner: false,
   allowLogMailProvider: false,
@@ -99,6 +100,44 @@ describe('productionSafetyIssues', () => {
         ...safeProd,
         requireEmailVerification: false,
         allowUnverifiedEmailLogin: true,
+      }),
+    ).toEqual([]);
+  });
+
+  it('flags the Stage 13 ALLOW_UNVERIFIED_LOGIN bypass with no override', () => {
+    expect(
+      productionSafetyIssues({ ...safeProd, allowUnverifiedLogin: true }).map((i) => i.path),
+    ).toEqual(['ALLOW_UNVERIFIED_LOGIN']);
+  });
+
+  it('flags ALLOW_UNVERIFIED_LOGIN in real production (APP_ENV=production)', () => {
+    expect(
+      productionSafetyIssues({
+        ...safeProd,
+        appEnv: 'production',
+        allowUnverifiedLogin: true,
+      }).map((i) => i.path),
+    ).toEqual(['ALLOW_UNVERIFIED_LOGIN']);
+  });
+
+  it('flags ALLOW_UNVERIFIED_LOGIN in real production (APP_ENV unset)', () => {
+    expect(
+      productionSafetyIssues({
+        ...safeProd,
+        appEnv: undefined,
+        nodeEnv: 'production',
+        allowUnverifiedLogin: true,
+      }).map((i) => i.path),
+    ).toEqual(['ALLOW_UNVERIFIED_LOGIN']);
+  });
+
+  it('allows ALLOW_UNVERIFIED_LOGIN on staging (NODE_ENV=production, APP_ENV=staging)', () => {
+    expect(
+      productionSafetyIssues({
+        ...safeProd,
+        nodeEnv: 'production',
+        appEnv: 'staging',
+        allowUnverifiedLogin: true,
       }),
     ).toEqual([]);
   });

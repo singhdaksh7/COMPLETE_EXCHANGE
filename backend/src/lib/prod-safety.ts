@@ -21,6 +21,11 @@ export interface SafetyIssue {
 
 export interface ProdSafetyInput {
   nodeEnv: string;
+  // Deployment environment. Staging runs the prod build (NODE_ENV=production)
+  // with APP_ENV=staging, so it is intentionally NOT treated as real production
+  // and may keep the unsafe staging toggles (including ALLOW_UNVERIFIED_LOGIN).
+  // Real production has APP_ENV='production' or leaves it unset.
+  appEnv?: string;
   // Offline/mock service selectors.
   tronProvider: string;
   bscProvider: string;
@@ -46,11 +51,16 @@ const OVERRIDE_HINT = (flag: string) =>
 
 /**
  * Returns the list of production-safety violations for a given config. Empty
- * when NODE_ENV !== 'production' (the guards only apply to production builds)
+ * when this is not a real production deployment — i.e. NODE_ENV !== 'production'
+ * or APP_ENV === 'staging' (the guards only apply to real production builds) —
  * or when every unsafe toggle is explicitly acknowledged.
  */
 export function productionSafetyIssues(input: ProdSafetyInput): SafetyIssue[] {
-  if (input.nodeEnv !== 'production') return [];
+  // Only a REAL production deployment is guarded. Staging runs the prod build
+  // (NODE_ENV=production) but sets APP_ENV=staging, so its unsafe toggles —
+  // including ALLOW_UNVERIFIED_LOGIN — are intentionally permitted.
+  const realProduction = input.nodeEnv === 'production' && input.appEnv !== 'staging';
+  if (!realProduction) return [];
   const issues: SafetyIssue[] = [];
 
   // 1. Mock chain / price / payment / KYC providers — no real detection,

@@ -39,6 +39,7 @@ vi.mock('../../src/lib/redis', () => ({
   authRedisGet: vi.fn().mockResolvedValue(null),
   authRedisSet: vi.fn().mockResolvedValue('OK'),
   authRedisDel: vi.fn().mockResolvedValue(1),
+  authRedisCall: vi.fn().mockResolvedValue(1),
 }));
 
 // Control the production TOTP guard decision directly (default: not required,
