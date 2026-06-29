@@ -599,6 +599,15 @@ export const envSchema = z
     .string()
     .default('false')
     .transform((v) => v === 'true'),
+  // Crypto production readiness acknowledgement (Stage 5). EXORA ships INR_ONLY;
+  // a real production deployment refuses to boot if any CRYPTO_*_GLOBAL_ENABLED
+  // flag is true UNLESS this is explicitly set. Set to 'true' ONLY after a
+  // documented crypto signer/custody/withdrawal-signing/compliance sign-off.
+  // Never set in staging — staging keeps crypto globals OFF regardless.
+  CRYPTO_PRODUCTION_READINESS_ACK: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
   })
   // Fail fast: 'ses' mode is useless (and silently drops mail) without a region.
   .superRefine((val, ctx) => {
@@ -667,6 +676,10 @@ export const envSchema = z
       allowMockWithdrawalSigner: val.ALLOW_MOCK_WITHDRAWAL_SIGNER,
       allowLogMailProvider: val.ALLOW_LOG_MAIL_PROVIDER,
       allowUnverifiedEmailLogin: val.ALLOW_UNVERIFIED_EMAIL_LOGIN,
+      cryptoDepositsGlobalEnabled: val.CRYPTO_DEPOSITS_GLOBAL_ENABLED,
+      cryptoWithdrawalsGlobalEnabled: val.CRYPTO_WITHDRAWALS_GLOBAL_ENABLED,
+      cryptoWalletGlobalEnabled: val.CRYPTO_WALLET_GLOBAL_ENABLED,
+      cryptoProductionReadinessAck: val.CRYPTO_PRODUCTION_READINESS_ACK,
     })) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

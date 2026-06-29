@@ -44,6 +44,17 @@ export interface ProdSafetyInput {
   allowMockWithdrawalSigner: boolean;
   allowLogMailProvider: boolean;
   allowUnverifiedEmailLogin: boolean;
+  // Stage 15 global crypto kill-switches. EXORA ships INR_ONLY: these must stay
+  // OFF in real production until crypto signer/custody/compliance readiness is
+  // signed off. They default OFF, so a normal production deployment passes.
+  cryptoDepositsGlobalEnabled: boolean;
+  cryptoWithdrawalsGlobalEnabled: boolean;
+  cryptoWalletGlobalEnabled: boolean;
+  // The ONLY escape hatch for the crypto-global guard. Set to true ONLY after a
+  // documented signer/custody/compliance/withdrawal-signing sign-off. This guard
+  // never ENABLES crypto — it only refuses to boot if crypto was turned on
+  // without this explicit acknowledgement.
+  cryptoProductionReadinessAck: boolean;
 }
 
 const OVERRIDE_HINT = (flag: string) =>
@@ -117,6 +128,28 @@ export function productionSafetyIssues(input: ProdSafetyInput): SafetyIssue[] {
       message:
         'ALLOW_UNVERIFIED_LOGIN=true (Stage 13 email-verification bypass) is unsafe in production and has no override — set it to false',
     });
+  }
+
+  // 6. Crypto global kill-switches must stay OFF in real production. EXORA runs
+  //    INR_ONLY until crypto signer/custody/withdrawal-signing/compliance are
+  //    signed off; enabling any crypto rail in production without the explicit
+  //    readiness acknowledgement is a hard boot failure. This guard is purely
+  //    defensive — it NEVER enables crypto, it only refuses to boot if a crypto
+  //    global was turned on without CRYPTO_PRODUCTION_READINESS_ACK.
+  if (!input.cryptoProductionReadinessAck) {
+    const cryptoGlobals: Array<[string, boolean]> = [
+      ['CRYPTO_DEPOSITS_GLOBAL_ENABLED', input.cryptoDepositsGlobalEnabled],
+      ['CRYPTO_WITHDRAWALS_GLOBAL_ENABLED', input.cryptoWithdrawalsGlobalEnabled],
+      ['CRYPTO_WALLET_GLOBAL_ENABLED', input.cryptoWalletGlobalEnabled],
+    ];
+    for (const [key, value] of cryptoGlobals) {
+      if (value) {
+        issues.push({
+          path: key,
+          message: `${key}=true is not permitted in production — EXORA runs INR_ONLY until crypto signer/custody/compliance readiness is approved. Only after that sign-off, set CRYPTO_PRODUCTION_READINESS_ACK=true.`,
+        });
+      }
+    }
   }
 
   return issues;

@@ -20,6 +20,10 @@ const safeProd: ProdSafetyInput = {
   allowMockWithdrawalSigner: false,
   allowLogMailProvider: false,
   allowUnverifiedEmailLogin: false,
+  cryptoDepositsGlobalEnabled: false,
+  cryptoWithdrawalsGlobalEnabled: false,
+  cryptoWalletGlobalEnabled: false,
+  cryptoProductionReadinessAck: false,
 };
 
 describe('productionSafetyIssues', () => {
@@ -138,6 +142,45 @@ describe('productionSafetyIssues', () => {
         nodeEnv: 'production',
         appEnv: 'staging',
         allowUnverifiedLogin: true,
+      }),
+    ).toEqual([]);
+  });
+
+  it('flags each crypto global enabled in real production without the ack', () => {
+    const issues = productionSafetyIssues({
+      ...safeProd,
+      appEnv: 'production',
+      cryptoDepositsGlobalEnabled: true,
+      cryptoWithdrawalsGlobalEnabled: true,
+      cryptoWalletGlobalEnabled: true,
+    });
+    expect(issues.map((i) => i.path).sort()).toEqual([
+      'CRYPTO_DEPOSITS_GLOBAL_ENABLED',
+      'CRYPTO_WALLET_GLOBAL_ENABLED',
+      'CRYPTO_WITHDRAWALS_GLOBAL_ENABLED',
+    ]);
+    expect(issues[0].message).toMatch(/CRYPTO_PRODUCTION_READINESS_ACK/);
+  });
+
+  it('allows crypto globals in production ONLY with the explicit readiness ack', () => {
+    expect(
+      productionSafetyIssues({
+        ...safeProd,
+        appEnv: 'production',
+        cryptoWithdrawalsGlobalEnabled: true,
+        cryptoProductionReadinessAck: true,
+      }),
+    ).toEqual([]);
+  });
+
+  it('never flags crypto globals on staging (APP_ENV=staging), regardless of ack', () => {
+    expect(
+      productionSafetyIssues({
+        ...safeProd,
+        nodeEnv: 'production',
+        appEnv: 'staging',
+        cryptoDepositsGlobalEnabled: true,
+        cryptoWalletGlobalEnabled: true,
       }),
     ).toEqual([]);
   });
