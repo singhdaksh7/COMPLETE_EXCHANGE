@@ -23,6 +23,9 @@ cex-staging-*.json
 *-overrides.json
 aws-exports.js
 
+# Stage 4 collected audit evidence (may contain infra identifiers; hand off out of band)
+evidence-pack-output/
+
 # Dependencies / build output
 node_modules/
 dist/
