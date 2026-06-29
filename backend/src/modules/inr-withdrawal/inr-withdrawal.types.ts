@@ -21,8 +21,19 @@ export const InrWithdrawalAction = {
   ADMIN_LIST: 'inr.withdrawal.admin_list',
 } as const;
 
-/** Ledger anchors shared by the service + tests. */
-export const WITHDRAWAL_REFERENCE_TYPE = 'inr_withdrawal';
+/**
+ * Ledger anchors shared by the service + tests.
+ *
+ * Idempotency for a ledger posting is the pair (referenceType, referenceId).
+ * `LedgerTransaction.referenceId` is a UUID column (`@db.Uuid`), so it MUST be
+ * the withdrawal id alone — never a composite string. Each money movement for a
+ * withdrawal is disambiguated by a DISTINCT referenceType (mirroring the crypto
+ * withdrawal pattern: crypto_withdrawal / _release / _final), so the same
+ * withdrawal id can anchor lock, release and payout without colliding.
+ */
+export const WITHDRAWAL_REFERENCE_TYPE = 'inr_withdrawal'; // lock/reserve
+export const WITHDRAWAL_RELEASE_REFERENCE_TYPE = 'inr_withdrawal_release';
+export const WITHDRAWAL_PAYOUT_REFERENCE_TYPE = 'inr_withdrawal_payout';
 export const WITHDRAWAL_LOCK_KIND = 'INR_WITHDRAWAL_LOCK';
 export const WITHDRAWAL_RELEASE_KIND = 'INR_WITHDRAWAL_RELEASE';
 export const WITHDRAWAL_PAYOUT_KIND = 'INR_WITHDRAWAL_PAYOUT';

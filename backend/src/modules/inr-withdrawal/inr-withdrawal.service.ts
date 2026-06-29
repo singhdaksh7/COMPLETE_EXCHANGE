@@ -20,8 +20,10 @@ import {
   InrWithdrawalAction,
   WITHDRAWAL_LOCK_KIND,
   WITHDRAWAL_PAYOUT_KIND,
+  WITHDRAWAL_PAYOUT_REFERENCE_TYPE,
   WITHDRAWAL_REFERENCE_TYPE,
   WITHDRAWAL_RELEASE_KIND,
+  WITHDRAWAL_RELEASE_REFERENCE_TYPE,
   toAdminInrWithdrawalDto,
   toInrWithdrawalDto,
   type AdminInrWithdrawalDto,
@@ -323,12 +325,14 @@ export const inrWithdrawalService = {
       );
     }
 
-    // Release the held funds first (idempotent on the :release reference).
+    // Release the held funds first. Idempotent on (referenceType, referenceId):
+    // a distinct release referenceType keyed to the withdrawal UUID (NOT a
+    // composite string — referenceId is a UUID column).
     await ledgerService.post(
       {
         kind: WITHDRAWAL_RELEASE_KIND,
-        referenceType: WITHDRAWAL_REFERENCE_TYPE,
-        referenceId: `${id}:release`,
+        referenceType: WITHDRAWAL_RELEASE_REFERENCE_TYPE,
+        referenceId: id,
         metadata: { reason: input.reason },
         lines: [
           {
@@ -375,8 +379,9 @@ export const inrWithdrawalService = {
 
   // --------------------------------------------------------------------------
   // 4. Admin mark paid — finalize the payout (USER_LOCKED -> MANUAL_BANK_CLEARING)
-  //    and record the UTR. Only from APPROVED. Idempotent on the :payout
-  //    reference + the conditional APPROVED -> PAID update.
+  //    and record the UTR. Only from APPROVED. Idempotent on the payout ledger
+  //    reference (inr_withdrawal_payout + withdrawal id) + the conditional
+  //    APPROVED -> PAID update.
   // --------------------------------------------------------------------------
   async markPaid(
     id: string,
@@ -397,12 +402,14 @@ export const inrWithdrawalService = {
     }
 
     // Finalize: debit the locked funds, credit the manual bank-clearing account
-    // (the exchange paid out from its bank). Idempotent on the :payout reference.
+    // (the exchange paid out from its bank). Idempotent on (referenceType,
+    // referenceId): a distinct payout referenceType keyed to the withdrawal UUID
+    // (NOT a composite string — referenceId is a UUID column).
     const posted = await ledgerService.post(
       {
         kind: WITHDRAWAL_PAYOUT_KIND,
-        referenceType: WITHDRAWAL_REFERENCE_TYPE,
-        referenceId: `${id}:payout`,
+        referenceType: WITHDRAWAL_PAYOUT_REFERENCE_TYPE,
+        referenceId: id,
         metadata: { utr: input.utr },
         lines: [
           {

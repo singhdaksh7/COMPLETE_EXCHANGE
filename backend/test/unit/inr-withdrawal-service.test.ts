@@ -199,7 +199,12 @@ describe('admin reject', () => {
     expect(dto.status).toBe('REJECTED');
     const release = ledger.post.mock.calls[0][0];
     expect(release.kind).toBe('INR_WITHDRAWAL_RELEASE');
-    expect(release.referenceId).toBe(`${WD_ID}:release`);
+    // referenceId is a UUID column (@db.Uuid): it MUST be the withdrawal id
+    // alone, NOT a composite like `${id}:release` (that caused P2023). The
+    // action is disambiguated by a distinct referenceType.
+    expect(release.referenceId).toBe(WD_ID);
+    expect(release.referenceId).not.toContain(':');
+    expect(release.referenceType).toBe('inr_withdrawal_release');
     expect(release.lines).toEqual([
       expect.objectContaining({ kind: 'USER_LOCKED', direction: 'DEBIT', amount: '500.00' }),
       expect.objectContaining({ kind: 'USER_AVAILABLE', direction: 'CREDIT', amount: '500.00' }),
@@ -230,7 +235,11 @@ describe('admin mark paid', () => {
     expect(dto.status).toBe('PAID');
     const fin = ledger.post.mock.calls[0][0];
     expect(fin.kind).toBe('INR_WITHDRAWAL_PAYOUT');
-    expect(fin.referenceId).toBe(`${WD_ID}:payout`);
+    // referenceId is a UUID column (@db.Uuid): the withdrawal id alone, never a
+    // composite like `${id}:payout` (that caused P2023).
+    expect(fin.referenceId).toBe(WD_ID);
+    expect(fin.referenceId).not.toContain(':');
+    expect(fin.referenceType).toBe('inr_withdrawal_payout');
     expect(fin.lines).toEqual([
       expect.objectContaining({ kind: 'USER_LOCKED', direction: 'DEBIT', amount: '500.00' }),
       expect.objectContaining({ kind: 'MANUAL_BANK_CLEARING', direction: 'CREDIT', amount: '500.00' }),
