@@ -44,6 +44,8 @@ export interface SubmitDocumentInput {
   docType: KycDocType;
   sha256: string;
   contentType: string;
+  /** Declared file size in bytes (optional; bounded by KYC_MAX_UPLOAD_BYTES). */
+  fileSize?: number;
 }
 
 export interface KycDecisionInput {

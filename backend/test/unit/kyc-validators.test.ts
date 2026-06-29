@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   kycDecisionSchema,
+  kycDocumentSchema,
   kycNoteSchema,
   kycQueueQuerySchema,
   kycSubmitSchema,
@@ -55,6 +56,68 @@ describe('kyc validators', () => {
   it('requires a non-empty note for the standalone note endpoint', () => {
     expect(() => kycNoteSchema.parse({ note: '' })).toThrow();
     expect(kycNoteSchema.parse({ note: 'watchlist hit' })).toMatchObject({ note: 'watchlist hit' });
+  });
+
+  it('accepts a document upload with an allowed MIME type', () => {
+    for (const contentType of ['image/jpeg', 'image/png', 'application/pdf']) {
+      const parsed = kycDocumentSchema.parse({
+        docType: 'PAN',
+        sha256: 'a'.repeat(64),
+        contentType,
+      });
+      expect(parsed.contentType).toBe(contentType);
+    }
+  });
+
+  it('rejects unsafe / unsupported document MIME types', () => {
+    for (const contentType of [
+      'image/svg+xml', // script-bearing
+      'text/html', // XSS vector
+      'application/x-msdownload', // executable
+      'application/zip', // archive
+      'application/octet-stream', // unknown/binary
+      'application/javascript', // script
+    ]) {
+      expect(() =>
+        kycDocumentSchema.parse({
+          docType: 'PAN',
+          sha256: 'a'.repeat(64),
+          contentType,
+        }),
+      ).toThrow();
+    }
+  });
+
+  it('accepts an optional positive fileSize and rejects non-positive values', () => {
+    expect(
+      kycDocumentSchema.parse({
+        docType: 'PAN',
+        sha256: 'a'.repeat(64),
+        contentType: 'application/pdf',
+        fileSize: 2048,
+      }),
+    ).toMatchObject({ fileSize: 2048 });
+
+    // Absent fileSize is allowed (backwards compatible).
+    expect(
+      kycDocumentSchema.parse({
+        docType: 'PAN',
+        sha256: 'a'.repeat(64),
+        contentType: 'application/pdf',
+      }).fileSize,
+    ).toBeUndefined();
+
+    // Zero / negative are rejected.
+    for (const fileSize of [0, -10]) {
+      expect(() =>
+        kycDocumentSchema.parse({
+          docType: 'PAN',
+          sha256: 'a'.repeat(64),
+          contentType: 'application/pdf',
+          fileSize,
+        }),
+      ).toThrow();
+    }
   });
 
   it('coerces queue filters (status / risk / dates)', () => {

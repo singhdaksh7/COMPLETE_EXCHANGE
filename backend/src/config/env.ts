@@ -183,6 +183,16 @@ export const envSchema = z
     .default('dev-only-change-me-kyc-pii-encryption-key'),
   // Lifetime of the (stub) presigned document upload URL, seconds.
   KYC_UPLOAD_URL_TTL_SEC: z.coerce.number().int().positive().default(900),
+  // Maximum accepted KYC document upload size, bytes. The file itself is
+  // uploaded directly to object storage via a presigned URL; this bound is
+  // enforced server-side before the URL is issued (and would be embedded as the
+  // presigned content-length-range condition in a real implementation). Default
+  // 10 MiB — generous for a PDF/JPEG/PNG identity document.
+  KYC_MAX_UPLOAD_BYTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(10 * 1024 * 1024),
   // Generic KYC provider selection. 'mock' is a fully-offline deterministic
   // stub; 'external' is the real vendor and stays a throwing stub until a
   // vendor is finalized and wired (Phase 3).

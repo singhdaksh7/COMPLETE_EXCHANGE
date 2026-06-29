@@ -175,6 +175,47 @@ describe('kycService.submitDocument', () => {
     expect(created.storageKey.startsWith('kyc/user-1/pan/')).toBe(true);
     expect(audit.mock.calls[0][0].action).toBe('kyc.document.submit');
   });
+
+  it('accepts an upload whose declared size is within the limit', async () => {
+    repo.findUserById.mockResolvedValue(makeUser());
+    repo.createDocument.mockResolvedValue(makeDoc());
+
+    const result = await kycService.submitDocument('user-1', {
+      docType: 'PAN',
+      sha256: 'a'.repeat(64),
+      contentType: 'application/pdf',
+      fileSize: 1024 * 1024, // 1 MiB, well under the 10 MiB default
+    });
+    expect(result.documentId).toBe('doc-1');
+  });
+
+  it('rejects an upload that exceeds the maximum size (server-side)', async () => {
+    repo.findUserById.mockResolvedValue(makeUser());
+
+    await expect(
+      kycService.submitDocument('user-1', {
+        docType: 'PAN',
+        sha256: 'a'.repeat(64),
+        contentType: 'image/png',
+        fileSize: 50 * 1024 * 1024, // 50 MiB, over the 10 MiB default
+      }),
+    ).rejects.toMatchObject({ statusCode: 400, details: { code: 'KYC_FILE_TOO_LARGE' } });
+    expect(repo.createDocument).not.toHaveBeenCalled();
+  });
+
+  it('rejects a disallowed MIME type at the service layer (defense in depth)', async () => {
+    repo.findUserById.mockResolvedValue(makeUser());
+
+    await expect(
+      kycService.submitDocument('user-1', {
+        docType: 'PAN',
+        sha256: 'a'.repeat(64),
+        // e.g. an SVG (script-bearing) or any non-allowlisted type
+        contentType: 'image/svg+xml',
+      }),
+    ).rejects.toMatchObject({ statusCode: 400, details: { code: 'KYC_UNSUPPORTED_FILE_TYPE' } });
+    expect(repo.createDocument).not.toHaveBeenCalled();
+  });
 });
 
 describe('kycService.getStatus', () => {

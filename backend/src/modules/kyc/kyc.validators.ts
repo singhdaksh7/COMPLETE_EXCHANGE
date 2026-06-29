@@ -39,11 +39,33 @@ export const kycSubmitSchema = z
   })
   .strict();
 
+/**
+ * The ONLY MIME types a KYC document upload may declare. This is a strict
+ * allowlist: anything outside it (executables, scripts, archives, HTML, SVG,
+ * or unknown types) is rejected at the edge. SVG is intentionally excluded
+ * because it can carry active script content. Kept as an exported constant so
+ * the service layer can re-assert the same rule (defense in depth).
+ */
+export const ALLOWED_KYC_MIME_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'application/pdf',
+] as const;
+
 export const kycDocumentSchema = z
   .object({
     docType: z.nativeEnum(KycDocType),
     sha256: z.string().regex(/^[a-f0-9]{64}$/, 'Invalid sha256 digest'),
-    contentType: z.enum(['image/jpeg', 'image/png', 'application/pdf']),
+    contentType: z.enum(ALLOWED_KYC_MIME_TYPES, {
+      errorMap: () => ({
+        message: `Unsupported file type. Allowed types: ${ALLOWED_KYC_MIME_TYPES.join(', ')}`,
+      }),
+    }),
+    // Declared file size in bytes. Optional for backwards compatibility with
+    // existing clients, but when present it must be a positive integer; the
+    // configured maximum (KYC_MAX_UPLOAD_BYTES) is enforced server-side in the
+    // service before a presigned upload URL is issued.
+    fileSize: z.coerce.number().int().positive().optional(),
   })
   .strict();
 

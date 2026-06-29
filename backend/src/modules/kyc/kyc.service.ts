@@ -13,6 +13,7 @@ import {
   mapProviderStatusToKyc,
   maskPan,
 } from './kyc.status';
+import { ALLOWED_KYC_MIME_TYPES } from './kyc.validators';
 import {
   KycAction,
   toAdminKycQueueItem,
@@ -153,6 +154,37 @@ export const kycService = {
   ): Promise<KycDocumentUploadDto> {
     const user = await kycRepository.findUserById(userId);
     if (!user) throw new NotFoundError('User not found');
+
+    // Defense in depth: the route validator already allowlists the MIME type and
+    // bounds the size, but the service re-asserts both so an internal caller (or
+    // a future code path that skips the zod layer) can never register an unsafe
+    // or oversized document. Executables, scripts, archives, HTML and SVG all
+    // fall outside the allowlist and are rejected here too.
+    if (
+      !(ALLOWED_KYC_MIME_TYPES as readonly string[]).includes(input.contentType)
+    ) {
+      throw new BadRequestError(
+        `Unsupported file type. Allowed types: ${ALLOWED_KYC_MIME_TYPES.join(', ')}`,
+        { code: 'KYC_UNSUPPORTED_FILE_TYPE', contentType: input.contentType },
+      );
+    }
+    if (input.fileSize !== undefined) {
+      if (!Number.isInteger(input.fileSize) || input.fileSize <= 0) {
+        throw new BadRequestError('Invalid file size', {
+          code: 'KYC_INVALID_FILE_SIZE',
+        });
+      }
+      if (input.fileSize > config.kyc.maxUploadBytes) {
+        throw new BadRequestError(
+          `File exceeds the maximum allowed size of ${config.kyc.maxUploadBytes} bytes`,
+          {
+            code: 'KYC_FILE_TOO_LARGE',
+            maxBytes: config.kyc.maxUploadBytes,
+            fileSize: input.fileSize,
+          },
+        );
+      }
+    }
 
     const storageKey = buildStorageKey(userId, input.docType);
     const doc = await kycRepository.createDocument({

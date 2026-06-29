@@ -1,0 +1,125 @@
+name: EXORA Security Scans
+
+# Cybersecurity-audit readiness scans: dependency audit (SCA), static analysis
+# (SAST), and secret scanning. These are intentionally REPORT-ONLY for the first
+# baseline so they never block delivery while the backlog is triaged. Each job
+# uploads a machine-readable report artifact. Flip the marked `continue-on-error`
+# / threshold to enforcing once the baseline is clean (see
+# docs/security/vapt-evidence-pack.md).
+
+on:
+  push:
+    branches:
+      - main
+      - "feature/**"
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-audit:
+    name: Dependency audit (npm)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [backend, frontend, mobile]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Report-only: surface high/critical advisories without failing the build.
+      # NEVER run `npm audit fix --force` in CI — it can apply breaking major
+      # upgrades. Remediation is a reviewed, manual change.
+      - name: npm audit (high+)
+        working-directory: ${{ matrix.package }}
+        run: npm audit --audit-level=high || true
+
+      - name: npm audit JSON report
+        working-directory: ${{ matrix.package }}
+        run: npm audit --json > npm-audit-${{ matrix.package }}.json || true
+
+      - name: Upload audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-${{ matrix.package }}
+          path: ${{ matrix.package }}/npm-audit-${{ matrix.package }}.json
+          if-no-files-found: warn
+
+  sast:
+    name: SAST (Semgrep OSS)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Semgrep
+        run: pip install semgrep
+
+      # OSS registry rule packs only — no token, no paid Semgrep AppSec Platform.
+      # `--metrics off` keeps it from phoning home. Report-only for the baseline.
+      - name: Semgrep scan (report-only)
+        run: |
+          semgrep scan \
+            --config p/security-audit \
+            --config p/javascript \
+            --config p/typescript \
+            --sarif --output semgrep.sarif \
+            --metrics off || true
+
+      - name: Upload Semgrep SARIF
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-sarif
+          path: semgrep.sarif
+          if-no-files-found: warn
+
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code (full history)
+        uses: actions/checkout@v4
+        with:
+          # Full history so committed secrets anywhere in the tree are detected.
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          GITLEAKS_VERSION=8.18.4
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz gitleaks
+          sudo mv gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      # --redact ensures any finding is masked in the logs (secrets are NEVER
+      # printed). Scans committed code/history only. Report-only for the baseline.
+      - name: Run gitleaks (redacted)
+        run: |
+          gitleaks detect \
+            --source . \
+            --redact \
+            --no-banner \
+            --report-format sarif \
+            --report-path gitleaks.sarif \
+            --exit-code 0
+
+      - name: Upload gitleaks SARIF
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-sarif
+          path: gitleaks.sarif
+          if-no-files-found: warn
