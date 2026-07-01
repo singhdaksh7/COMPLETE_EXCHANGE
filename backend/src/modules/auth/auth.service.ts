@@ -417,7 +417,13 @@ export const authService = {
         requestId: input.requestId,
         metadata: { email: input.email },
       });
-      throw new UnauthorizedError('Invalid credentials', 'INVALID_CREDENTIALS');
+      // Same code + message whether the email is unknown or the password is
+      // wrong (paired with the dummy-hash verify above) so login cannot be used
+      // to enumerate accounts.
+      throw new UnauthorizedError(
+        'Incorrect email or password.',
+        'INVALID_CREDENTIALS',
+      );
     }
 
     if (user.status !== 'ACTIVE') {

@@ -72,6 +72,7 @@ Stage 7.0B/7.0C deliverables. Start with `AUDIT_SCOPE.md`, then the report.
 | [vapt-evidence-checklist.md](./vapt-evidence-checklist.md) | Per-area test / expected / evidence-source / status / gaps checklist. |
 | [final-security-control-matrix.md](./final-security-control-matrix.md) | Control → implemented status → evidence → last-verified → gap → priority. |
 | [final-smoke-test-runbook.md](./final-smoke-test-runbook.md) | Manual UI walkthrough (location, single-session, crypto-off, INR flows, admin RBAC/lifecycle). |
+| [auth-hardening-checklist.md](./auth-hardening-checklist.md) | **Stage 8A:** auth surface audit + safe fixes (malformed-JSON 400, login password cap, HTML rejection, generic errors); managed-auth-provider future decision. |
 | `scripts/security/collect-final-audit-evidence.ps1` | Read-only final evidence: git/tags, ECS, task defs, non-secret flags, CloudFront/S3, retention, alarms, docs, safe reachability, frontend fake-string scan. PASS/WARN/FAIL. Never reads secrets/PII; no AWS changes. |
 
 > Stage 8 is **docs + one read-only script only** — no backend/frontend change,

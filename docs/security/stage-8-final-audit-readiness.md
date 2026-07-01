@@ -65,6 +65,25 @@ and the FIU / edge / secrets docs.
 | 16 | **WAF / admin edge readiness docs** (plan + dry-run script) | `waf-readiness-plan.md`, `admin-edge-security-readiness.md` |
 | 17 | **FIU technical evidence docs** | `../compliance/fiu-evidence-pack/README.md` |
 
+## 3a. Stage 8A — auth hardening (this stage)
+
+A focused audit of the authentication surface. Most controls were already strong
+(Argon2id + dummy-hash timing defense, Redis-backed rate limits, lockouts, 2FA,
+step-up, single-session, login-location) and were **not** duplicated. Small safe
+fixes applied — full detail in [`auth-hardening-checklist.md`](./auth-hardening-checklist.md):
+
+- **Malformed JSON** now returns `400 INVALID_JSON` ("Invalid JSON body.") instead
+  of a 500 (`middleware/error-handler.ts`); no raw body/stack leaked.
+- **Login password** capped at 128 chars (hashing-DoS guard, matches registration).
+- **Login failure copy** unified to "Incorrect email or password." (already
+  non-enumerating; code `INVALID_CREDENTIALS` unchanged).
+- **KYC identity/free-text fields** reject HTML (`<`/`>`) as a stored-XSS guard.
+
+**Auth provider decision:** EXORA uses **custom authentication** (not Clerk/Auth0/
+Supabase). A managed provider is a **future architectural option only** — migrating
+before the audit freeze is high risk and out of scope. The current custom controls
+are retained and audited for staging.
+
 ## 4. Intentionally disabled (by design)
 
 - Crypto deposits, withdrawals, and wallet surfaces (global flags off).

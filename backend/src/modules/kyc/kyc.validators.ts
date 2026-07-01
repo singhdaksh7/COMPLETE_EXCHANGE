@@ -12,12 +12,25 @@ const pan = z
   .toUpperCase()
   .regex(/^[A-Z]{5}[0-9]{4}[A-Z]$/, 'Invalid PAN');
 
+/**
+ * Reject angle brackets in human-identity / free-text fields that are later
+ * rendered in the admin console and (for reason messages) to the user. Names,
+ * addresses and reasons never legitimately contain `<`/`>`, so rejecting them
+ * outright is a clean store-side XSS guard (defense in depth on top of the
+ * frontend's output escaping). Applied via `.refine` so the trimmed value is
+ * validated and the original text is preserved otherwise.
+ */
+const noAngleBrackets = (schema: z.ZodString) =>
+  schema.refine((v) => !/[<>]/.test(v), {
+    message: 'Must not contain HTML tags (< or >)',
+  });
+
 const addressSchema = z
   .object({
-    line1: z.string().trim().max(200).optional(),
-    line2: z.string().trim().max(200).optional(),
-    city: z.string().trim().max(100).optional(),
-    state: z.string().trim().max(100).optional(),
+    line1: noAngleBrackets(z.string().trim().max(200)).optional(),
+    line2: noAngleBrackets(z.string().trim().max(200)).optional(),
+    city: noAngleBrackets(z.string().trim().max(100)).optional(),
+    state: noAngleBrackets(z.string().trim().max(100)).optional(),
     pincode: z
       .string()
       .regex(/^[1-9][0-9]{5}$/, 'Invalid pincode')
@@ -27,7 +40,7 @@ const addressSchema = z
 
 export const kycSubmitSchema = z
   .object({
-    fullName: z.string().trim().min(2).max(140),
+    fullName: noAngleBrackets(z.string().trim().min(2).max(140)),
     dob: z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date of birth (YYYY-MM-DD)')
@@ -75,9 +88,9 @@ export const kycDecisionSchema = z
     tier: z.number().int().min(0).max(5).optional(),
     // User-facing reason/message (safe to show the user). Required for REJECT
     // and REQUEST_INFO.
-    reason: z.string().trim().max(500).optional(),
+    reason: noAngleBrackets(z.string().trim().max(500)).optional(),
     // Internal compliance note (admin-only, never returned on user APIs).
-    complianceNote: z.string().trim().max(1000).optional(),
+    complianceNote: noAngleBrackets(z.string().trim().max(1000)).optional(),
   })
   .strict()
   .refine(
@@ -89,7 +102,7 @@ export const kycDecisionSchema = z
 
 /** Standalone internal compliance note (no status change). */
 export const kycNoteSchema = z
-  .object({ note: z.string().trim().min(1).max(1000) })
+  .object({ note: noAngleBrackets(z.string().trim().min(1).max(1000)) })
   .strict();
 
 export const kycQueueQuerySchema = z

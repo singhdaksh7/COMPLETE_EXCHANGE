@@ -24,6 +24,47 @@ describe('kyc validators', () => {
     ).toThrow();
   });
 
+  it('rejects HTML/script in identity + address fields (stored-XSS guard)', () => {
+    // fullName with a script tag.
+    expect(() =>
+      kycSubmitSchema.parse({
+        fullName: '<script>alert(1)</script>',
+        dob: '1990-05-15',
+        pan: 'ABCDE1234F',
+      }),
+    ).toThrow();
+    // Angle brackets anywhere in an address free-text field.
+    for (const field of ['line1', 'line2', 'city', 'state']) {
+      expect(() =>
+        kycSubmitSchema.parse({
+          fullName: 'Jane Doe',
+          dob: '1990-05-15',
+          pan: 'ABCDE1234F',
+          address: { [field]: '<img src=x onerror=alert(1)>' },
+        }),
+      ).toThrow();
+    }
+    // A normal name/address with an apostrophe or hyphen still parses.
+    expect(
+      kycSubmitSchema.parse({
+        fullName: "O'Brien-Smith",
+        dob: '1990-05-15',
+        pan: 'ABCDE1234F',
+        address: { line1: '12/A, MG Road', city: 'Pune', state: 'MH' },
+      }).fullName,
+    ).toBe("O'Brien-Smith");
+  });
+
+  it('rejects HTML in a decision reason and standalone note', () => {
+    expect(() =>
+      kycDecisionSchema.parse({
+        decision: 'REJECT',
+        reason: '<b>blurry</b>',
+      }),
+    ).toThrow();
+    expect(() => kycNoteSchema.parse({ note: '<script>x</script>' })).toThrow();
+  });
+
   it('requires a reason when rejecting', () => {
     expect(() => kycDecisionSchema.parse({ decision: 'REJECT' })).toThrow();
     expect(

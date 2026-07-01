@@ -16,7 +16,12 @@ Priority: **P0** production/FIU blocker · **P1** high · **P2** medium · **P3*
 
 | Security area | Control | Implemented | Evidence source | Last verified by | Gap | Priority |
 |---|---|---|---|---|---|---|
-| Auth | Password login, hashed at rest, no user enumeration | ✅ | `code`; `SECURITY_HARDENING_REPORT.md` | manual + code | — | — |
+| Auth | Password login, hashed at rest, no user enumeration | ✅ | `code`; `SECURITY_HARDENING_REPORT.md`, `auth-hardening-checklist.md` | manual + code + test | — | — |
+| Auth | Argon2id hashing + dummy-hash timing defense; login password max 128 | ✅ | `auth.service.ts`, `auth.validators.ts`; `auth-hardening-checklist.md` | test (Stage 8A) | — | — |
+| Auth | Generic login/reset errors; passwords never logged | ✅ | `auth.service.ts`, `auth.controller.ts`; `auth-hardening-checklist.md` | code + search (Stage 8A) | non-enumerating signup is future | P3 |
+| Input validation | Server-side Zod `.strict()` on all auth/KYC endpoints; HTML rejected in identity/free-text | ✅ | `auth.validators.ts`, `kyc.validators.ts`; `auth-hardening-checklist.md` | test (Stage 8A) | — | — |
+| Error handling | Malformed JSON → 400 `INVALID_JSON` (no raw body/stack) | ✅ | `middleware/error-handler.ts`; `error-handler-json.test.ts` | test (Stage 8A) | — | — |
+| Auth architecture | Managed auth provider (Clerk/Auth0/Supabase) | ⏭️ | `auth-hardening-checklist.md`, `production-blockers.md` | doc | future option; migration pre-freeze is high risk | P3 |
 | MFA | User 2FA (TOTP, hashed one-time backup codes, login enforcement) | ✅ | `user-2fa-step-up-auth.md` | manual | — | — |
 | MFA | Withdrawal / sensitive-change step-up (5-min single-use token) | ✅ | `user-2fa-step-up-auth.md` | manual | — | — |
 | Admin MFA | Admin TOTP required + AES-256-GCM encrypted at rest | ✅ | `admin-access-runbook.md`, `secret-inventory.md` | code | — | — |

@@ -46,7 +46,10 @@ export const registerSchema = z
 export const loginSchema = z
   .object({
     email,
-    password: z.string().min(1, 'Password is required'),
+    // min(1) so an empty password is a validation error, not a login attempt;
+    // max(128) mirrors the registration policy and caps verify cost so an
+    // over-long body can't be used as a password-hashing DoS vector.
+    password: z.string().min(1, 'Password is required').max(128),
     location: loginLocation,
   })
   .strict();

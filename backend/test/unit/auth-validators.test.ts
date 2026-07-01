@@ -37,6 +37,17 @@ describe('auth validators', () => {
     expect(() => loginSchema.parse({ email: 'a@b.com', password: '' })).toThrow();
   });
 
+  it('login rejects an over-long password before it can reach the hasher (DoS guard)', () => {
+    expect(() =>
+      loginSchema.parse({ email: 'a@b.com', password: 'x'.repeat(129) }),
+    ).toThrow();
+    // A password at the policy maximum is still accepted.
+    expect(
+      loginSchema.parse({ email: 'a@b.com', password: 'x'.repeat(128) })
+        .password,
+    ).toHaveLength(128);
+  });
+
   it('refresh requires a plausibly-long token', () => {
     expect(() => refreshSchema.parse({ refreshToken: 'tiny' })).toThrow();
     expect(

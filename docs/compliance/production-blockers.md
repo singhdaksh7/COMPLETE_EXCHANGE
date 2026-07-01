@@ -79,6 +79,8 @@ Progress: ❌ not started · 🟡 partial/mock/abstraction · ✅ done.
 | 10a | Tuned WAF ruleset associated to the actual serving edge | HIGH (DOCUMENTED GAP) | 🟡 | CloudFront `E36DO8GL4SA61N` has an auto-created WebACL; rules/mode unverified. Plan + dry-run: `waf-readiness-plan.md`, `plan-waf-readiness.ps1`. **DNS divergence:** live `www` resolves to Vercel while CloudFront holds the same alias — apply WAF/Vercel-Firewall at the real serving edge. |
 | 10b | Admin IP allowlist / VPN at the edge | HIGH (DOCUMENTED GAP) | 🟡 | App-level per-admin IP allowlist + Bearer + RBAC + TOTP exist (`admin-authenticate.ts`); edge/network allowlist documented, not enforced. |
 | 10c | CSP / security headers staged rollout on frontends | MEDIUM (DOCUMENTED GAP) | 🟡 | API helmet headers present; `www` (Vercel) HSTS only; CloudFront/S3 none. CSP report-only first. `cloudfront-security-headers-readiness.md`. |
+| 23 | Managed auth provider (Clerk/Auth0/Supabase) evaluation | LOW (future option) | ⏭️ | EXORA uses custom auth with strong controls (`docs/security/auth-hardening-checklist.md`). Managed provider is a **future architectural option**, not a blocker; migrating before the audit freeze is high risk and out of scope. |
+| 24 | CAPTCHA / bot mitigation + progressive login delay | LOW (future option) | ⏭️ | Optional future hardening; rate limits + lockouts cover the risk today. No paid CAPTCHA vendor added. |
 | 10d | WAF false-positive tuning before strict blocking | MEDIUM (DOCUMENTED GAP) | ❌ | Managed/rate rules start in COUNT; tune before flipping to Block. |
 | 10e | `CORS_ORIGINS` missing live frontend origins | HIGH (deploy-time) | 🟡 | Live value omits `https://www.exorain.com` / `https://exorain.com` and carries a placeholder. CORS code is correct (strict allowlist); fix the env value at deploy. **No code change.** |
 
@@ -111,6 +113,7 @@ Progress: ❌ not started · 🟡 partial/mock/abstraction · ✅ done.
 | — | CloudWatch alarms present (5xx/DB/auth-fail/health/latency/404) | ✅ | `docs/security/cloudwatch-alarms-plan.md` |
 | 22 | Crypto-global production boot guard | ✅ | `backend/src/lib/prod-safety.ts` |
 | 8a | FIU technical-readiness evidence pack | ✅ | `docs/compliance/fiu-evidence-pack/README.md` |
+| — | Auth input hardening: malformed JSON → 400, login password cap, HTML rejection in KYC/identity fields, generic login copy | ✅ | Stage 8A; `docs/security/auth-hardening-checklist.md` |
 
 ---
 

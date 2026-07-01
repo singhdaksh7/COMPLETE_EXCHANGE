@@ -7,6 +7,19 @@ import { sendError } from '../utils/response';
 import { config } from '../config';
 
 /**
+ * True for the SyntaxError express.json()/body-parser raises on an unparseable
+ * request body. body-parser tags it `type: 'entity.parse.failed'` and attaches
+ * the offending `body`; we match on either signal so a parser upgrade that drops
+ * one of them still classifies correctly.
+ */
+function isBodyParseError(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  const e = err as { type?: unknown; body?: unknown };
+  if (e.type === 'entity.parse.failed') return true;
+  return err instanceof SyntaxError && 'body' in e;
+}
+
+/**
  * Central error handler — the single place that turns any thrown error into
  * the standard error envelope. Mounted last, after all routes.
  *
@@ -32,6 +45,16 @@ export function errorHandler(
       log.error({ err, code: err.errorCode }, err.message);
     }
     sendError(res, err.statusCode, err.errorCode, err.message, err.details);
+    return;
+  }
+
+  // 1b. Malformed request body from express.json()/body-parser. It throws a
+  // SyntaxError tagged `type: 'entity.parse.failed'` (status 400) for invalid
+  // JSON. Without this branch it falls through to the generic 500 below. Return
+  // a clean, generic 400 — never echo the raw body or the parser's stack.
+  if (isBodyParseError(err)) {
+    log.warn({ code: 'INVALID_JSON' }, 'Malformed JSON request body');
+    sendError(res, 400, 'INVALID_JSON', 'Invalid JSON body.');
     return;
   }
 
