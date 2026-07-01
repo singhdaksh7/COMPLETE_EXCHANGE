@@ -125,6 +125,22 @@ task def (read-only):
   calls the API cross-origin, it will be CORS-blocked. Fix the `CORS_ORIGINS`
   value at the combined Stage 8 deploy (no code change). Tracked as blocker 10e.
 
+## 5a. Admin lifecycle & accountability (Stage 7A)
+
+App-level access control now includes durable admin lifecycle management on top
+of the auth/RBAC edge above:
+
+- **Soft deactivation** (`POST /admin/v1/admins/:id/deactivate`, SUPER_ADMIN-only)
+  removes an admin's access, revokes live sessions and clears the RBAC cache, so
+  a compromised or offboarded admin is cut off immediately without deleting any
+  record. Reactivation is a separate SUPER_ADMIN action and does not restore old
+  sessions.
+- **Traceability:** `GET /admin/v1/admins/:id/profile` and `/activity` give a
+  SUPER_ADMIN (or read-only COMPLIANCE_OFFICER) a full picture of what each admin
+  did, derived from append-only `admin_logs`. No secrets are exposed.
+- **Retention:** admin rows and logs are never hard-deleted — historical
+  accountability is preserved for FIU. See `admin-access-runbook.md` §9–§11.
+
 ## 6. Future optional hardening (not in this stage)
 
 - AWS WAF WebACL on whatever CloudFront actually fronts (managed rules +

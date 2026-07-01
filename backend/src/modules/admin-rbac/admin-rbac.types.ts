@@ -67,6 +67,90 @@ export interface AdminListItem {
   ipAllowlist: string[];
   ipRestricted: boolean;
   createdAt: Date;
+  lastLoginAt: Date | null;
+  deactivatedAt: Date | null;
+  deactivationReason: string | null;
+}
+
+/**
+ * Rolled-up counts of an admin's recorded actions (Stage 7A). Derived purely
+ * from append-only admin_logs — nothing is synthesised. Used on the admin
+ * profile so a super admin can see, at a glance, what an admin has actually
+ * done (approvals, rejections, security actions) before deciding to remove
+ * their access.
+ */
+export interface AdminActivitySummary {
+  depositsApproved: number;
+  depositsRejected: number;
+  withdrawalsApproved: number;
+  withdrawalsRejected: number;
+  withdrawalsMarkedPaid: number;
+  kycApproved: number;
+  kycRejected: number;
+  kycRequestedInfo: number;
+  userFeatureChanges: number;
+  adminSecurityActions: number;
+  blockedLogins: number;
+  totalActions: number;
+}
+
+/**
+ * Full admin security + accountability profile (Stage 7A). Never includes the
+ * TOTP seed, recovery codes, password hash or any other secret material.
+ */
+export interface AdminSecurityProfile {
+  id: string;
+  email: string;
+  status: string;
+  roles: string[];
+  permissions: string[];
+  isSuperAdmin: boolean;
+  totpEnabled: boolean;
+  ipAllowlist: string[];
+  ipRestricted: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  lastLoginAt: Date | null;
+  createdBy: string | null;
+  createdByEmail: string | null;
+  deactivatedAt: Date | null;
+  deactivatedBy: string | null;
+  deactivatedByEmail: string | null;
+  deactivationReason: string | null;
+  activitySummary: AdminActivitySummary;
+}
+
+/** One entry in the admin activity timeline, normalised from admin_logs. */
+export interface AdminActivityItem {
+  id: string;
+  occurredAt: Date;
+  action: string;
+  entityType: string | null;
+  entityId: string | null;
+  affectedUserId: string | null;
+  result: string | null;
+  reason: string | null;
+  requestId: string | null;
+  ip: string | null;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface AdminActivityPage {
+  items: AdminActivityItem[];
+  page: number;
+  limit: number;
+  total: number;
+  hasMore: boolean;
+}
+
+export interface AdminActivityFilters {
+  from?: Date;
+  to?: Date;
+  action?: string;
+  entityType?: string;
+  userId?: string;
+  page: number;
+  limit: number;
 }
 
 /** Result of creating a sub-admin: the one-time initial password is returned
@@ -95,6 +179,9 @@ export function toAdminListItem(
     ipAllowlist: admin.ipAllowlist,
     ipRestricted: admin.ipAllowlist.length > 0,
     createdAt: admin.createdAt,
+    lastLoginAt: admin.lastLoginAt,
+    deactivatedAt: admin.deactivatedAt,
+    deactivationReason: admin.deactivationReason,
   };
 }
 

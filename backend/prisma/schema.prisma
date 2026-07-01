@@ -1540,11 +1540,25 @@ model Admin {
   passwordHash  String   @map("password_hash")
   totpSecretEnc Bytes    @map("totp_secret_enc")
   totpEnabled   Boolean  @default(true) @map("totp_enabled")
+  // Lifecycle state. 'ACTIVE' = may log in. 'SUSPENDED' = temporary hold.
+  // 'DEACTIVATED' = access removed (Stage 7A soft-delete). Any non-ACTIVE value
+  // blocks login and is excluded from the active-SUPER_ADMIN safety count. Admin
+  // rows are NEVER hard-deleted so historical accountability is retained forever.
   status        String   @default("ACTIVE")
   // Per-admin IPv4 allowlist (exact IPs or CIDRs). Empty = no IP restriction.
   // Enforced at login and on every admin API request.
   ipAllowlist   String[] @default([]) @map("ip_allowlist")
   createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
+  // Last successful login (Stage 7A). Null until the admin has logged in once.
+  lastLoginAt   DateTime? @map("last_login_at")
+  // Admin lifecycle audit anchors (Stage 7A). These are informational scalar
+  // references to the acting admin; they are intentionally NOT relations so that
+  // an actor admin can never be blocked from (or cascade into) another admin row.
+  createdBy          String?   @map("created_by") @db.Uuid
+  deactivatedAt      DateTime? @map("deactivated_at")
+  deactivatedBy      String?   @map("deactivated_by") @db.Uuid
+  deactivationReason String?   @map("deactivation_reason")
 
   roles                 AdminRole[]
   sessions              AdminSession[]

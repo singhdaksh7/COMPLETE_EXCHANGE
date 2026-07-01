@@ -12,6 +12,8 @@ import type {
   ProfileComplianceNote,
   TimelinePage,
   AdminListItem,
+  AdminSecurityProfile,
+  AdminActivityPage,
   UserFeatureControls,
   UserControlFlag,
   UserControlAuditEntry,
@@ -515,6 +517,40 @@ export const adminApi = {
 
   resetAdminTotp: (adminId: string) =>
     adminApiFetch<{ admin: PublicAdmin }>(`/admins/${adminId}/totp/reset`, 'POST'),
+
+  // ---- admin lifecycle + activity profile (Stage 7A) ----
+  deactivateAdmin: (adminId: string, reason: string, note?: string) =>
+    adminApiFetch<{ admin: PublicAdmin }>(`/admins/${adminId}/deactivate`, 'POST', {
+      body: { reason, ...(note ? { note } : {}) },
+    }),
+
+  reactivateAdmin: (adminId: string, reason: string) =>
+    adminApiFetch<{ admin: PublicAdmin }>(`/admins/${adminId}/reactivate`, 'POST', {
+      body: { reason },
+    }),
+
+  adminProfile: (adminId: string) =>
+    adminApiFetch<{ profile: AdminSecurityProfile }>(
+      `/admins/${adminId}/profile`,
+      'GET',
+    ),
+
+  adminActivity: (
+    adminId: string,
+    params: {
+      from?: string;
+      to?: string;
+      action?: string;
+      entityType?: string;
+      userId?: string;
+      page?: number;
+      limit?: number;
+    } = {},
+  ) =>
+    adminApiFetch<AdminActivityPage>(
+      `/admins/${adminId}/activity${buildQuery({ ...params })}`,
+      'GET',
+    ),
 
   setIpAllowlist: (adminId: string, ips: string[]) =>
     adminApiFetch<{ id: string; ipAllowlist: string[]; ipRestricted: boolean }>(

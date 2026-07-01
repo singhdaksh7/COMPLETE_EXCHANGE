@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '@/lib/admin-api';
 import { errorMessage } from '@/lib/api';
@@ -17,6 +18,14 @@ export default function AdminAdminsPage() {
   // create form
   const [email, setEmail] = useState('');
   const [roleId, setRoleId] = useState('');
+
+  const me = useQuery({
+    queryKey: ['admin-me'],
+    queryFn: () => adminApi.me(),
+    enabled: ready,
+  });
+  const isSuperAdmin = me.data?.data.isSuperAdmin ?? false;
+  const myAdminId = me.data?.data.admin.id;
 
   const admins = useQuery({
     queryKey: ['admin-admins'],
@@ -59,6 +68,20 @@ export default function AdminAdminsPage() {
 
   const resetTotp = useMutation({
     mutationFn: (id: string) => adminApi.resetAdminTotp(id),
+    onSuccess: invalidate,
+    onError: onErr,
+  });
+
+  const deactivate = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      adminApi.deactivateAdmin(id, reason),
+    onSuccess: invalidate,
+    onError: onErr,
+  });
+
+  const reactivate = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      adminApi.reactivateAdmin(id, reason),
     onSuccess: invalidate,
     onError: onErr,
   });
@@ -119,6 +142,39 @@ export default function AdminAdminsPage() {
     if (window.confirm(`Reset TOTP for ${a.email}? They must re-enroll on next login.`)) {
       resetTotp.mutate(a.id);
     }
+  }
+
+  function onDeactivate(a: AdminListItem) {
+    setError(null);
+    if (a.id === myAdminId) {
+      setError('You cannot deactivate your own admin account.');
+      return;
+    }
+    const reason = window.prompt(
+      `Deactivate ${a.email}?\n\nThis REMOVES their access and kills live sessions, ` +
+        `but PRESERVES all audit logs and historical activity. Enter a reason ` +
+        `(required, recorded in the audit trail):`,
+    );
+    if (reason === null) return; // cancelled
+    if (reason.trim().length < 3) {
+      setError('A reason of at least 3 characters is required to deactivate an admin.');
+      return;
+    }
+    deactivate.mutate({ id: a.id, reason: reason.trim() });
+  }
+
+  function onReactivate(a: AdminListItem) {
+    setError(null);
+    const reason = window.prompt(
+      `Reactivate ${a.email}? This re-enables login (old sessions are NOT ` +
+        `restored). Enter a reason (required):`,
+    );
+    if (reason === null) return;
+    if (reason.trim().length < 3) {
+      setError('A reason of at least 3 characters is required to reactivate an admin.');
+      return;
+    }
+    reactivate.mutate({ id: a.id, reason: reason.trim() });
   }
 
   function onRemoveRole(a: AdminListItem, name: string) {
@@ -232,6 +288,19 @@ export default function AdminAdminsPage() {
               <Button onClick={() => admins.refetch()}>Refresh</Button>
             </div>
 
+            <p className="mb-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Deactivation removes an admin&apos;s access and kills their live
+              sessions, but is a <strong>soft delete</strong>: the admin record and
+              all historical activity (approvals, security actions, audit logs) are
+              retained forever for accountability. Admin records are never hard-deleted.
+              {!isSuperAdmin && (
+                <>
+                  {' '}
+                  Only a super admin can deactivate or reactivate an admin.
+                </>
+              )}
+            </p>
+
             {admins.isLoading && <p className="text-sm text-gray-500">Loading…</p>}
             {admins.isError && <Alert>{errorMessage(admins.error)}</Alert>}
 
@@ -309,12 +378,38 @@ export default function AdminAdminsPage() {
                         {new Date(a.createdAt).toLocaleDateString()}
                       </td>
                       <td>
-                        <div className="flex flex-wrap gap-2">
-                          <Button onClick={() => onToggleStatus(a)}>
-                            {a.status === 'ACTIVE' ? 'Suspend' : 'Activate'}
-                          </Button>
-                          <Button onClick={() => onResetTotp(a)}>Reset TOTP</Button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Link
+                            href={`/admin/admins/detail?id=${a.id}`}
+                            className="text-xs font-medium text-blue-600 underline hover:text-blue-800"
+                          >
+                            Profile
+                          </Link>
+                          {a.status !== 'DEACTIVATED' && (
+                            <Button onClick={() => onToggleStatus(a)}>
+                              {a.status === 'ACTIVE' ? 'Suspend' : 'Activate'}
+                            </Button>
+                          )}
+                          {a.status !== 'DEACTIVATED' && (
+                            <Button onClick={() => onResetTotp(a)}>Reset TOTP</Button>
+                          )}
                           <Button onClick={() => onEditIps(a)}>IPs</Button>
+                          {isSuperAdmin &&
+                            a.status !== 'DEACTIVATED' &&
+                            a.id !== myAdminId && (
+                              <Button onClick={() => onDeactivate(a)}>Deactivate</Button>
+                            )}
+                          {isSuperAdmin && a.status === 'DEACTIVATED' && (
+                            <Button onClick={() => onReactivate(a)}>Reactivate</Button>
+                          )}
+                          {a.id === myAdminId && (
+                            <span
+                              className="self-center text-[11px] text-gray-400"
+                              title="You cannot deactivate your own account"
+                            >
+                              (you)
+                            </span>
+                          )}
                         </div>
                       </td>
                     </tr>

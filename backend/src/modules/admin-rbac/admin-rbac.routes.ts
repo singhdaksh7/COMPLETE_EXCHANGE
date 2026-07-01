@@ -3,9 +3,10 @@ import { asyncHandler } from '../../utils/async-handler';
 import { validate } from '../../middleware/validate';
 import { authRateLimiter } from '../../middleware/rate-limit';
 import { adminAuthenticate } from '../../middleware/admin-authenticate';
-import { adminAuthorize } from '../../middleware/admin-authorize';
+import { adminAuthorize, adminAuthorizeAny } from '../../middleware/admin-authorize';
 import { adminRbacController } from './admin-rbac.controller';
 import {
+  adminActivityQuerySchema,
   adminIdParamSchema,
   adminLoginSchema,
   adminRoleParamSchema,
@@ -13,8 +14,10 @@ import {
   createAdminSchema,
   createPermissionSchema,
   createRoleSchema,
+  deactivateAdminSchema,
   ipAllowlistSchema,
   permissionIdParamSchema,
+  reactivateAdminSchema,
   roleIdParamSchema,
   rolePermissionParamSchema,
   totpConfirmSchema,
@@ -55,7 +58,9 @@ adminRbacRouter.post(
 adminRbacRouter.get(
   '/admins',
   adminAuthenticate,
-  adminAuthorize('admin.view'),
+  // Either the legacy admin.view or the Stage 7A admins.view (read-only
+  // accountability) may list admins so a COMPLIANCE_OFFICER can reach profiles.
+  adminAuthorizeAny('admin.view', 'admins.view'),
   asyncHandler(adminRbacController.listAdmins),
 );
 
@@ -81,6 +86,45 @@ adminRbacRouter.post(
   adminAuthorize('admin.manage'),
   validate({ params: adminIdParamSchema }),
   asyncHandler(adminRbacController.resetAdminTotp),
+);
+
+// --- Admin lifecycle (Stage 7A) --------------------------------------------
+// Soft deactivation / reactivation are the highest-privilege admin actions.
+// The route permission (`admins.deactivate` / `admins.reactivate`) is granted
+// to NO non-super role in the RBAC baseline, so only SUPER_ADMIN passes here;
+// the service additionally re-checks the SUPER_ADMIN role as defence in depth.
+adminRbacRouter.post(
+  '/admins/:adminId/deactivate',
+  adminAuthenticate,
+  adminAuthorize('admins.deactivate'),
+  validate({ params: adminIdParamSchema, body: deactivateAdminSchema }),
+  asyncHandler(adminRbacController.deactivateAdmin),
+);
+
+adminRbacRouter.post(
+  '/admins/:adminId/reactivate',
+  adminAuthenticate,
+  adminAuthorize('admins.reactivate'),
+  validate({ params: adminIdParamSchema, body: reactivateAdminSchema }),
+  asyncHandler(adminRbacController.reactivateAdmin),
+);
+
+// Read-only accountability views. `admins.security.view` / `admins.activity.view`
+// are granted read-only to COMPLIANCE_OFFICER (and SUPER_ADMIN by bypass).
+adminRbacRouter.get(
+  '/admins/:adminId/profile',
+  adminAuthenticate,
+  adminAuthorize('admins.security.view'),
+  validate({ params: adminIdParamSchema }),
+  asyncHandler(adminRbacController.adminProfile),
+);
+
+adminRbacRouter.get(
+  '/admins/:adminId/activity',
+  adminAuthenticate,
+  adminAuthorize('admins.activity.view'),
+  validate({ params: adminIdParamSchema, query: adminActivityQuerySchema }),
+  asyncHandler(adminRbacController.adminActivity),
 );
 
 adminRbacRouter.put(

@@ -275,6 +275,69 @@ export interface AdminListItem {
   ipAllowlist: string[];
   ipRestricted: boolean;
   createdAt: string;
+  lastLoginAt: string | null;
+  deactivatedAt: string | null;
+  deactivationReason: string | null;
+}
+
+// --- Admin lifecycle + activity profile (Stage 7A) ---
+export interface AdminActivitySummary {
+  depositsApproved: number;
+  depositsRejected: number;
+  withdrawalsApproved: number;
+  withdrawalsRejected: number;
+  withdrawalsMarkedPaid: number;
+  kycApproved: number;
+  kycRejected: number;
+  kycRequestedInfo: number;
+  userFeatureChanges: number;
+  adminSecurityActions: number;
+  blockedLogins: number;
+  totalActions: number;
+}
+
+export interface AdminSecurityProfile {
+  id: string;
+  email: string;
+  status: string;
+  roles: string[];
+  permissions: string[];
+  isSuperAdmin: boolean;
+  totpEnabled: boolean;
+  ipAllowlist: string[];
+  ipRestricted: boolean;
+  createdAt: string;
+  updatedAt: string;
+  lastLoginAt: string | null;
+  createdBy: string | null;
+  createdByEmail: string | null;
+  deactivatedAt: string | null;
+  deactivatedBy: string | null;
+  deactivatedByEmail: string | null;
+  deactivationReason: string | null;
+  activitySummary: AdminActivitySummary;
+}
+
+export interface AdminActivityItem {
+  id: string;
+  occurredAt: string;
+  action: string;
+  entityType: string | null;
+  entityId: string | null;
+  affectedUserId: string | null;
+  result: string | null;
+  reason: string | null;
+  requestId: string | null;
+  ip: string | null;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface AdminActivityPage {
+  items: AdminActivityItem[];
+  page: number;
+  limit: number;
+  total: number;
+  hasMore: boolean;
 }
 
 export interface AdminRoleOption {

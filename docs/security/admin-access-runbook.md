@@ -82,11 +82,21 @@ Admin API: separate process, prefix `/admin/v1`, per-admin IP allowlist + Bearer
 
 ## 9. Offboarding an admin
 
-1. Suspend the admin account immediately (revokes sessions).
+1. **Deactivate** the admin account immediately — `POST /admin/v1/admins/:adminId/deactivate`
+   with a required `reason` (Stage 7A). This flips status to `DEACTIVATED`,
+   revokes all live sessions, clears the cached permissions, and records
+   `admin.deactivate` (`ADMIN_DEACTIVATED`) in `admin_logs` with actor, target,
+   reason, IP and request id. Suspend (`/status`) remains available for a
+   temporary hold; deactivate is the durable access-removal.
 2. Remove RBAC roles/permissions; clear their IP allowlist.
 3. Confirm no break-glass credential is shared with them.
 4. Record the offboarding in `admin_logs` review notes; verify no orphaned
    access remains.
+
+**Deactivation is a soft delete / access removal only — never a hard delete.**
+The admin row and all historical `admin_logs` are retained forever so every
+approval and action stays traceable for FIU accountability. Hard-deleting or
+cascade-deleting admin records is prohibited.
 
 ## 10. Suspected admin account compromise
 
@@ -101,8 +111,54 @@ Admin API: separate process, prefix `/admin/v1`, per-admin IP allowlist + Bearer
 5. **Recover:** re-enroll the admin with a fresh TOTP and new credentials only
    after the investigation; review what RBAC they truly need.
 
+## 11. Admin lifecycle & activity profile (Stage 7A)
+
+A SUPER_ADMIN can remove an admin's access and trace exactly what any admin has
+done, without ever destroying history.
+
+**Endpoints (all under `/admin/v1`):**
+
+| Method / path | Permission | Purpose |
+|---|---|---|
+| `POST /admins/:adminId/deactivate` | `admins.deactivate` (SUPER_ADMIN only) | Soft-deactivate: status → `DEACTIVATED`, revoke sessions, clear perms cache. Body: `reason` (required), `note?`. |
+| `POST /admins/:adminId/reactivate` | `admins.reactivate` (SUPER_ADMIN only) | Re-enable login. Old sessions are **not** restored. Body: `reason` (required). |
+| `GET /admins/:adminId/profile` | `admins.security.view` (+ COMPLIANCE_OFFICER) | Identity, roles, status, 2FA state, IP allowlist, last login, deactivation anchors, permissions count, and an activity summary. |
+| `GET /admins/:adminId/activity` | `admins.activity.view` (+ COMPLIANCE_OFFICER) | Paginated, filterable timeline (from/to/action/entityType/userId/page/limit) built from `admin_logs`. |
+
+**Guarantees / guards:**
+
+- Only a SUPER_ADMIN may deactivate/reactivate (route permission is granted to no
+  other role; the service re-checks the SUPER_ADMIN role as defence in depth). A
+  normal admin or COMPLIANCE_OFFICER therefore cannot deactivate anyone,
+  including a SUPER_ADMIN.
+- **No self-deactivation.**
+- **The last active SUPER_ADMIN cannot be deactivated** (break-glass protection),
+  mirroring the last-super-admin role guard.
+- A deactivated admin **cannot log in** (`status !== ACTIVE` → `ADMIN_NOT_ACTIVE`)
+  and is excluded from the active-SUPER_ADMIN count.
+- The profile/activity views never expose TOTP seeds, recovery codes, password
+  hashes or other secrets — `admin_logs` store none, and only safe fields are
+  surfaced.
+
+**Activity summary counts** are derived purely from append-only `admin_logs`
+(INR deposit/withdrawal decisions, KYC decisions, user feature-control changes,
+admin security actions, blocked logins). Nothing is synthesised.
+
+**Known logging gaps (documented, not faked):**
+
+- Failed *credential* admin logins are rate-limited/locked out via Redis but are
+  **not** written to `admin_logs` per-admin, so the profile's `blockedLogins`
+  reflects only TOTP/IP-blocked attempts (`admin.login_blocked_no_totp`,
+  `admin.login_blocked_ip`), not bad-password attempts. Bad-password lockouts are
+  observable via Redis counters and `authRateLimiter`, not the per-admin timeline.
+- `admin_logs` has no `user_agent` column; the deactivate/reactivate audit stores
+  the user agent inside the JSON `after_state` summary instead.
+- Idle session timeout remains a platform-wide gap (see §6); deactivation still
+  revokes sessions immediately.
+
 ---
 
 **Do not** disable admin auth/RBAC/TOTP/IP-allowlist, enable crypto, or bypass
-controls during any admin incident. Prefer config-only containment (suspend,
-allowlist, rotate, revoke).
+controls during any admin incident. Prefer config-only containment (deactivate,
+suspend, allowlist, rotate, revoke). **Never hard-delete admin records or audit
+logs** — deactivation is the only sanctioned removal.

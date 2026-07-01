@@ -128,6 +128,60 @@ export const adminRbacController = {
     sendSuccess(res, { admin });
   },
 
+  // --- Admin lifecycle (Stage 7A) ------------------------------------------
+
+  async deactivateAdmin(req: Request, res: Response): Promise<void> {
+    const admin = await adminRbacService.deactivateAdmin(
+      req.params.adminId,
+      { reason: req.body.reason, note: req.body.note },
+      ctx(req),
+    );
+    sendSuccess(res, { admin });
+  },
+
+  async reactivateAdmin(req: Request, res: Response): Promise<void> {
+    const admin = await adminRbacService.reactivateAdmin(
+      req.params.adminId,
+      { reason: req.body.reason },
+      ctx(req),
+    );
+    sendSuccess(res, { admin });
+  },
+
+  async adminProfile(req: Request, res: Response): Promise<void> {
+    const profile = await adminRbacService.adminSecurityProfile(
+      req.params.adminId,
+      ctx(req),
+    );
+    sendSuccess(res, { profile });
+  },
+
+  async adminActivity(req: Request, res: Response): Promise<void> {
+    const q = req.query as unknown as {
+      from?: Date;
+      to?: Date;
+      action?: string;
+      entityType?: string;
+      userId?: string;
+      page: number;
+      limit: number;
+    };
+    const result = await adminRbacService.adminActivity(
+      req.params.adminId,
+      {
+        from: q.from,
+        to: q.to,
+        action: q.action,
+        entityType: q.entityType,
+        userId: q.userId,
+        page: q.page,
+        limit: q.limit,
+      },
+      ctx(req),
+    );
+    sendSuccess(res, result);
+  },
+
   async setIpAllowlist(req: Request, res: Response): Promise<void> {
     const result = await adminRbacService.setIpAllowlist(
       req.params.adminId,

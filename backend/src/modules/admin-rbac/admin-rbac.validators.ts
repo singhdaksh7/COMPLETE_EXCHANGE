@@ -82,8 +82,41 @@ export const totpConfirmSchema = z
   .object({ code: z.string().regex(/^[0-9]{6}$/, 'Invalid TOTP code') })
   .strict();
 
+// --- Admin lifecycle (Stage 7A) --------------------------------------------
+
+/** Deactivate an admin: a reason is mandatory for the audit trail. */
+export const deactivateAdminSchema = z
+  .object({
+    reason: z.string().trim().min(3, 'A reason is required').max(500),
+    note: z.string().trim().max(1000).optional(),
+  })
+  .strict();
+
+/** Reactivate an admin: a reason is mandatory for the audit trail. */
+export const reactivateAdminSchema = z
+  .object({
+    reason: z.string().trim().min(3, 'A reason is required').max(500),
+  })
+  .strict();
+
+/** Query filters for the admin activity timeline. */
+export const adminActivityQuerySchema = z
+  .object({
+    from: z.coerce.date().optional(),
+    to: z.coerce.date().optional(),
+    action: z.string().trim().min(1).max(120).optional(),
+    entityType: z.string().trim().min(1).max(80).optional(),
+    userId: z.string().uuid().optional(),
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+  })
+  .strict();
+
 export type AdminLoginDto = z.infer<typeof adminLoginSchema>;
 export type CreateAdminDto = z.infer<typeof createAdminSchema>;
 export type AdminStatusDto = z.infer<typeof adminStatusSchema>;
 export type IpAllowlistDto = z.infer<typeof ipAllowlistSchema>;
 export type TotpConfirmDto = z.infer<typeof totpConfirmSchema>;
+export type DeactivateAdminDto = z.infer<typeof deactivateAdminSchema>;
+export type ReactivateAdminDto = z.infer<typeof reactivateAdminSchema>;
+export type AdminActivityQueryDto = z.infer<typeof adminActivityQuerySchema>;

@@ -32,10 +32,15 @@ import { adminTotpRequired } from '../../lib/prod-safety';
 import { adminRbacRepository } from './admin-rbac.repository';
 import { ADMIN_PERMISSIONS } from './admin-rbac.baseline';
 import type {
+  AdminActivityFilters,
+  AdminActivityItem,
+  AdminActivityPage,
+  AdminActivitySummary,
   AdminContext,
   AdminListItem,
   AdminLoginInput,
   AdminProfile,
+  AdminSecurityProfile,
   AdminTokenPair,
   CreatedAdmin,
   PermissionDto,
@@ -263,6 +268,111 @@ function ensureSuperAdminOrHasPermission(
   }
 }
 
+// ===========================================================================
+// Stage 7A — admin activity profile helpers.
+//
+// Every count and timeline entry below is derived from the append-only
+// `admin_logs` table (the actor-keyed record of what each admin did). Nothing
+// is synthesised: if an action was not logged with enough metadata it simply
+// does not appear, and the known gaps are documented in
+// docs/security/admin-access-runbook.md rather than faked.
+// ===========================================================================
+
+/** action code -> summary bucket. Multiple codes can feed one bucket. */
+const ACTIVITY_BUCKETS: Record<string, ReadonlyArray<string>> = {
+  depositsApproved: [
+    'inr.deposit.manual_approved',
+    'inr.deposit.manual_second_approved',
+  ],
+  depositsRejected: ['inr.deposit.manual_rejected'],
+  withdrawalsApproved: ['inr.withdrawal.approved'],
+  withdrawalsRejected: ['inr.withdrawal.rejected'],
+  withdrawalsMarkedPaid: ['inr.withdrawal.paid'],
+  kycApproved: ['kyc.approve'],
+  kycRejected: ['kyc.reject'],
+  kycRequestedInfo: ['kyc.request_info'],
+  userFeatureChanges: ['admin.user.controls_update'],
+  blockedLogins: ['admin.login_blocked_no_totp', 'admin.login_blocked_ip'],
+};
+
+/** Security-sensitive admin actions rolled into `adminSecurityActions`. */
+const SECURITY_ACTION_PREFIXES: ReadonlyArray<string> = [
+  'admin.create',
+  'admin.suspend',
+  'admin.activate',
+  'admin.deactivate',
+  'admin.reactivate',
+  'admin.totp_reset',
+  'admin.ip_allowlist_update',
+  'admin.role.',
+  'admin.permission.',
+  'admin.user.2fa_reset',
+];
+
+function isSecurityAction(action: string): boolean {
+  return SECURITY_ACTION_PREFIXES.some(
+    (p) => action === p || action.startsWith(p),
+  );
+}
+
+function buildActivitySummary(
+  counts: Array<{ action: string; count: number }>,
+  total: number,
+): AdminActivitySummary {
+  const byAction = new Map(counts.map((c) => [c.action, c.count]));
+  const sum = (codes: ReadonlyArray<string>): number =>
+    codes.reduce((acc, code) => acc + (byAction.get(code) ?? 0), 0);
+  let adminSecurityActions = 0;
+  for (const { action, count } of counts) {
+    if (isSecurityAction(action)) adminSecurityActions += count;
+  }
+  return {
+    depositsApproved: sum(ACTIVITY_BUCKETS.depositsApproved),
+    depositsRejected: sum(ACTIVITY_BUCKETS.depositsRejected),
+    withdrawalsApproved: sum(ACTIVITY_BUCKETS.withdrawalsApproved),
+    withdrawalsRejected: sum(ACTIVITY_BUCKETS.withdrawalsRejected),
+    withdrawalsMarkedPaid: sum(ACTIVITY_BUCKETS.withdrawalsMarkedPaid),
+    kycApproved: sum(ACTIVITY_BUCKETS.kycApproved),
+    kycRejected: sum(ACTIVITY_BUCKETS.kycRejected),
+    kycRequestedInfo: sum(ACTIVITY_BUCKETS.kycRequestedInfo),
+    userFeatureChanges: sum(ACTIVITY_BUCKETS.userFeatureChanges),
+    adminSecurityActions,
+    blockedLogins: sum(ACTIVITY_BUCKETS.blockedLogins),
+    totalActions: total,
+  };
+}
+
+/** Target types on an admin_log whose targetId is a user id (affectedUserId). */
+const USER_TARGET_TYPES = new Set([
+  'user',
+  'user_feature_controls',
+  'kyc_profile',
+  'compliance_profile',
+]);
+
+/**
+ * Best-effort, non-sensitive metadata summary for a timeline row. admin_logs
+ * never store secrets, but we still only surface a compact status/reason view
+ * rather than the raw before/after blobs.
+ */
+function summarizeState(
+  before: unknown,
+  after: unknown,
+): { result: string | null; metadata: Record<string, unknown> | null } {
+  const pick = (v: unknown): Record<string, unknown> | null =>
+    v && typeof v === 'object' ? (v as Record<string, unknown>) : null;
+  const a = pick(after);
+  const b = pick(before);
+  const nested = a && pick(a.after);
+  const result =
+    (nested && typeof nested.status === 'string' && nested.status) ||
+    (a && typeof a.status === 'string' && a.status) ||
+    (a && typeof a.result === 'string' && a.result) ||
+    null;
+  const metadata = a ?? b ?? null;
+  return { result: result || null, metadata };
+}
+
 export const adminRbacService = {
   async login(input: AdminLoginInput): Promise<AdminTokenPair> {
     // Account-level brute-force lockout (checked BEFORE any credential work so a
@@ -334,6 +444,11 @@ export const adminRbacService = {
     // Successful authentication clears the brute-force counter for this pair.
     await clearAdminLoginFailures(input.email, input.ip);
     const tokens = await this.issueSession(admin, input);
+    // Stamp last-login for the admin profile view (Stage 7A). Best-effort: a
+    // failure here must never fail an otherwise valid login.
+    await adminRbacRepository
+      .updateAdminLastLogin(admin.id)
+      .catch(() => undefined);
     await adminRbacRepository.writeAdminLog({
       adminId: admin.id,
       action: 'admin.login',
@@ -847,6 +962,222 @@ export const adminRbacService = {
       targetId: adminId,
     });
     return toPublicAdmin(updated);
+  },
+
+  // ==========================================================================
+  // Admin lifecycle (Stage 7A) — SUPER_ADMIN-only soft deactivation / access
+  // removal + reactivation. Admin rows are never hard-deleted; historical
+  // admin_logs remain traceable forever for FIU accountability.
+  // ==========================================================================
+
+  /**
+   * Soft-deactivate an admin: remove access without deleting anything. Only a
+   * SUPER_ADMIN may call. Self-deactivation and removing the last active
+   * SUPER_ADMIN are refused. Live sessions + cached permissions are killed so
+   * the deactivated admin cannot continue an in-flight session.
+   */
+  async deactivateAdmin(
+    adminId: string,
+    input: { reason: string; note?: string },
+    ctx: AdminContext,
+  ): Promise<PublicAdmin> {
+    const target = await adminRbacRepository.findAdminById(adminId);
+    if (!target) throw new NotFoundError('Admin not found');
+
+    // Highest-privilege action: SUPER_ADMIN only. This also means a normal admin
+    // or compliance officer can never deactivate a SUPER_ADMIN (or anyone).
+    const actor = ctx.adminId
+      ? await this.getAdminPermissions(ctx.adminId)
+      : { roles: [] as string[], permissions: [] as string[] };
+    if (!actor.roles.includes(SUPER_ADMIN)) {
+      throw new ForbiddenError('Only SUPER_ADMIN can deactivate an admin', 'FORBIDDEN');
+    }
+    if (ctx.adminId === adminId) {
+      throw new BadRequestError('You cannot deactivate your own admin account');
+    }
+    if (target.status === 'DEACTIVATED') {
+      throw new ConflictError('Admin is already deactivated', 'ALREADY_DEACTIVATED');
+    }
+
+    // Never remove the last active SUPER_ADMIN — protects the break-glass role.
+    const supers = await adminRbacRepository.adminsWithRole(SUPER_ADMIN);
+    if (supers.some((a) => a.adminId === adminId)) {
+      const activeSupers =
+        await adminRbacRepository.countActiveAdminsWithRole(SUPER_ADMIN);
+      if (activeSupers <= 1) {
+        throw new ForbiddenError(
+          'Cannot deactivate the last active SUPER_ADMIN',
+          'LAST_SUPER_ADMIN',
+        );
+      }
+    }
+
+    const before = target.status;
+    const updated = await adminRbacRepository.deactivateAdmin(adminId, {
+      deactivatedBy: ctx.adminId,
+      reason: input.reason,
+    });
+    // Immediately invalidate existing sessions + cached permissions.
+    await adminRbacRepository.revokeAllAdminSessions(adminId);
+    await this.invalidateAdminPermissions(adminId);
+
+    // ADMIN_DEACTIVATED — actor, target, reason, ip, requestId, user agent.
+    await adminRbacRepository.writeAdminLog({
+      adminId: ctx.adminId ?? adminId,
+      action: 'admin.deactivate',
+      targetType: 'admin',
+      targetId: adminId,
+      reason: input.reason,
+      beforeState: { status: before },
+      afterState: {
+        status: 'DEACTIVATED',
+        note: input.note ?? null,
+        userAgent: ctx.userAgent ?? null,
+      },
+      ip: ctx.ip,
+      requestId: ctx.requestId,
+    });
+    return toPublicAdmin(updated);
+  },
+
+  /**
+   * Reactivate a previously deactivated admin. SUPER_ADMIN only. Re-enables
+   * login/access but does NOT restore old sessions — the admin logs in fresh.
+   */
+  async reactivateAdmin(
+    adminId: string,
+    input: { reason: string },
+    ctx: AdminContext,
+  ): Promise<PublicAdmin> {
+    const target = await adminRbacRepository.findAdminById(adminId);
+    if (!target) throw new NotFoundError('Admin not found');
+    const actor = ctx.adminId
+      ? await this.getAdminPermissions(ctx.adminId)
+      : { roles: [] as string[], permissions: [] as string[] };
+    if (!actor.roles.includes(SUPER_ADMIN)) {
+      throw new ForbiddenError('Only SUPER_ADMIN can reactivate an admin', 'FORBIDDEN');
+    }
+    if (target.status === 'ACTIVE') {
+      throw new ConflictError('Admin is already active', 'ALREADY_ACTIVE');
+    }
+
+    const before = target.status;
+    const updated = await adminRbacRepository.reactivateAdmin(adminId);
+    await this.invalidateAdminPermissions(adminId);
+
+    // ADMIN_REACTIVATED — old sessions are intentionally NOT restored.
+    await adminRbacRepository.writeAdminLog({
+      adminId: ctx.adminId ?? adminId,
+      action: 'admin.reactivate',
+      targetType: 'admin',
+      targetId: adminId,
+      reason: input.reason,
+      beforeState: { status: before },
+      afterState: { status: 'ACTIVE', userAgent: ctx.userAgent ?? null },
+      ip: ctx.ip,
+      requestId: ctx.requestId,
+    });
+    return toPublicAdmin(updated);
+  },
+
+  /**
+   * Full admin security + accountability profile (Stage 7A). Never exposes the
+   * TOTP seed, recovery codes, password hash or any other secret material —
+   * only safe identity, role, status and derived activity counts.
+   */
+  async adminSecurityProfile(
+    adminId: string,
+    ctx: AdminContext,
+  ): Promise<AdminSecurityProfile> {
+    const admin = await adminRbacRepository.findAdminById(adminId);
+    if (!admin) throw new NotFoundError('Admin not found');
+    const { roles, permissions } = await this.getAdminPermissions(adminId);
+    const isSuperAdmin = roles.includes(SUPER_ADMIN);
+    const effectivePermissions = isSuperAdmin
+      ? [...new Set([...permissions, ...ALL_ADMIN_PERMISSION_CODES])]
+      : permissions;
+    const [counts, total, emails] = await Promise.all([
+      adminRbacRepository.adminActionCounts(adminId),
+      adminRbacRepository.adminActionTotal(adminId),
+      adminRbacRepository.findAdminEmailsByIds(
+        [admin.createdBy, admin.deactivatedBy].filter(
+          (x): x is string => Boolean(x),
+        ),
+      ),
+    ]);
+    await audit(ctx, {
+      action: 'admin.profile.view',
+      targetType: 'admin',
+      targetId: adminId,
+    });
+    return {
+      id: admin.id,
+      email: admin.email,
+      status: admin.status,
+      roles,
+      permissions: effectivePermissions,
+      isSuperAdmin,
+      totpEnabled: admin.totpEnabled,
+      ipAllowlist: admin.ipAllowlist,
+      ipRestricted: admin.ipAllowlist.length > 0,
+      createdAt: admin.createdAt,
+      updatedAt: admin.updatedAt,
+      lastLoginAt: admin.lastLoginAt,
+      createdBy: admin.createdBy,
+      createdByEmail: admin.createdBy ? emails.get(admin.createdBy) ?? null : null,
+      deactivatedAt: admin.deactivatedAt,
+      deactivatedBy: admin.deactivatedBy,
+      deactivatedByEmail: admin.deactivatedBy
+        ? emails.get(admin.deactivatedBy) ?? null
+        : null,
+      deactivationReason: admin.deactivationReason,
+      activitySummary: buildActivitySummary(counts, total),
+    };
+  },
+
+  /**
+   * Filtered, paginated admin activity timeline (Stage 7A). Every entry is a
+   * real append-only admin_log row for this actor — no synthesis. Only safe
+   * fields are surfaced; secrets are never stored in admin_logs to begin with.
+   */
+  async adminActivity(
+    adminId: string,
+    filters: AdminActivityFilters,
+    ctx: AdminContext,
+  ): Promise<AdminActivityPage> {
+    const admin = await adminRbacRepository.findAdminById(adminId);
+    if (!admin) throw new NotFoundError('Admin not found');
+    const { rows, total } = await adminRbacRepository.adminActivity(adminId, filters);
+    const items: AdminActivityItem[] = rows.map((r) => {
+      const { result, metadata } = summarizeState(r.beforeState, r.afterState);
+      const affectedUserId =
+        r.targetType && USER_TARGET_TYPES.has(r.targetType) ? r.targetId : null;
+      return {
+        id: r.id.toString(),
+        occurredAt: r.occurredAt,
+        action: r.action,
+        entityType: r.targetType,
+        entityId: r.targetId,
+        affectedUserId,
+        result,
+        reason: r.reason,
+        requestId: r.requestId,
+        ip: r.ip,
+        metadata,
+      };
+    });
+    await audit(ctx, {
+      action: 'admin.activity.view',
+      targetType: 'admin',
+      targetId: adminId,
+    });
+    return {
+      items,
+      page: filters.page,
+      limit: filters.limit,
+      total,
+      hasMore: filters.page * filters.limit < total,
+    };
   },
 };
 

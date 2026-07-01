@@ -109,6 +109,14 @@ export const ADMIN_PERMISSIONS: PermissionDef[] = [
   { code: 'role.manage', description: 'Manage roles & permissions' },
   { code: 'admin.manage', description: 'Create / suspend / manage admin accounts' },
   { code: 'admin.view', description: 'View admin accounts' },
+  // Admin lifecycle + accountability (Stage 7A). deactivate/reactivate are
+  // SUPER_ADMIN-only (granted to no other role); the *.view codes are read-only
+  // accountability views granted to COMPLIANCE_OFFICER as well.
+  { code: 'admins.view', description: 'View the admin management list and profiles' },
+  { code: 'admins.security.view', description: 'View an admin security + accountability profile' },
+  { code: 'admins.activity.view', description: 'View an admin activity timeline' },
+  { code: 'admins.deactivate', description: 'Deactivate (remove access from) an admin' },
+  { code: 'admins.reactivate', description: 'Reactivate a previously deactivated admin' },
   { code: 'audit.view', description: 'Read audit & admin logs' },
   { code: 'operations.view', description: 'View the admin operations dashboard' },
   // Internal support / operations tickets (Stage 8C).
@@ -130,9 +138,21 @@ export interface RoleDef {
   permissions: string[] | typeof ALL;
 }
 
-const VIEW_ONLY = ADMIN_PERMISSIONS.filter((p) => p.code.endsWith('.view')).map(
-  (p) => p.code,
-);
+/**
+ * These admin-accountability view permissions are sensitive: they expose other
+ * admins' security profiles and full action history. They must NOT be swept
+ * into the blanket VIEW_ONLY grant (SUPPORT / READ_ONLY); they are granted
+ * explicitly to COMPLIANCE_OFFICER (and to SUPER_ADMIN by role bypass) only.
+ */
+const SENSITIVE_ADMIN_VIEW = new Set<string>([
+  'admins.view',
+  'admins.security.view',
+  'admins.activity.view',
+]);
+
+const VIEW_ONLY = ADMIN_PERMISSIONS.filter(
+  (p) => p.code.endsWith('.view') && !SENSITIVE_ADMIN_VIEW.has(p.code),
+).map((p) => p.code);
 
 export const ADMIN_ROLES: RoleDef[] = [
   {
@@ -315,6 +335,11 @@ export const ADMIN_ROLES: RoleDef[] = [
       'operations.view',
       'system.view',
       'system.risk.view',
+      // Admin accountability (Stage 7A): read-only. The compliance officer can
+      // review who did what, but cannot deactivate/reactivate admins.
+      'admins.view',
+      'admins.security.view',
+      'admins.activity.view',
     ],
   },
   {

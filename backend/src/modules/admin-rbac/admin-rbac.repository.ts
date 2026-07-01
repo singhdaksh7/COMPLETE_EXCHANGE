@@ -10,6 +10,118 @@ export const adminRbacRepository = {
     return prisma.admin.findUnique({ where: { id } });
   },
 
+  /** Admin row plus role names — used by the Stage 7A profile endpoint. */
+  findAdminWithRoles(id: string) {
+    return prisma.admin.findUnique({
+      where: { id },
+      include: { roles: { include: { role: true } } },
+    });
+  },
+
+  /** Resolve id -> email for a set of admins (createdBy / deactivatedBy display).
+   *  Only non-secret display fields are selected. */
+  findAdminEmailsByIds(ids: string[]): Promise<Map<string, string>> {
+    const unique = [...new Set(ids.filter(Boolean))];
+    if (unique.length === 0) return Promise.resolve(new Map());
+    return prisma.admin
+      .findMany({ where: { id: { in: unique } }, select: { id: true, email: true } })
+      .then((rows) => new Map(rows.map((r) => [r.id, r.email])));
+  },
+
+  /** Stamp the last successful login time (Stage 7A). Best-effort; never blocks
+   *  the login itself. */
+  updateAdminLastLogin(id: string) {
+    return prisma.admin.update({
+      where: { id },
+      data: { lastLoginAt: new Date() },
+    });
+  },
+
+  /**
+   * Soft-deactivate an admin: flip status to DEACTIVATED and record who/why/when.
+   * The row is NEVER deleted — historical accountability is retained forever.
+   */
+  deactivateAdmin(
+    id: string,
+    data: { deactivatedBy?: string; reason: string },
+  ) {
+    return prisma.admin.update({
+      where: { id },
+      data: {
+        status: 'DEACTIVATED',
+        deactivatedAt: new Date(),
+        deactivatedBy: data.deactivatedBy ?? null,
+        deactivationReason: data.reason,
+      },
+    });
+  },
+
+  /** Reactivate a previously deactivated admin: clear the deactivation anchors. */
+  reactivateAdmin(id: string) {
+    return prisma.admin.update({
+      where: { id },
+      data: {
+        status: 'ACTIVE',
+        deactivatedAt: null,
+        deactivatedBy: null,
+        deactivationReason: null,
+      },
+    });
+  },
+
+  /** Group an admin's append-only actions by action code for the profile summary. */
+  adminActionCounts(
+    adminId: string,
+  ): Promise<Array<{ action: string; count: number }>> {
+    return prisma.adminLog
+      .groupBy({ by: ['action'], where: { adminId }, _count: { _all: true } })
+      .then((rows) => rows.map((r) => ({ action: r.action, count: r._count._all })));
+  },
+
+  /** Total number of recorded actions for an admin (append-only admin_logs). */
+  adminActionTotal(adminId: string): Promise<number> {
+    return prisma.adminLog.count({ where: { adminId } });
+  },
+
+  /** Filtered, paginated slice of an admin's activity timeline (newest first). */
+  async adminActivity(
+    adminId: string,
+    filters: {
+      from?: Date;
+      to?: Date;
+      action?: string;
+      entityType?: string;
+      userId?: string;
+      page: number;
+      limit: number;
+    },
+  ) {
+    const occurredAt =
+      filters.from || filters.to
+        ? {
+            ...(filters.from ? { gte: filters.from } : {}),
+            ...(filters.to ? { lte: filters.to } : {}),
+          }
+        : undefined;
+    const where: Prisma.AdminLogWhereInput = {
+      adminId,
+      ...(occurredAt ? { occurredAt } : {}),
+      ...(filters.action ? { action: filters.action } : {}),
+      ...(filters.entityType ? { targetType: filters.entityType } : {}),
+      ...(filters.userId ? { targetId: filters.userId } : {}),
+    };
+    const [rows, total] = await Promise.all([
+      prisma.adminLog.findMany({
+        where,
+        orderBy: { occurredAt: 'desc' },
+        skip: (filters.page - 1) * filters.limit,
+        take: filters.limit,
+      }),
+      prisma.adminLog.count({ where }),
+    ]);
+    return { rows, total };
+  },
+
   updateAdminPassword(id: string, passwordHash: string) {
     return prisma.admin.update({
       where: { id },
