@@ -67,10 +67,31 @@ export interface MeResult {
   globalFeatureStatus: GlobalFeatureStatus;
 }
 
+/**
+ * Raw browser geolocation captured at login (Stage 7B). User-consented and
+ * NOT fraud-proof — a security/audit signal only. Precise coordinates are
+ * rounded before storage (see `sanitizeLocation`).
+ */
+export interface LoginLocation {
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+}
+
+/** Reduced-precision location as stored on a session / audit event. */
+export interface StoredLocation {
+  lat: number;
+  lng: number;
+  accuracy: number | null;
+  capturedAt: string;
+}
+
 export interface SessionDto {
   id: string;
   ip: string | null;
   device: unknown;
+  /** Reduced-precision login location, when the user consented at login. */
+  location: StoredLocation | null;
   createdAt: Date;
   lastSeenAt: Date | null;
   expiresAt: Date;
@@ -92,6 +113,8 @@ export interface AuthContext {
   ip?: string;
   userAgent?: string;
   requestId?: string;
+  /** Optional consented login location (2FA / OTP second-step carry it too). */
+  location?: LoginLocation;
 }
 
 export interface RegisterInput {
@@ -106,6 +129,8 @@ export interface LoginInput {
   ip?: string;
   userAgent?: string;
   requestId?: string;
+  /** Optional consented browser geolocation (Stage 7B). */
+  location?: LoginLocation;
 }
 
 /** Generic, enumeration-safe response to an OTP request/resend. */

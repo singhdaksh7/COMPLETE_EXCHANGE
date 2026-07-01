@@ -31,6 +31,15 @@ export async function authenticate(
       () => null,
     );
     if (revoked) {
+      // Stage 7B: a session revoked by a newer login (single active session
+      // policy) gets a specific, user-friendly message + code so the client can
+      // explain WHY the user was signed out.
+      if (revoked === 'NEW_LOGIN') {
+        throw new UnauthorizedError(
+          'Your session was signed out because your account was opened on another device.',
+          'SESSION_REVOKED_BY_NEW_LOGIN',
+        );
+      }
       throw new UnauthorizedError('Session has been revoked', 'SESSION_REVOKED');
     }
 

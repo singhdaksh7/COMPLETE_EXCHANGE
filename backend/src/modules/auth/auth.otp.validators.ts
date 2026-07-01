@@ -22,6 +22,15 @@ export const verifyEmailOtpSchema = z
   .object({
     email,
     otp: otpCode,
+    // Optional consented login location (Stage 7B), parity with password login.
+    location: z
+      .object({
+        latitude: z.number().min(-90).max(90),
+        longitude: z.number().min(-180).max(180),
+        accuracy: z.number().min(0).max(1_000_000).optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 

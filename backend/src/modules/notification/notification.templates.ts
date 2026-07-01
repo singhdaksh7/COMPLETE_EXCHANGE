@@ -112,6 +112,12 @@ export function buildNotification(type: NotificationType, meta?: Meta): BuiltNot
       const body = `Your withdrawal${amt ? ` of ${amt} ${asset}` : ''} has completed and been sent on-chain.`;
       return { title: 'Withdrawal completed', message: body, email: email('Your Exora withdrawal is complete', 'Withdrawal completed', body) };
     }
+    case 'INR_WITHDRAWAL_PAID': {
+      const amt = str(meta, 'amount');
+      const utr = str(meta, 'utr');
+      const body = `Your INR withdrawal${amt ? ` of ₹${amt}` : ''} has been paid to your bank account${utr ? ` (UTR ${utr})` : ''}.`;
+      return { title: 'Withdrawal paid', message: body, email: email('Your Exora INR withdrawal is paid', 'Withdrawal paid', body) };
+    }
     case 'PASSWORD_CHANGED':
       return {
         title: 'Password changed',

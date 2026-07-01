@@ -14,6 +14,20 @@ const password = z
 
 const email = z.string().email().toLowerCase().trim();
 
+/**
+ * Optional consented browser geolocation captured at login (Stage 7B). It is a
+ * security/audit signal, not a fraud control. Coordinates are range-checked
+ * here and rounded to reduced precision server-side before storage.
+ */
+const loginLocation = z
+  .object({
+    latitude: z.number().min(-90).max(90),
+    longitude: z.number().min(-180).max(180),
+    accuracy: z.number().min(0).max(1_000_000).optional(),
+  })
+  .strict()
+  .optional();
+
 // Opaque tokens are 32 random bytes in base64url (≈43 chars). Be lenient on the
 // upper bound but reject anything implausibly short.
 const opaqueToken = z.string().min(16, 'Invalid token').max(512);
@@ -33,6 +47,7 @@ export const loginSchema = z
   .object({
     email,
     password: z.string().min(1, 'Password is required'),
+    location: loginLocation,
   })
   .strict();
 
@@ -96,6 +111,9 @@ export const verify2faSchema = z
   .object({
     challengeToken: opaqueToken,
     code: z.string().trim().min(6, 'Invalid code').max(32),
+    // The 2FA second step issues the real session, so it carries the location
+    // too (the client re-sends what it captured at the password step).
+    location: loginLocation,
   })
   .strict();
 

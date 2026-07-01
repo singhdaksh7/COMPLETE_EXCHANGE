@@ -41,6 +41,7 @@ import type {
   OrderStatus,
   Page,
   PlaceOrderInput,
+  LoginLocation,
   PublicTrade,
   Quote,
   RegisterData,
@@ -106,14 +107,17 @@ export const userApi = {
   register: (body: { email: string; password: string; phone?: string }) =>
     apiFetch<RegisterData>(USER_API_URL, '/auth/register', { method: 'POST', body }),
 
-  login: (body: { email: string; password: string }) =>
-    apiFetch<LoginResult>(USER_API_URL, '/auth/login', { method: 'POST', body }),
+  login: (body: {
+    email: string;
+    password: string;
+    location?: LoginLocation;
+  }) => apiFetch<LoginResult>(USER_API_URL, '/auth/login', { method: 'POST', body }),
 
   /** Second step of a 2FA-gated login: challenge token + TOTP/backup code. */
-  verify2fa: (challengeToken: string, code: string) =>
+  verify2fa: (challengeToken: string, code: string, location?: LoginLocation) =>
     apiFetch<LoginData>(USER_API_URL, '/auth/2fa/verify', {
       method: 'POST',
-      body: { challengeToken, code },
+      body: { challengeToken, code, ...(location ? { location } : {}) },
     }),
 
   /** Redeem the one-time OAuth code (from /auth/callback) for a normal session. */
@@ -145,10 +149,10 @@ export const userApi = {
       body: { email, ...(purpose ? { purpose } : {}) },
     }),
 
-  verifyEmailOtp: (email: string, otp: string) =>
+  verifyEmailOtp: (email: string, otp: string, location?: LoginLocation) =>
     apiFetch<OtpVerifyData>(USER_API_URL, '/auth/verify-email-otp', {
       method: 'POST',
-      body: { email, otp },
+      body: { email, otp, ...(location ? { location } : {}) },
     }),
 
   me: () => authed<MeData>('/auth/me'),

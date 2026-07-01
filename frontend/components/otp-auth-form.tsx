@@ -6,6 +6,7 @@ import { useMutation } from '@tanstack/react-query';
 import { userApi } from '@/lib/user-api';
 import { tokenStore } from '@/lib/auth';
 import { errorMessage } from '@/lib/api';
+import { getCurrentLocation, type GeoCoords } from '@/lib/geolocation';
 import { Field, Input, Button, Alert } from '@/components/ui';
 
 type Step = 'email' | 'otp';
@@ -25,7 +26,24 @@ export function OtpAuthForm({ mode }: { mode: 'login' | 'signup' }) {
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
   const [cooldown, setCooldown] = useState(0);
+  // Stage 7B — best-effort login location. Captured quietly (never faked); sent
+  // with verify when available. Strict enforcement (blocking on denial) lives on
+  // the password login screen; the backend enforces REQUIRE_LOGIN_LOCATION here
+  // too, so in strict mode OTP login needs a granted location.
+  const [coords, setCoords] = useState<GeoCoords | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getCurrentLocation()
+      .then((c) => {
+        if (!cancelled) setCoords(c);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Tick down the resend cooldown once per second.
   useEffect(() => {
@@ -52,7 +70,8 @@ export function OtpAuthForm({ mode }: { mode: 'login' | 'signup' }) {
   });
 
   const verify = useMutation({
-    mutationFn: () => userApi.verifyEmailOtp(email.trim(), otp.trim()),
+    mutationFn: () =>
+      userApi.verifyEmailOtp(email.trim(), otp.trim(), coords ?? undefined),
     onSuccess: (res) => {
       const { accessToken, refreshToken } = res.data.tokens;
       tokenStore.setUser(accessToken, refreshToken);

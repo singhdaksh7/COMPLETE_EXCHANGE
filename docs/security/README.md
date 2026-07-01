@@ -49,6 +49,7 @@ Stage 7.0B/7.0C deliverables. Start with `AUDIT_SCOPE.md`, then the report.
 | [cloudfront-security-headers-readiness.md](./cloudfront-security-headers-readiness.md) | Current header state (captured) + recommended headers + staged CSP (report-only first) + cache-control. |
 | [admin-access-runbook.md](./admin-access-runbook.md) | Who gets admin access, MFA, break-glass, lockout, IP allowlist/VPN, session/RBAC/audit review, offboarding, compromise response. |
 | [admin-endpoint-safe-checks.md](./admin-endpoint-safe-checks.md) | Non-destructive auditor checks: unauth→401/403, rate-limit, RBAC, user-token rejection, audit logging, 2FA. |
+| [user-session-security.md](./user-session-security.md) | Stage 7B: single active user session, previous-session revocation (`SESSION_REVOKED_BY_NEW_LOGIN`), consented login location (`REQUIRE_LOGIN_LOCATION` / `LOCATION_REQUIRED`), real-alerts-only, location privacy limits. |
 | `scripts/security/plan-waf-readiness.ps1` | WAF plan (dry-run default; `-Apply`+`-ConfirmCreate` to create in COUNT mode; never auto-associates to CloudFront). |
 | `scripts/security/collect-edge-security-evidence.ps1` | Read-only edge evidence: CloudFront status/aliases/cert/WAF, DNS, response headers, ECS refs, alarms; PASS/WARN/FAIL summary. |
 
@@ -56,6 +57,20 @@ Stage 7.0B/7.0C deliverables. Start with `AUDIT_SCOPE.md`, then the report.
 > resource modified, no backend change, crypto stays OFF. Key finding: the live
 > `www.exorain.com` frontend is on **Vercel**, separate from CloudFront
 > `E36DO8GL4SA61N` (S3) — see the edge readiness doc.
+
+### Stage 7 — FIU technical evidence pack
+
+Lives under `docs/compliance/` (see [compliance index](../compliance/README.md)).
+Technical-readiness evidence only — **not** FIU compliance/legal/production-crypto
+readiness.
+
+| Document | Purpose |
+|----------|---------|
+| [../compliance/fiu-evidence-pack/README.md](../compliance/fiu-evidence-pack/README.md) | FIU technical evidence pack index + sign-off checklist. |
+| [../compliance/fiu-technical-readiness.md](../compliance/fiu-technical-readiness.md) | Overview: scope, controls, gaps, disclaimers. |
+| [../compliance/fiu-technical-control-matrix.md](../compliance/fiu-technical-control-matrix.md) | Control area → evidence → status → owner → gap. |
+| [../compliance/crypto-disabled-evidence.md](../compliance/crypto-disabled-evidence.md) | INR_ONLY / crypto-off proof. |
+| `scripts/compliance/collect-fiu-technical-evidence.ps1` | Read-only FIU technical evidence (no PII/secrets). |
 
 > These documents describe an internal hardening pass. They are **not** a legal,
 > FIU/PMLA, or penetration-test certification. They prepare EXORA for an

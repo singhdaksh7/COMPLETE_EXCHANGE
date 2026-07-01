@@ -41,6 +41,9 @@ export const AuditAction = {
   PASSWORD_CHANGE_FAILED: 'auth.password_change_failed',
   SESSION_REVOKED: 'auth.session_revoked',
   SESSIONS_REVOKED_ALL: 'auth.sessions_revoked_all',
+  // Stage 7B — single active session policy. A new login revokes the user's
+  // previous session(s); the old token is rejected on its next request.
+  PREVIOUS_SESSION_REVOKED: 'auth.previous_session_revoked',
   INVALID_REFRESH: 'auth.invalid_refresh',
   TOKEN_REUSE_DETECTED: 'auth.token_reuse_detected',
   // Email OTP (passwordless login/signup, Stage 3A).

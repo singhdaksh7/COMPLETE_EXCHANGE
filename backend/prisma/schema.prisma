@@ -826,6 +826,9 @@ enum NotificationType {
   WITHDRAWAL_APPROVED
   WITHDRAWAL_REJECTED
   WITHDRAWAL_COMPLETED
+  // Manual INR withdrawal marked paid by an admin (bank payout). Distinct from
+  // WITHDRAWAL_COMPLETED, whose copy says "sent on-chain" (wrong for INR).
+  INR_WITHDRAWAL_PAID
   PASSWORD_CHANGED
   SECURITY_SESSION_REVOKED
 }

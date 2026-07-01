@@ -9,6 +9,9 @@ vi.mock('../../src/modules/auth/auth.repository', () => ({
     countSessionsForUser: vi.fn().mockResolvedValue(0),
     countSessionsForUserDevice: vi.fn().mockResolvedValue(1),
     touchSession: vi.fn().mockResolvedValue(1),
+    // Stage 7B single-active-session enforcement (no-op here).
+    findOtherActiveSessions: vi.fn().mockResolvedValue([]),
+    revokeAllSessionsForUser: vi.fn().mockResolvedValue({ revokedSessionIds: [] }),
   },
 }));
 
@@ -58,6 +61,8 @@ beforeEach(() => {
   repo.countSessionsForUser.mockResolvedValue(0);
   repo.countSessionsForUserDevice.mockResolvedValue(1);
   repo.touchSession.mockResolvedValue(1);
+  repo.findOtherActiveSessions.mockResolvedValue([]);
+  repo.revokeAllSessionsForUser.mockResolvedValue({ revokedSessionIds: [] });
 });
 
 describe('issueSession — new-device login signal (Stage 3D)', () => {

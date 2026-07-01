@@ -443,9 +443,16 @@ export const inrWithdrawalService = {
         before: { status: 'APPROVED' },
         after: { status: 'PAID', utr: input.utr, finalLedgerTxnId: posted.id },
       });
-      // NOTE: no auto-notification here — the shared WITHDRAWAL_COMPLETED copy
-      // says "sent on-chain", which is wrong for a manual INR bank payout. The
-      // PAID transition is fully captured in the audit + admin logs.
+      // Stage 7B: surface a REAL in-app alert to the user for the bank payout,
+      // using the INR-specific copy (not the on-chain WITHDRAWAL_COMPLETED one).
+      // Fail-safe: a notification problem never affects the money movement above.
+      await notificationService
+        .notify({
+          userId: row.userId,
+          type: 'INR_WITHDRAWAL_PAID',
+          metadata: { amount: existing.amount.toFixed(2), utr: input.utr },
+        })
+        .catch(() => undefined);
     }
     return toAdminInrWithdrawalDto(row, decryptAccountNumber(row));
   },

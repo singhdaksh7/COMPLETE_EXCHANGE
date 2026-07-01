@@ -115,6 +115,16 @@ export const envSchema = z
     .transform((v) => v === 'true'),
   // TTL of the per-user RBAC permission cache in Redis (seconds).
   RBAC_CACHE_TTL_SEC: z.coerce.number().int().positive().default(60),
+  // Stage 7B — require a browser geolocation payload on user login. Default OFF
+  // so existing behaviour is unchanged and no user is ever locked out by a
+  // browser that blocks location. Staging may set 'true' to enforce it: the
+  // login API then rejects a missing location with LOCATION_REQUIRED. This is a
+  // security/audit signal only — it is NOT a fraud-proof control (browser
+  // geolocation is user-consented and spoofable).
+  REQUIRE_LOGIN_LOCATION: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
 
   // ---- EMAIL / MAILER ----
   // Provider selection. 'log' is a fully-offline stub (dev + tests) that records

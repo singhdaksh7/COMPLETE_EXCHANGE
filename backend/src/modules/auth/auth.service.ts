@@ -1,6 +1,6 @@
 import { hash, verify } from '@node-rs/argon2';
 import { randomUUID, createHash } from 'node:crypto';
-import type { User, AuthSession } from '@prisma/client';
+import type { User, AuthSession, Prisma } from '@prisma/client';
 import { authRepository } from './auth.repository';
 import {
   signAccessToken,
@@ -15,6 +15,7 @@ import {
 } from '../../lib/redis';
 import { config } from '../../config';
 import {
+  AppError,
   ConflictError,
   UnauthorizedError,
   ForbiddenError,
@@ -39,6 +40,7 @@ import type {
   AuthResult,
   AuthContext,
   LoginInput,
+  LoginLocation,
   LoginResult,
   ActivityEventDto,
   MeResult,
@@ -46,6 +48,7 @@ import type {
   RegisterInput,
   RegisterResult,
   SessionDto,
+  StoredLocation,
   TokenPair,
 } from './auth.types';
 
@@ -107,11 +110,83 @@ export function toPublicUser(user: User): PublicUser {
   };
 }
 
+/**
+ * Reduce a raw browser geolocation to a privacy-preserving stored form (Stage
+ * 7B): coordinates rounded to 3 decimals (~110 m), accuracy kept as a coarse
+ * integer, plus a capture timestamp. Returns null for a missing/invalid
+ * payload. We never store precise coordinates and never derive a city/state —
+ * this is a consented security signal, not a location service.
+ */
+function sanitizeLocation(location?: LoginLocation | null): StoredLocation | null {
+  if (!location) return null;
+  const { latitude, longitude, accuracy } = location;
+  if (
+    typeof latitude !== 'number' ||
+    typeof longitude !== 'number' ||
+    !Number.isFinite(latitude) ||
+    !Number.isFinite(longitude) ||
+    latitude < -90 ||
+    latitude > 90 ||
+    longitude < -180 ||
+    longitude > 180
+  ) {
+    return null;
+  }
+  const round3 = (n: number): number => Math.round(n * 1000) / 1000;
+  return {
+    lat: round3(latitude),
+    lng: round3(longitude),
+    accuracy:
+      typeof accuracy === 'number' && Number.isFinite(accuracy) && accuracy >= 0
+        ? Math.round(accuracy)
+        : null,
+    capturedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Enforce the Stage 7B login-location requirement. When REQUIRE_LOGIN_LOCATION
+ * is on, a login without a valid consented location is refused BEFORE any
+ * session (or 2FA challenge) is issued. Default off = no behaviour change.
+ */
+function ensureLoginLocationIfRequired(
+  location?: LoginLocation | null,
+): StoredLocation | null {
+  const stored = sanitizeLocation(location);
+  if (config.auth.requireLoginLocation && !stored) {
+    throw new AppError(
+      'Location permission is required for account security.',
+      400,
+      'LOCATION_REQUIRED',
+    );
+  }
+  return stored;
+}
+
+/** Pull the stored login location back out of a session's deviceInfo JSON. */
+function locationFromDeviceInfo(deviceInfo: unknown): StoredLocation | null {
+  if (deviceInfo && typeof deviceInfo === 'object') {
+    const loc = (deviceInfo as Record<string, unknown>).location;
+    if (loc && typeof loc === 'object') return loc as StoredLocation;
+  }
+  return null;
+}
+
+/** Pull the stored user-agent back out of a session's deviceInfo JSON. */
+function userAgentFromDeviceInfo(deviceInfo: unknown): string | null {
+  if (deviceInfo && typeof deviceInfo === 'object') {
+    const ua = (deviceInfo as Record<string, unknown>).userAgent;
+    if (typeof ua === 'string') return ua;
+  }
+  return null;
+}
+
 function toSessionDto(s: AuthSession, currentSessionId?: string): SessionDto {
   return {
     id: s.id,
     ip: s.ip,
     device: s.deviceInfo,
+    location: locationFromDeviceInfo(s.deviceInfo),
     createdAt: s.createdAt,
     lastSeenAt: s.lastSeenAt,
     expiresAt: s.expiresAt,
@@ -364,6 +439,11 @@ export const authService = {
       );
     }
 
+    // Stage 7B: enforce the login-location requirement (when enabled) BEFORE any
+    // session OR 2FA challenge is issued, so 2FA accounts are gated too. Returns
+    // the reduced-precision location to persist (null when not required/absent).
+    const loginLocation = ensureLoginLocationIfRequired(input.location);
+
     // 2FA gate: if the account has TOTP enabled, do NOT issue a session here.
     // Return a short-lived, single-purpose challenge token; the client must call
     // /auth/2fa/verify with a current TOTP or backup code to receive real tokens.
@@ -389,6 +469,7 @@ export const authService = {
     const tokens = await this.issueSession(user, {
       ip: input.ip,
       userAgent: input.userAgent,
+      location: loginLocation,
     });
 
     await recordAudit({
@@ -400,6 +481,9 @@ export const authService = {
       ip: input.ip,
       userAgent: input.userAgent,
       requestId: input.requestId,
+      metadata: loginLocation
+        ? ({ location: loginLocation } as unknown as Prisma.InputJsonValue)
+        : undefined,
     });
 
     return { user: toPublicUser(user), tokens };
@@ -428,6 +512,10 @@ export const authService = {
       throw new ForbiddenError('Account is not active', 'ACCOUNT_NOT_ACTIVE');
     }
 
+    // Stage 7B: the second step issues the real session, so enforce/capture the
+    // login location here too (the client re-sends it with the 2FA verify).
+    const loginLocation = ensureLoginLocationIfRequired(ctx.location);
+
     const result = await securityService.verifySecondFactor(userId, code);
     if (!result.ok) {
       await recordAudit({
@@ -446,6 +534,7 @@ export const authService = {
     const tokens = await this.issueSession(user, {
       ip: ctx.ip,
       userAgent: ctx.userAgent,
+      location: loginLocation,
     });
     await recordAudit({
       actorType: 'USER',
@@ -472,10 +561,23 @@ export const authService = {
     return { user: toPublicUser(user), tokens };
   },
 
+  /**
+   * Public wrapper around the Stage 7B login-location gate so alternative login
+   * entrypoints (email-OTP) enforce/capture location consistently with password
+   * + 2FA login. Throws LOCATION_REQUIRED when the requirement is on and the
+   * payload is missing/invalid; otherwise returns the reduced-precision location
+   * (or null).
+   */
+  enforceAndCaptureLoginLocation(
+    location?: LoginLocation | null,
+  ): StoredLocation | null {
+    return ensureLoginLocationIfRequired(location);
+  },
+
   /** Create a new session + token pair for a user. */
   async issueSession(
     user: User,
-    meta: { ip?: string; userAgent?: string },
+    meta: { ip?: string; userAgent?: string; location?: StoredLocation | null },
   ): Promise<TokenPair> {
     // Device/login-security signal (Stage 3D). Determine — BEFORE creating the
     // new row — whether this login comes from a device we have not seen for this
@@ -501,6 +603,12 @@ export const authService = {
       fid: familyId,
     });
 
+    // deviceInfo carries the user-agent (device-recognition) and, when the user
+    // consented, the reduced-precision login location (Stage 7B).
+    const deviceInfo: Record<string, unknown> = {};
+    if (meta.userAgent) deviceInfo.userAgent = meta.userAgent;
+    if (meta.location) deviceInfo.location = meta.location;
+
     await authRepository.createSession({
       // The session row id IS the JWT `sid`, so refresh/revocation can look it
       // up directly from the token claims.
@@ -509,9 +617,17 @@ export const authService = {
       refreshHash: hashToken(refreshToken),
       familyId,
       ip: meta.ip,
-      deviceInfo: meta.userAgent ? { userAgent: meta.userAgent } : undefined,
+      deviceInfo:
+        Object.keys(deviceInfo).length > 0
+          ? (deviceInfo as Prisma.InputJsonValue)
+          : undefined,
       expiresAt: new Date(Date.now() + refreshTtlMs),
     });
+
+    // Stage 7B — SINGLE ACTIVE SESSION policy. A fresh login revokes every other
+    // active session for this user so only the newest remains valid; the old
+    // token is rejected on its next request (see the authenticate middleware).
+    await this.enforceSingleActiveSession(user.id, sessionId, meta);
 
     // Login-alert ARCHITECTURE PLACEHOLDER (Stage 3D): a login from a new device
     // is recorded to the audit trail now. A real out-of-band alert email is a
@@ -530,6 +646,61 @@ export const authService = {
     }
 
     return { accessToken, refreshToken };
+  },
+
+  /**
+   * Stage 7B single active session enforcement. Revokes every active session for
+   * the user EXCEPT the just-created one, denylists each with the `NEW_LOGIN`
+   * reason (so the middleware can show a clear "opened on another device"
+   * message), and records a `USER_PREVIOUS_SESSION_REVOKED` audit event with the
+   * old + new session context. Best-effort: never fails the login it follows.
+   */
+  async enforceSingleActiveSession(
+    userId: string,
+    newSessionId: string,
+    meta: { ip?: string; userAgent?: string; location?: StoredLocation | null },
+  ): Promise<void> {
+    try {
+      const others = await authRepository.findOtherActiveSessions(
+        userId,
+        newSessionId,
+      );
+      if (others.length === 0) return;
+
+      await authRepository.revokeAllSessionsForUser(userId, newSessionId);
+      await Promise.all(
+        others.map((s) =>
+          this.markSessionRevoked(s.id, 'NEW_LOGIN').catch(() => undefined),
+        ),
+      );
+
+      await recordAudit({
+        actorType: 'USER',
+        actorId: userId,
+        action: AuditAction.PREVIOUS_SESSION_REVOKED,
+        entityType: 'auth_session',
+        entityId: newSessionId,
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+        metadata: {
+          reason: 'new_login',
+          newSession: {
+            id: newSessionId,
+            ip: meta.ip ?? null,
+            userAgent: meta.userAgent ?? null,
+            location: meta.location ?? null,
+          },
+          previousSessions: others.map((s) => ({
+            id: s.id,
+            ip: s.ip,
+            userAgent: userAgentFromDeviceInfo(s.deviceInfo),
+            location: locationFromDeviceInfo(s.deviceInfo),
+          })),
+        } as Prisma.InputJsonValue,
+      }).catch(() => undefined);
+    } catch {
+      // Single-session enforcement must never break an otherwise valid login.
+    }
   },
 
   // ------------------------------------------------------------------
@@ -1092,10 +1263,14 @@ export const authService = {
    * Add a session to the Redis revocation denylist so the authenticate
    * middleware rejects its still-valid access token instantly. TTL matches
    * the access-token lifetime — after that the JWT is expired anyway.
+   *
+   * The stored VALUE is a reason code (default '1'). The Stage 7B single-session
+   * policy writes 'NEW_LOGIN' so the middleware can return the specific
+   * "opened on another device" message + SESSION_REVOKED_BY_NEW_LOGIN code.
    */
-  async markSessionRevoked(sessionId: string): Promise<void> {
+  async markSessionRevoked(sessionId: string, reason = '1'): Promise<void> {
     const accessTtlSec = Math.ceil(ttlToMs(config.jwt.accessTtl) / 1000);
-    await authRedisSet(`session:revoked:${sessionId}`, '1', 'EX', accessTtlSec);
+    await authRedisSet(`session:revoked:${sessionId}`, reason, 'EX', accessTtlSec);
   },
 };
 

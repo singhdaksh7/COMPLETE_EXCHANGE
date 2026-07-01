@@ -354,10 +354,10 @@ export function UserNav() {
             </div>
             <div className="hidden sm:block text-left">
               <span className="block text-xs font-bold text-white leading-tight">
-                {me?.user.fullName ?? me?.user.email.split('@')[0] ?? 'Rahul Verma'}
+                {me?.user.fullName ?? me?.user.email.split('@')[0] ?? 'Account'}
               </span>
               <span className="block text-[8px] font-semibold text-white/30 tracking-wider font-mono">
-                UID: EXO{me?.user.id.slice(0, 7).toUpperCase() ?? '841928'}
+                UID: {me?.user.id ? `EXO${me.user.id.slice(0, 7).toUpperCase()}` : '—'}
               </span>
             </div>
           </Link>

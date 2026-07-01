@@ -17,6 +17,11 @@ const ACTION_LABELS: Record<string, string> = {
   'auth.password_reset_requested': 'Password reset requested',
   'auth.password_reset': 'Password reset',
   'auth.session_revoked': 'Session revoked',
+  'auth.sessions_revoked_all': 'All other sessions signed out',
+  'auth.previous_session_revoked': 'Previous session signed out (new login)',
+  'auth.login_new_device': 'New device sign-in',
+  'auth.login_failed': 'Failed sign-in attempt',
+  'auth.login_locked': 'Sign-in temporarily locked',
   'auth.email_verified': 'Email verified',
   'inr.deposit.manual_submitted': 'INR deposit submitted',
   'kyc.submitted': 'KYC submitted',
@@ -177,9 +182,16 @@ export default function SecurityPage() {
           </form>
         </Card>
 
-        {/* Active sessions (REAL) */}
+        {/* Active sessions (REAL — single active session policy) */}
         <Card>
-          <h3 className="text-sm font-bold text-white border-b border-white/5 pb-2 mb-3">Active sessions</h3>
+          <div className="flex items-center justify-between border-b border-white/5 pb-2 mb-3">
+            <h3 className="text-sm font-bold text-white">Active sessions</h3>
+            {!sessionsQ.isLoading && (
+              <span className="rounded bg-white/5 px-2 py-0.5 text-[10px] font-bold text-white/60">
+                {sessions.length} device{sessions.length === 1 ? '' : 's'}
+              </span>
+            )}
+          </div>
           {sessionsQ.isLoading && <p className="text-xs text-white/40">Loading…</p>}
           {!sessionsQ.isLoading && sessions.length === 0 && (
             <p className="text-xs text-white/40">No active sessions.</p>
@@ -192,6 +204,13 @@ export default function SecurityPage() {
                   {s.current && <span className="ml-2 rounded bg-up/15 px-1.5 py-0.5 text-[9px] font-bold text-up">THIS DEVICE</span>}
                   <span className="block text-[10px] text-white/40 mt-0.5">
                     Signed in {new Date(s.createdAt).toLocaleString()}
+                  </span>
+                  <span className="block text-[10px] text-white/40 mt-0.5">
+                    {s.location
+                      ? `Location: ${s.location.lat.toFixed(3)}, ${s.location.lng.toFixed(3)} (approx${
+                          s.location.accuracy ? `, ±${Math.round(s.location.accuracy)}m` : ''
+                        })`
+                      : 'Location: not captured'}
                   </span>
                 </div>
                 {!s.current && (
@@ -206,6 +225,11 @@ export default function SecurityPage() {
               </div>
             ))}
           </div>
+          <p className="mt-3 text-[10px] text-white/35 leading-relaxed">
+            Only one active session is allowed at a time. Signing in on a new device
+            automatically signs out your previous session. Login location is a
+            consented approximate signal, not exact.
+          </p>
         </Card>
 
         {/* Security activity (REAL) */}

@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import type { ReactNode, SVGProps } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -8,7 +8,13 @@ import { useMutation } from '@tanstack/react-query';
 import { userApi } from '@/lib/user-api';
 import { tokenStore } from '@/lib/auth';
 import { errorMessage } from '@/lib/api';
-import { USER_API_URL } from '@/lib/config';
+import { USER_API_URL, REQUIRE_LOGIN_LOCATION } from '@/lib/config';
+import {
+  getCurrentLocation,
+  isGeolocationSupported,
+  type GeoCoords,
+  type GeoStatus,
+} from '@/lib/geolocation';
 import { OtpAuthForm } from '@/components/otp-auth-form';
 import { isTwoFactorChallenge } from '@/lib/types';
 
@@ -56,8 +62,44 @@ function LoginPageContent() {
   const [challengeToken, setChallengeToken] = useState<string | null>(null);
   const [twoFaCode, setTwoFaCode] = useState('');
 
+  // Stage 7B — login location capture. We request geolocation before sign-in so
+  // it can be attached to the session for account-security visibility. When
+  // REQUIRE_LOGIN_LOCATION is on, denial/absence BLOCKS login (the backend
+  // enforces the same). We never fall back to a fake/default location.
+  const [locStatus, setLocStatus] = useState<GeoStatus>('idle');
+  const [coords, setCoords] = useState<GeoCoords | null>(null);
+
+  const requestLocation = useCallback(async () => {
+    if (!isGeolocationSupported()) {
+      setLocStatus('unsupported');
+      return;
+    }
+    setLocStatus('prompting');
+    try {
+      const c = await getCurrentLocation();
+      setCoords(c);
+      setLocStatus('granted');
+    } catch (err) {
+      setCoords(null);
+      const status = (err as { status?: GeoStatus }).status ?? 'error';
+      setLocStatus(status);
+    }
+  }, []);
+
+  useEffect(() => {
+    void requestLocation();
+  }, [requestLocation]);
+
+  // When required, sign-in is blocked until a location is captured.
+  const locationBlocked = REQUIRE_LOGIN_LOCATION && locStatus !== 'granted';
+
   const m = useMutation({
-    mutationFn: () => userApi.login({ email: email.trim(), password }),
+    mutationFn: () =>
+      userApi.login({
+        email: email.trim(),
+        password,
+        ...(coords ? { location: coords } : {}),
+      }),
     onSuccess: (res) => {
       if (isTwoFactorChallenge(res.data)) {
         setChallengeToken(res.data.challengeToken);
@@ -70,7 +112,12 @@ function LoginPageContent() {
   });
 
   const verify = useMutation({
-    mutationFn: () => userApi.verify2fa(challengeToken ?? '', twoFaCode.trim()),
+    mutationFn: () =>
+      userApi.verify2fa(
+        challengeToken ?? '',
+        twoFaCode.trim(),
+        coords ?? undefined,
+      ),
     onSuccess: (res) => {
       const { accessToken, refreshToken } = res.data.tokens;
       tokenStore.setUser(accessToken, refreshToken);
@@ -126,6 +173,10 @@ function LoginPageContent() {
             authMode={authMode}
             onUseOtp={() => setAuthMode('otp')}
             onUsePassword={() => setAuthMode('password')}
+            locStatus={locStatus}
+            locationRequired={REQUIRE_LOGIN_LOCATION}
+            locationBlocked={locationBlocked}
+            onRetryLocation={requestLocation}
           />
           )}
         </div>
@@ -229,6 +280,74 @@ function CoinIllustration() {
 /* Right login card                                                   */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Stage 7B — login location status + consent UI. Shown above the login form.
+ * When location is REQUIRED, a denial/timeout/unsupported state blocks sign-in
+ * and offers a retry. When not required, it is a soft, informational note (we
+ * still attach a captured location, but never fake one).
+ */
+function LocationGate({
+  status,
+  required,
+  onRetry,
+}: {
+  status: GeoStatus;
+  required: boolean;
+  onRetry: () => void;
+}) {
+  if (status === 'granted') {
+    return (
+      <div className="mt-5 rounded-lg border border-up/25 bg-up/10 px-3.5 py-2.5 text-xs text-up">
+        Location captured for account security.
+      </div>
+    );
+  }
+  if (status === 'idle' || status === 'prompting') {
+    return (
+      <div className="mt-5 rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-2.5 text-xs text-white/60">
+        {required
+          ? 'Location permission is required to sign in for account security. Please allow location access.'
+          : 'Requesting location for account security…'}
+      </div>
+    );
+  }
+
+  // denied / timeout / unsupported / error
+  const message =
+    status === 'unsupported'
+      ? 'Your browser does not support required location security.'
+      : status === 'timeout'
+        ? 'Getting your location timed out.'
+        : status === 'denied'
+          ? 'Location permission is required to sign in for account security.'
+          : 'We could not determine your location.';
+  const help = required
+    ? 'Please allow location permission and try again.'
+    : 'You can continue, but enabling location adds account-security visibility.';
+  const canRetry = status !== 'unsupported';
+  return (
+    <div
+      className={`mt-5 rounded-lg border px-3.5 py-2.5 text-xs ${
+        required
+          ? 'border-red-500/30 bg-red-500/10 text-red-300'
+          : 'border-white/10 bg-white/[0.03] text-white/60'
+      }`}
+    >
+      <p>{message}</p>
+      <p className="mt-1 opacity-80">{help}</p>
+      {canRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-2 rounded border border-current px-2.5 py-1 text-[11px] font-semibold transition hover:opacity-80"
+        >
+          Retry location
+        </button>
+      )}
+    </div>
+  );
+}
+
 function LoginCard(props: {
   email: string;
   password: string;
@@ -246,6 +365,10 @@ function LoginCard(props: {
   authMode: 'password' | 'otp';
   onUseOtp: () => void;
   onUsePassword: () => void;
+  locStatus: GeoStatus;
+  locationRequired: boolean;
+  locationBlocked: boolean;
+  onRetryLocation: () => void;
 }) {
   return (
     <div className="mx-auto w-full min-w-0 max-w-md">
@@ -281,6 +404,12 @@ function LoginCard(props: {
               {props.error}
             </div>
           )}
+
+          <LocationGate
+            status={props.locStatus}
+            required={props.locationRequired}
+            onRetry={props.onRetryLocation}
+          />
 
           {props.authMode === 'password' ? (
             <>
@@ -362,10 +491,14 @@ function LoginCard(props: {
 
             <button
               type="submit"
-              disabled={props.isPending}
+              disabled={props.isPending || props.locationBlocked}
               className="group relative w-full overflow-hidden rounded-lg bg-gradient-to-r from-gold to-gold-glow px-4 py-3 text-sm font-bold text-noir shadow-gold-glow transition hover:brightness-105 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {props.isPending ? 'Signing in…' : 'Log In'}
+              {props.isPending
+                ? 'Signing in…'
+                : props.locationBlocked
+                  ? 'Location required'
+                  : 'Log In'}
             </button>
           </form>
 

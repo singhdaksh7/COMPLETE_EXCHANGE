@@ -116,9 +116,34 @@ export const authRepository = {
   ): Promise<number> {
     const or: Prisma.AuthSessionWhereInput[] = [];
     if (ip) or.push({ ip });
-    if (userAgent) or.push({ deviceInfo: { equals: { userAgent } } });
+    // Match the user-agent by JSON path (not full-object equals): deviceInfo may
+    // now also carry a `location` object (Stage 7B), so a whole-object equals on
+    // `{ userAgent }` would never match a located session.
+    if (userAgent) {
+      or.push({ deviceInfo: { path: ['userAgent'], equals: userAgent } });
+    }
     if (or.length === 0) return Promise.resolve(1);
     return prisma.authSession.count({ where: { userId, OR: or } });
+  },
+
+  /**
+   * Active (non-revoked, non-expired) sessions for a user EXCEPT one — used by
+   * the Stage 7B single-active-session enforcement to find the prior sessions a
+   * new login must revoke. Returns just the fields needed for the audit record.
+   */
+  findOtherActiveSessions(
+    userId: string,
+    exceptSessionId: string,
+  ): Promise<Array<Pick<AuthSession, 'id' | 'ip' | 'deviceInfo'>>> {
+    return prisma.authSession.findMany({
+      where: {
+        userId,
+        id: { not: exceptSessionId },
+        revokedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      select: { id: true, ip: true, deviceInfo: true },
+    });
   },
 
   /**

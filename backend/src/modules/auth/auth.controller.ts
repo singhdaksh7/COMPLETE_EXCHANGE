@@ -43,6 +43,7 @@ export const authController = {
       ip: req.ip,
       userAgent: req.headers['user-agent'],
       requestId: String(req.id),
+      location: req.body.location,
     });
     sendSuccess(res, result);
   },
@@ -51,7 +52,7 @@ export const authController = {
     const result = await authService.verify2fa(
       req.body.challengeToken,
       req.body.code,
-      ctx(req),
+      { ...ctx(req), location: req.body.location },
     );
     sendSuccess(res, result);
   },
@@ -112,7 +113,7 @@ export const authController = {
     const result = await authOtpService.verifyOtp(
       req.body.email,
       req.body.otp,
-      ctx(req),
+      { ...ctx(req), location: req.body.location },
     );
     sendSuccess(res, result);
   },

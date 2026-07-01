@@ -131,6 +131,9 @@ export const authOtpService = {
     ctx: AuthContext = {},
   ): Promise<OtpVerifyResult> {
     const normalized = email.toLowerCase().trim();
+    // Stage 7B: enforce the login-location requirement up front so a missing
+    // location fails BEFORE the single-use OTP code is consumed.
+    const loginLocation = authService.enforceAndCaptureLoginLocation(ctx.location);
     const otp = await emailOtpRepository.findLatestActiveByEmail(normalized);
 
     if (!otp) {
@@ -221,9 +224,12 @@ export const authOtpService = {
       success: true,
     });
 
+    // Single active session is applied inside issueSession; loginLocation was
+    // enforced/captured at the top of this method (before consuming the code).
     const tokens = await authService.issueSession(user, {
       ip: ctx.ip,
       userAgent: ctx.userAgent,
+      location: loginLocation,
     });
 
     await recordAudit({

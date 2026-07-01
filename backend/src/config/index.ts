@@ -61,6 +61,9 @@ export const config = {
     // while SES is unapproved). Does not remove email verification.
     allowUnverifiedLogin: env.ALLOW_UNVERIFIED_LOGIN,
     rbacCacheTtlSec: env.RBAC_CACHE_TTL_SEC,
+    // Stage 7B — enforce a login geolocation payload (staging opt-in). Default
+    // false keeps login working for browsers that block location.
+    requireLoginLocation: env.REQUIRE_LOGIN_LOCATION,
   },
 
   // Production-safety acknowledgements (Stage 4.2). All default false; staging

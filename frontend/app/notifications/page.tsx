@@ -19,6 +19,7 @@ const ICONS: Record<NotificationType, string> = {
   WITHDRAWAL_APPROVED: '✅',
   WITHDRAWAL_REJECTED: '⚠️',
   WITHDRAWAL_COMPLETED: '🎉',
+  INR_WITHDRAWAL_PAID: '🏦',
   PASSWORD_CHANGED: '🔒',
   SECURITY_SESSION_REVOKED: '🛡️',
 };

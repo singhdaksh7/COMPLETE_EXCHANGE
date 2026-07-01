@@ -130,11 +130,28 @@ export interface StepUpData {
   expiresInSeconds: number;
 }
 
+/** Consented browser geolocation sent with a login (Stage 7B). */
+export interface LoginLocation {
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+}
+
+/** Reduced-precision stored login location returned on a session (Stage 7B). */
+export interface StoredLocation {
+  lat: number;
+  lng: number;
+  accuracy: number | null;
+  capturedAt: string;
+}
+
 export interface UserSession {
   id: string;
   ip: string | null;
   device: unknown;
+  location: StoredLocation | null;
   createdAt: string;
+  lastSeenAt?: string | null;
   expiresAt: string;
   current: boolean;
 }
@@ -1282,6 +1299,7 @@ export type NotificationType =
   | 'WITHDRAWAL_APPROVED'
   | 'WITHDRAWAL_REJECTED'
   | 'WITHDRAWAL_COMPLETED'
+  | 'INR_WITHDRAWAL_PAID'
   | 'PASSWORD_CHANGED'
   | 'SECURITY_SESSION_REVOKED';
 
