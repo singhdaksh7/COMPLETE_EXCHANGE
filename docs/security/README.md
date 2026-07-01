@@ -1,5 +1,9 @@
 # EXORA — Security & Audit/VAPT Handover Pack
 
+**For the Stage 8 final audit-freeze, start at
+[final-evidence-pack/README.md](./final-evidence-pack/README.md) and
+[stage-8-final-audit-readiness.md](./stage-8-final-audit-readiness.md).**
+
 Stage 7.0B/7.0C deliverables. Start with `AUDIT_SCOPE.md`, then the report.
 
 | Document | Purpose |
@@ -57,6 +61,24 @@ Stage 7.0B/7.0C deliverables. Start with `AUDIT_SCOPE.md`, then the report.
 > resource modified, no backend change, crypto stays OFF. Key finding: the live
 > `www.exorain.com` frontend is on **Vercel**, separate from CloudFront
 > `E36DO8GL4SA61N` (S3) — see the edge readiness doc.
+
+### Stage 8 — final cybersecurity / VAPT evidence pack + staging audit freeze
+
+| Document | Purpose |
+|----------|---------|
+| [final-evidence-pack/README.md](./final-evidence-pack/README.md) | **Entry point:** how to collect evidence, what to share/withhold, folder structure, auditor demo flow, sign-off. |
+| [stage-8-final-audit-readiness.md](./stage-8-final-audit-readiness.md) | Scope, live INR_ONLY mode, deployed controls, intentionally-disabled surfaces, remaining blockers, how an auditor reviews safely. |
+| [vapt-scope.md](./vapt-scope.md) | In/out-of-scope targets, rules of engagement, safe test accounts (placeholders), testing notes, reporting format. |
+| [vapt-evidence-checklist.md](./vapt-evidence-checklist.md) | Per-area test / expected / evidence-source / status / gaps checklist. |
+| [final-security-control-matrix.md](./final-security-control-matrix.md) | Control → implemented status → evidence → last-verified → gap → priority. |
+| [final-smoke-test-runbook.md](./final-smoke-test-runbook.md) | Manual UI walkthrough (location, single-session, crypto-off, INR flows, admin RBAC/lifecycle). |
+| `scripts/security/collect-final-audit-evidence.ps1` | Read-only final evidence: git/tags, ECS, task defs, non-secret flags, CloudFront/S3, retention, alarms, docs, safe reachability, frontend fake-string scan. PASS/WARN/FAIL. Never reads secrets/PII; no AWS changes. |
+
+> Stage 8 is **docs + one read-only script only** — no backend/frontend change,
+> no AWS mutation, crypto stays OFF, staging INR_ONLY. It **does not** claim
+> production, FIU-legal, or production-crypto readiness; it prepares EXORA for an
+> independent external VAPT. Authoritative blockers:
+> [../compliance/production-blockers.md](../compliance/production-blockers.md).
 
 ### Stage 7 — FIU technical evidence pack
 
