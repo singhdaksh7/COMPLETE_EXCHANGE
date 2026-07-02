@@ -32,6 +32,20 @@ const loginLocation = z
 // upper bound but reject anything implausibly short.
 const opaqueToken = z.string().min(16, 'Invalid token').max(512);
 
+/**
+ * Stage 9A — signup must capture explicit acceptance of the required policies.
+ * Each flag is `literal(true)`, so registration is rejected (422) unless every
+ * required checkbox was ticked. The versions accepted are the CURRENT ones,
+ * resolved and recorded server-side (never trusted from the client).
+ */
+const acceptedPolicies = z
+  .object({
+    termsOfService: z.literal(true),
+    privacyPolicy: z.literal(true),
+    riskDisclosure: z.literal(true),
+  })
+  .strict();
+
 export const registerSchema = z
   .object({
     email,
@@ -40,6 +54,7 @@ export const registerSchema = z
       .regex(/^\+?[1-9]\d{7,14}$/, 'Invalid phone number')
       .optional(),
     password,
+    acceptedPolicies,
   })
   .strict();
 

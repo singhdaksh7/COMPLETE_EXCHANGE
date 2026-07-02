@@ -121,6 +121,17 @@ export interface RegisterInput {
   email: string;
   phone?: string;
   password: string;
+  /**
+   * Stage 9A — explicit signup consent flags. Present on every real signup (the
+   * validator requires them); optional here so unit tests that construct a bare
+   * input still type-check. When present, the required policy acceptances are
+   * recorded server-side against the CURRENT document versions.
+   */
+  acceptedPolicies?: {
+    termsOfService: true;
+    privacyPolicy: true;
+    riskDisclosure: true;
+  };
 }
 
 export interface LoginInput {

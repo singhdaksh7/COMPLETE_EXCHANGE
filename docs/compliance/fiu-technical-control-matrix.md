@@ -46,6 +46,8 @@ Legal/External (LEGAL).
 | Crypto disabled evidence | INR_ONLY mode; crypto globals OFF; routes gated | Implemented | `crypto-disabled-evidence.md`; `config.featureFlags` | BE | Stays OFF until full sign-off |
 | Data retention evidence | Retention policy registry + reviews (never auto-deletes) | Partial | `retention.service.ts`; tables `RecordRetentionPolicy`, `RecordRetentionReview`; `docs/compliance/record-retention-policy.md` | CO | Operationalize reviews |
 | Report generation readiness | Compliance evidence packs + exports | Partial | `evidence.service.ts`; tables `ComplianceEvidencePack`, `ComplianceExportEvent` | CO | Standardize for auditor handoff |
+| Legal/policy consent records | Versioned acceptance captured at signup (Terms/Privacy/Risk) with ip/ua + timestamp; financial-action gate + banner for existing users | Implemented | `legal.consent.ts`, `legal.service.ts`; tables `UserLegalAcceptance`, `LegalDocumentVersion`; `AuditLog` (`legal.accept`) | BE/LEGAL | Placeholder policy text — legal review required |
+| Customer support records | User↔admin ticket thread; own-ticket scoping; RBAC admin actions; sanitized; audit-logged | Implemented | `support.user.service.ts`; tables `SupportTicket`, `SupportTicketMessage`; `AdminLog` (`admin.support.*`) | CO/BE | Attachments + dedicated notifications are follow-ups |
 | Export / evidence readiness | Read-only evidence scripts (Stage 4–7) | Implemented | `scripts/observability/`, `scripts/security/`, `scripts/compliance/` | INFRA/CO | — |
 
 ---

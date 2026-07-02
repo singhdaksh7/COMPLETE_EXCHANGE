@@ -34,6 +34,9 @@ import type {
   Market,
   MeData,
   NotificationList,
+  SupportTicketSummaryPage,
+  SupportTicketThread,
+  ConsentStatus,
   OtpRequestData,
   OtpVerifyData,
   Order,
@@ -104,7 +107,17 @@ async function authed<T>(
 }
 
 export const userApi = {
-  register: (body: { email: string; password: string; phone?: string }) =>
+  register: (body: {
+    email: string;
+    password: string;
+    phone?: string;
+    // Stage 9A — required signup consent flags (Terms / Privacy / Risk).
+    acceptedPolicies: {
+      termsOfService: true;
+      privacyPolicy: true;
+      riskDisclosure: true;
+    };
+  }) =>
     apiFetch<RegisterData>(USER_API_URL, '/auth/register', { method: 'POST', body }),
 
   login: (body: {
@@ -198,6 +211,37 @@ export const userApi = {
 
   markNotificationRead: (id: string) =>
     authed<{ read: true }>(`/notifications/${id}/read`, { method: 'POST' }),
+
+  // ---- Stage 9A: support tickets (own tickets only) ----
+  supportTickets: (params: { status?: string; cursor?: string; limit?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (params.status) q.set('status', params.status);
+    if (params.cursor) q.set('cursor', params.cursor);
+    if (params.limit) q.set('limit', String(params.limit));
+    const qs = q.toString();
+    return authed<SupportTicketSummaryPage>(`/support/tickets${qs ? `?${qs}` : ''}`);
+  },
+  supportTicket: (ticketId: string) =>
+    authed<SupportTicketThread>(`/support/tickets/${ticketId}`),
+  supportCreateTicket: (body: {
+    category: string;
+    subject: string;
+    message: string;
+    referenceType?: string;
+    referenceId?: string;
+  }) => authed<SupportTicketThread>('/support/tickets', { method: 'POST', body }),
+  supportReply: (ticketId: string, body: string) =>
+    authed<SupportTicketThread>(`/support/tickets/${ticketId}/messages`, {
+      method: 'POST',
+      body: { body },
+    }),
+  supportCloseTicket: (ticketId: string) =>
+    authed<SupportTicketThread>(`/support/tickets/${ticketId}/close`, { method: 'POST' }),
+
+  // ---- Stage 9A: policy consent ----
+  consentStatus: () => authed<ConsentStatus>('/legal/consent-status'),
+  acceptPolicy: (documentType: string) =>
+    authed<unknown>('/legal/accept', { method: 'POST', body: { documentType } }),
 
   markAllNotificationsRead: () =>
     authed<{ updated: number }>('/notifications/read-all', { method: 'POST' }),

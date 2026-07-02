@@ -2018,6 +2018,48 @@ export interface SupportTicketPage {
   nextCursor: string | null;
 }
 
+// ---- Stage 9A: user-facing support conversation ----
+export interface SupportMessage {
+  id: string;
+  senderType: string; // USER | ADMIN | SYSTEM
+  body: string;
+  isInternalNote: boolean;
+  createdAt: string;
+}
+export interface SupportTicketSummary {
+  id: string;
+  ticketNumber: string | null;
+  subject: string;
+  category: string;
+  status: string;
+  priority: string;
+  referenceType: string | null;
+  referenceId: string | null;
+  assignedAdminId: string | null;
+  lastMessageAt: string | null;
+  resolvedAt: string | null;
+  closedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface SupportTicketThread extends SupportTicketSummary {
+  userId: string | null;
+  userEmail?: string | null;
+  messages: SupportMessage[];
+}
+export interface SupportTicketSummaryPage {
+  items: SupportTicketSummary[];
+  nextCursor: string | null;
+}
+
+// ---- Stage 9A: policy consent status ----
+export interface ConsentStatus {
+  required: string[];
+  missing: string[];
+  upToDate: boolean;
+  enforced: boolean;
+}
+
 // ---- Stage 8B: admin notification center ----
 export interface AdminOpsNotification {
   id: string;

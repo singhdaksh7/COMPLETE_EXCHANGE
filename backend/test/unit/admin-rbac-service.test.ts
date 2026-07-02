@@ -6,6 +6,7 @@ vi.mock('../../src/modules/admin-rbac/admin-rbac.repository', () => ({
   adminRbacRepository: {
     findAdminByEmail: vi.fn(),
     findAdminById: vi.fn(),
+    updateAdminLastLogin: vi.fn(),
     updateAdminPassword: vi.fn(),
     createAdminSession: vi.fn(),
     findAdminSessionWithAdmin: vi.fn(),
@@ -116,6 +117,9 @@ beforeEach(() => {
   totpRequired.mockReturnValue(false);
   redisDel.mockResolvedValue(1);
   repo.createAdminSession.mockResolvedValue(makeSession());
+  // Best-effort last-login stamp: production chains `.catch()` on the result,
+  // so the mock must resolve to a promise rather than return undefined.
+  repo.updateAdminLastLogin.mockResolvedValue(makeAdmin());
   repo.writeAdminLog.mockResolvedValue({} as never);
   repo.getAdminRolesAndPermissions.mockResolvedValue({
     roles: ['SUPER_ADMIN'],

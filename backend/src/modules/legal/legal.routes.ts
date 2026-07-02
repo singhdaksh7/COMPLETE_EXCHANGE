@@ -14,3 +14,5 @@ export const legalRouter = Router();
 legalRouter.get('/documents/current', asyncHandler(legalController.currentDocuments));
 legalRouter.post('/accept', authenticate, validate({ body: legalAcceptSchema }), asyncHandler(legalController.accept));
 legalRouter.get('/acceptances/me', authenticate, asyncHandler(legalController.myAcceptances));
+// Stage 9A — consent status for the post-login banner + financial-action gate.
+legalRouter.get('/consent-status', authenticate, asyncHandler(legalController.consentStatus));

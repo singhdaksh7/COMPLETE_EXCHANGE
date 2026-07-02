@@ -97,7 +97,12 @@ d('auth module (integration)', () => {
   it('registers without auto-login and requires verification', async () => {
     const res = await request(app)
       .post('/auth/register')
-      .send({ email, password });
+      .send({
+        email,
+        password,
+        // Stage 9A — signup now requires explicit policy consent.
+        acceptedPolicies: { termsOfService: true, privacyPolicy: true, riskDisclosure: true },
+      });
     expect(res.status).toBe(201);
     expect(res.body.success).toBe(true);
     expect(res.body.data.emailVerificationRequired).toBe(true);

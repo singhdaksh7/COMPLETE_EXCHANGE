@@ -3,6 +3,7 @@ import { asyncHandler } from '../../utils/async-handler';
 import { validate } from '../../middleware/validate';
 import { authenticate } from '../../middleware/authenticate';
 import { authRateLimiter } from '../../middleware/rate-limit';
+import { requireLegalConsent } from '../legal/legal.consent';
 import { kycController } from './kyc.controller';
 import { kycDocumentSchema, kycSubmitSchema } from './kyc.validators';
 
@@ -25,6 +26,9 @@ kycRouter.post(
   '/',
   authenticate,
   authRateLimiter,
+  // Stage 9A — block KYC submission until the user has accepted the current
+  // required policies (Terms / Privacy / Risk). No-op when REQUIRE_POLICY_CONSENT=false.
+  requireLegalConsent,
   validate({ body: kycSubmitSchema }),
   asyncHandler(kycController.submitProfile),
 );

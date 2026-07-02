@@ -29,6 +29,7 @@ import type {
   AdminNotificationPage,
   SupportTicketPage,
   SupportTicketDetail,
+  SupportTicketThread,
   Conversion,
   CreatedAdmin,
   CryptoWithdrawal,
@@ -593,6 +594,26 @@ export const adminApi = {
     adminApiFetch<SupportTicketDetail>(`/support/tickets/${id}`, 'PATCH', { body }),
   supportTicketAddNote: (id: string, noteBody: string) =>
     adminApiFetch<SupportTicketDetail>(`/support/tickets/${id}/notes`, 'POST', { body: { body: noteBody } }),
+
+  // ---- Stage 9A: user-facing conversation thread ----
+  supportThread: (id: string) =>
+    adminApiFetch<SupportTicketThread>(`/support/tickets/${id}/thread`, 'GET'),
+  supportReply: (id: string, body: string, isInternalNote: boolean) =>
+    adminApiFetch<SupportTicketThread>(`/support/tickets/${id}/messages`, 'POST', {
+      body: { body, isInternalNote },
+    }),
+  supportAssign: (id: string, assignedAdminId?: string | null) =>
+    adminApiFetch<SupportTicketThread>(`/support/tickets/${id}/assign`, 'POST', {
+      body: assignedAdminId === undefined ? {} : { assignedAdminId },
+    }),
+  supportResolve: (id: string, reason?: string) =>
+    adminApiFetch<SupportTicketThread>(`/support/tickets/${id}/resolve`, 'POST', {
+      body: reason ? { reason } : {},
+    }),
+  supportCloseTicket: (id: string) =>
+    adminApiFetch<SupportTicketThread>(`/support/tickets/${id}/close`, 'POST'),
+  supportReopen: (id: string) =>
+    adminApiFetch<SupportTicketThread>(`/support/tickets/${id}/reopen`, 'POST'),
 
   audit: (params: Record<string, string | number | undefined> = {}) =>
     adminApiFetch<Page<OperationsAuditLog>>(

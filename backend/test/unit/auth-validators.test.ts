@@ -6,20 +6,27 @@ import {
 } from '../../src/modules/auth/auth.validators';
 
 describe('auth validators', () => {
+  const consent = {
+    termsOfService: true,
+    privacyPolicy: true,
+    riskDisclosure: true,
+  } as const;
+
   it('accepts a strong registration payload and lower-cases email', () => {
     const parsed = registerSchema.parse({
       email: 'USER@Example.COM',
       password: 'Str0ngPassword',
+      acceptedPolicies: consent,
     });
     expect(parsed.email).toBe('user@example.com');
   });
 
   it('rejects weak passwords (length + character classes)', () => {
     expect(() =>
-      registerSchema.parse({ email: 'a@b.com', password: 'short' }),
+      registerSchema.parse({ email: 'a@b.com', password: 'short', acceptedPolicies: consent }),
     ).toThrow();
     expect(() =>
-      registerSchema.parse({ email: 'a@b.com', password: 'alllowercase1' }),
+      registerSchema.parse({ email: 'a@b.com', password: 'alllowercase1', acceptedPolicies: consent }),
     ).toThrow();
   });
 
@@ -28,7 +35,23 @@ describe('auth validators', () => {
       registerSchema.parse({
         email: 'a@b.com',
         password: 'Str0ngPassword',
+        acceptedPolicies: consent,
         isAdmin: true,
+      }),
+    ).toThrow();
+  });
+
+  it('rejects signup without policy consent (Stage 9A)', () => {
+    // Missing entirely.
+    expect(() =>
+      registerSchema.parse({ email: 'a@b.com', password: 'Str0ngPassword' }),
+    ).toThrow();
+    // Any required flag not literally true.
+    expect(() =>
+      registerSchema.parse({
+        email: 'a@b.com',
+        password: 'Str0ngPassword',
+        acceptedPolicies: { ...consent, riskDisclosure: false },
       }),
     ).toThrow();
   });

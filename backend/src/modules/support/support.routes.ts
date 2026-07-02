@@ -6,6 +6,9 @@ import { adminAuthorize } from '../../middleware/admin-authorize';
 import { supportController } from './support.controller';
 import {
   addNoteSchema,
+  adminAssignSchema,
+  adminMessageSchema,
+  adminResolveSchema,
   createTicketSchema,
   listQuerySchema,
   ticketIdParamSchema,
@@ -63,4 +66,55 @@ adminSupportRouter.post(
   adminAuthorize('support.manage'),
   validate({ params: ticketIdParamSchema, body: addNoteSchema }),
   asyncHandler(supportController.addNote),
+);
+
+// ---- Stage 9A: user-facing conversation thread (reply / assign / resolve /
+// close / reopen). Read is support.view; writes are support.manage. Every write
+// is audit-logged. Internal notes are flagged via `isInternalNote` on the reply.
+adminSupportRouter.get(
+  '/tickets/:id/thread',
+  adminAuthenticate,
+  adminAuthorize('support.view'),
+  validate({ params: ticketIdParamSchema }),
+  asyncHandler(supportController.thread),
+);
+
+adminSupportRouter.post(
+  '/tickets/:id/messages',
+  adminAuthenticate,
+  adminAuthorize('support.manage'),
+  validate({ params: ticketIdParamSchema, body: adminMessageSchema }),
+  asyncHandler(supportController.reply),
+);
+
+adminSupportRouter.post(
+  '/tickets/:id/assign',
+  adminAuthenticate,
+  adminAuthorize('support.manage'),
+  validate({ params: ticketIdParamSchema, body: adminAssignSchema }),
+  asyncHandler(supportController.assign),
+);
+
+adminSupportRouter.post(
+  '/tickets/:id/resolve',
+  adminAuthenticate,
+  adminAuthorize('support.manage'),
+  validate({ params: ticketIdParamSchema, body: adminResolveSchema }),
+  asyncHandler(supportController.resolve),
+);
+
+adminSupportRouter.post(
+  '/tickets/:id/close',
+  adminAuthenticate,
+  adminAuthorize('support.manage'),
+  validate({ params: ticketIdParamSchema }),
+  asyncHandler(supportController.close),
+);
+
+adminSupportRouter.post(
+  '/tickets/:id/reopen',
+  adminAuthenticate,
+  adminAuthorize('support.manage'),
+  validate({ params: ticketIdParamSchema }),
+  asyncHandler(supportController.reopen),
 );

@@ -1,5 +1,6 @@
 import { apiFetch, authedFetch } from './client';
 import type {
+  AcceptedPolicies,
   CreateInrWithdrawalInput,
   CreateManualDepositInput,
   CryptoWithdrawal,
@@ -48,8 +49,12 @@ function idemKey(): string {
  */
 export const userApi = {
   // ---- auth ----
-  register: (body: { email: string; password: string; phone?: string }) =>
-    apiFetch<RegisterData>('/auth/register', { method: 'POST', body }),
+  register: (body: {
+    email: string;
+    password: string;
+    phone?: string;
+    acceptedPolicies: AcceptedPolicies;
+  }) => apiFetch<RegisterData>('/auth/register', { method: 'POST', body }),
 
   login: (body: { email: string; password: string; location?: { latitude: number; longitude: number; accuracy: number } | null }) =>
     apiFetch<LoginResult>('/auth/login', { method: 'POST', body }),

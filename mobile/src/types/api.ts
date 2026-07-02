@@ -28,6 +28,19 @@ export interface PublicUser {
   fullName?: string | null;
 }
 
+/**
+ * Stage 9A — explicit acceptance of the required legal policies, captured at
+ * signup. Every flag is a literal `true`: the backend rejects registration
+ * (422) unless all three were ticked. The policy VERSIONS accepted are resolved
+ * and recorded server-side, never sent from the client, so consent can't be
+ * faked or back-dated here.
+ */
+export interface AcceptedPolicies {
+  termsOfService: true;
+  privacyPolicy: true;
+  riskDisclosure: true;
+}
+
 export interface RegisterData {
   user: PublicUser;
   emailVerificationRequired: boolean;

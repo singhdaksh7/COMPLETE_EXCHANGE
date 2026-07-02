@@ -59,6 +59,21 @@ export const walletService = {
     );
 
     const byAsset = new Map<string, WalletOverviewAssetDto>();
+    // Seed from the ledger balances FIRST so every asset the user actually holds
+    // appears in `assets`, including networkless fiat like INR (which has no
+    // deposit network and would otherwise be dropped from the wallet page, even
+    // when the ledger shows a real INR balance). This only assembles the display
+    // DTO — balances remain the ledger's truth; no accounting logic changes.
+    for (const b of balances) {
+      const key = b.asset.toUpperCase();
+      byAsset.set(key, {
+        asset: b.asset,
+        available: b.available,
+        locked: b.locked,
+        total: b.total,
+        networks: [],
+      });
+    }
     for (const n of networks) {
       const key = n.asset.toUpperCase();
       let entry = byAsset.get(key);

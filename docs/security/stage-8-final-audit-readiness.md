@@ -84,6 +84,30 @@ Supabase). A managed provider is a **future architectural option only** — migr
 before the audit freeze is high risk and out of scope. The current custom controls
 are retained and audited for staging.
 
+## 3b. Stage 9A — trust, support & consent (this stage)
+
+User-trust and support-readiness work; no crypto, no matching engine, no ledger
+accounting or INR money-movement logic changed.
+
+- **Wallet INR balance fix:** wallet overview now assembles `assets` from the
+  ledger balances (not only deposit networks), so networkless fiat (INR) shows
+  its real available/locked/total; loading/empty/error states added. Ledger
+  remains the untouched source of truth (`wallet.service.ts`).
+- **Legal consent at signup:** reuses the existing versioned `UserLegalAcceptance`
+  system — signup now requires + records Terms/Privacy/Risk acceptance (ip/ua
+  evidence, audit-logged); a consent gate (`requireLegalConsent`, flag
+  `REQUIRE_POLICY_CONSENT`) blocks KYC until accepted; existing users get a
+  consent banner. No new consent table/migration.
+- **Customer support tickets:** user↔admin conversation on top of `SupportTicket`
+  (+ new `SupportTicketMessage`, one additive migration). Own-ticket scoping,
+  RBAC-gated admin actions, HTML-rejecting sanitization, rate-limited, audit-
+  logged; internal notes hidden from users. Admin console gains reply/resolve/
+  close/reopen; users get `/support`.
+- **Referral + API Management hidden** in INR-only mode (frontend flags; no
+  backend module existed).
+
+Details: [`../compliance/production-blockers.md`](../compliance/production-blockers.md) §6.
+
 ## 4. Intentionally disabled (by design)
 
 - Crypto deposits, withdrawals, and wallet surfaces (global flags off).

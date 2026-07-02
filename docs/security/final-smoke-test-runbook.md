@@ -58,6 +58,24 @@ Result key: ✅ pass · ❌ fail · N/A. Do not perform destructive actions.
 | 23 | Admin self-deactivate | Blocked | |
 | 24 | Admin activity timeline | Shows real approvals/actions | |
 
+## D2. Stage 9A — consent, support, wallet, hidden features
+
+| # | Test | Expected | Result |
+|---|---|---|---|
+| 25 | Signup without ticking all policy boxes | Blocked (Terms/Privacy/Risk required) | |
+| 26 | Signup with all policies accepted | Succeeds; acceptance recorded (admin can view under user's legal acceptances) | |
+| 27 | Existing user without consent, after login | Consent banner shown; financial actions (KYC/deposit/withdrawal/trading) gated with `CONSENT_REQUIRED` | |
+| 28 | Wallet page INR balance | Shows real INR available/locked/total (not ₹0 when funded); loading/empty/error states correct | |
+| 29 | Referral tab / Refer & Earn card | Hidden | |
+| 30 | API Management tab | Hidden | |
+| 31 | User creates a support ticket | Ticket created with ticket number; appears in the user's list only | |
+| 32 | Admin replies to the ticket | User sees the reply; status → WAITING_FOR_USER | |
+| 33 | Admin resolves the ticket | User sees RESOLVED; system message added | |
+| 34 | User B tries to open User A's ticket | 404 TICKET_NOT_FOUND (no cross-user access) | |
+| 35 | Support message with `<script>` | Rejected (HTML not allowed) | |
+| 36 | Copy ticket number / reference (UTR) button | Copies correctly | |
+| 37 | Internal admin note | Visible to admins only, never to the user | |
+
 ## E. Sign-off
 
 - [ ] All Section A steps pass (or gaps recorded).

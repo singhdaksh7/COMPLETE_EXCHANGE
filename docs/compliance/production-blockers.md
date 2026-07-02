@@ -81,6 +81,9 @@ Progress: ❌ not started · 🟡 partial/mock/abstraction · ✅ done.
 | 10c | CSP / security headers staged rollout on frontends | MEDIUM (DOCUMENTED GAP) | 🟡 | API helmet headers present; `www` (Vercel) HSTS only; CloudFront/S3 none. CSP report-only first. `cloudfront-security-headers-readiness.md`. |
 | 23 | Managed auth provider (Clerk/Auth0/Supabase) evaluation | LOW (future option) | ⏭️ | EXORA uses custom auth with strong controls (`docs/security/auth-hardening-checklist.md`). Managed provider is a **future architectural option**, not a blocker; migrating before the audit freeze is high risk and out of scope. |
 | 24 | CAPTCHA / bot mitigation + progressive login delay | LOW (future option) | ⏭️ | Optional future hardening; rate limits + lockouts cover the risk today. No paid CAPTCHA vendor added. |
+| 25 | Referral / Refer-and-Earn program | LOW (disabled) | ⏭️ | Hidden in INR-only audit mode (Stage 9A) until compliance/product approval. No rewards/earnings computed or shown. Re-enable via `NEXT_PUBLIC_REFERRALS_ENABLED`. |
+| 26 | API Management (user API keys) | LOW (disabled) | ⏭️ | Hidden in INR-only audit mode (Stage 9A). No backend module / keys exist. Re-enable via `NEXT_PUBLIC_API_MANAGEMENT_ENABLED` once built + reviewed. |
+| 27 | Support in-app notifications on admin reply/resolve | LOW (follow-up) | 🟡 | Ticket status transition (→ WAITING_FOR_USER / RESOLVED) is the user-visible signal today; dedicated `NotificationType` values deferred to avoid a fragile enum migration. |
 | 10d | WAF false-positive tuning before strict blocking | MEDIUM (DOCUMENTED GAP) | ❌ | Managed/rate rules start in COUNT; tune before flipping to Block. |
 | 10e | `CORS_ORIGINS` missing live frontend origins | HIGH (deploy-time) | 🟡 | Live value omits `https://www.exorain.com` / `https://exorain.com` and carries a placeholder. CORS code is correct (strict allowlist); fix the env value at deploy. **No code change.** |
 
@@ -114,6 +117,10 @@ Progress: ❌ not started · 🟡 partial/mock/abstraction · ✅ done.
 | 22 | Crypto-global production boot guard | ✅ | `backend/src/lib/prod-safety.ts` |
 | 8a | FIU technical-readiness evidence pack | ✅ | `docs/compliance/fiu-evidence-pack/README.md` |
 | — | Auth input hardening: malformed JSON → 400, login password cap, HTML rejection in KYC/identity fields, generic login copy | ✅ | Stage 8A; `docs/security/auth-hardening-checklist.md` |
+| — | Signup legal consent captured + versioned (Terms/Privacy/Risk) with ip/ua evidence; financial-action gate + consent banner | ✅ | Stage 9A; `backend/src/modules/legal/legal.consent.ts` (reuses `UserLegalAcceptance`) |
+| — | User↔admin support ticket system (own-ticket scoping, RBAC, sanitized, rate-limited, audited; internal notes hidden) | ✅ | Stage 9A; `backend/src/modules/support/support.user.service.ts` |
+| — | Wallet INR balance display fix (ledger-sourced; networkless fiat included) | ✅ | Stage 9A; `backend/src/modules/wallet/wallet.service.ts` |
+| — | Referral + API Management hidden in INR-only audit mode | ✅ | Stage 9A; `frontend/lib/config.ts` (frontend flags; no backend module) |
 
 ---
 

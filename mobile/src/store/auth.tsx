@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { tokenStore } from './tokenStore';
 import { setUnauthorizedHandler } from '@/api/client';
 import { userApi } from '@/api/userApi';
-import { isTwoFactorChallenge, type PublicUser, type UserFeatureMap } from '@/types/api';
+import { isTwoFactorChallenge, type AcceptedPolicies, type PublicUser, type UserFeatureMap } from '@/types/api';
 
 /**
  * Result of a password login. Either the session is established, or the account
@@ -33,7 +33,12 @@ interface AuthState {
   login: (email: string, password: string, location?: { latitude: number; longitude: number; accuracy: number } | null) => Promise<LoginOutcome>;
   /** Finish a 2FA-gated login with the challenge token + TOTP/backup code. */
   complete2fa: (challengeToken: string, code: string, location?: { latitude: number; longitude: number; accuracy: number } | null) => Promise<PublicUser>;
-  register: (email: string, password: string, phone?: string) => Promise<{ emailVerificationRequired: boolean }>;
+  register: (
+    email: string,
+    password: string,
+    acceptedPolicies: AcceptedPolicies,
+    phone?: string,
+  ) => Promise<{ emailVerificationRequired: boolean }>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -107,10 +112,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [refreshUser],
   );
 
-  const register = useCallback(async (email: string, password: string, phone?: string) => {
-    const res = await userApi.register({ email, password, ...(phone ? { phone } : {}) });
-    return { emailVerificationRequired: res.data.emailVerificationRequired };
-  }, []);
+  const register = useCallback(
+    async (email: string, password: string, acceptedPolicies: AcceptedPolicies, phone?: string) => {
+      const res = await userApi.register({
+        email,
+        password,
+        acceptedPolicies,
+        ...(phone ? { phone } : {}),
+      });
+      return { emailVerificationRequired: res.data.emailVerificationRequired };
+    },
+    [],
+  );
 
   const logout = useCallback(async () => {
     await tokenStore.clear();

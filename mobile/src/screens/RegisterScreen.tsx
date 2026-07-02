@@ -21,18 +21,39 @@ function ShieldBadge({ icon }: { icon: React.ComponentProps<typeof Ionicons>['na
   );
 }
 
+function ConsentRow({
+  checked,
+  onToggle,
+  children,
+}: {
+  checked: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Pressable style={styles.agreeRow} onPress={onToggle}>
+      <View style={[styles.checkbox, checked && styles.checkboxOn]}>
+        {checked ? <Ionicons name="checkmark" size={14} color="#1A1206" /> : null}
+      </View>
+      <Text style={styles.agreeText}>{children}</Text>
+    </Pressable>
+  );
+}
+
 export default function RegisterScreen() {
   const { register } = useAuth();
   const router = useRouter();
-  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
-  const [referral, setReferral] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [agree, setAgree] = useState(false);
+  // Stage 9A: each required legal policy is acknowledged separately. Backend
+  // rejects registration unless all three are true — no single "accept all".
+  const [agreeTerms, setAgreeTerms] = useState(false);
+  const [agreePrivacy, setAgreePrivacy] = useState(false);
+  const [agreeRisk, setAgreeRisk] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
@@ -40,13 +61,22 @@ export default function RegisterScreen() {
   const emailValid = EMAIL_RE.test(email.trim());
   const passOk = password.length >= 8;
   const confirmOk = confirm === password && confirm.length > 0;
-  const canSubmit = fullName.trim().length > 0 && emailValid && passOk && confirmOk && agree;
+  const policiesAccepted = agreeTerms && agreePrivacy && agreeRisk;
+  const canSubmit = emailValid && passOk && confirmOk && policiesAccepted;
 
   const onSubmit = async () => {
+    // Guard: only submit real, individually-ticked consent. Never synthesize
+    // acceptedPolicies flags the user did not actually check.
+    if (!policiesAccepted) return;
     setError(null);
     setBusy(true);
     try {
-      const res = await register(email.trim(), password, phone.trim() || undefined);
+      const res = await register(
+        email.trim(),
+        password,
+        { termsOfService: true, privacyPolicy: true, riskDisclosure: true },
+        phone.trim() || undefined,
+      );
       if (res.emailVerificationRequired) setDone(true);
       else router.replace('/(auth)/login');
     } catch (err) {
@@ -84,14 +114,6 @@ export default function RegisterScreen() {
 
       {/* Form Fields */}
       <View style={styles.form}>
-        {/* Full Name */}
-        <PremiumInput
-          placeholder="Full Name"
-          leftIcon="person-outline"
-          value={fullName}
-          onChangeText={setFullName}
-        />
-
         {/* Email Address */}
         <PremiumInput
           placeholder="Email Address"
@@ -151,23 +173,25 @@ export default function RegisterScreen() {
           }
         />
 
-        {/* Referral Code */}
-        <PremiumInput
-          placeholder="Referral Code (Optional)"
-          leftIcon="gift-outline"
-          value={referral}
-          onChangeText={setReferral}
-        />
+        {/* Signup captures only what the backend stores today (email, phone,
+            password). Name and other profile details are completed later. */}
+        <Text style={styles.profileNote}>You can complete your profile after signup.</Text>
 
-        {/* Checkbox Row */}
-        <Pressable style={styles.agreeRow} onPress={() => setAgree(!agree)}>
-          <View style={[styles.checkbox, agree && styles.checkboxOn]}>
-            {agree ? <Ionicons name="checkmark" size={14} color="#1A1206" /> : null}
-          </View>
-          <Text style={styles.agreeText}>
-            I accept the <Text style={{ color: colors.brand, fontWeight: '700' }}>Terms &amp; Privacy Policy</Text>
-          </Text>
-        </Pressable>
+        {/* Required legal consents (Stage 9A) — each acknowledged separately. */}
+        <View style={styles.consentGroup}>
+          <ConsentRow checked={agreeTerms} onToggle={() => setAgreeTerms((v) => !v)}>
+            I have read and accept the{' '}
+            <Text style={styles.consentLink}>Terms of Service</Text>
+          </ConsentRow>
+          <ConsentRow checked={agreePrivacy} onToggle={() => setAgreePrivacy((v) => !v)}>
+            I have read and accept the{' '}
+            <Text style={styles.consentLink}>Privacy Policy</Text>
+          </ConsentRow>
+          <ConsentRow checked={agreeRisk} onToggle={() => setAgreeRisk((v) => !v)}>
+            I acknowledge the{' '}
+            <Text style={styles.consentLink}>Risk Disclosure</Text>
+          </ConsentRow>
+        </View>
 
         {error ? <Text style={styles.err}>{error}</Text> : null}
 
@@ -256,10 +280,13 @@ const styles = StyleSheet.create({
     height: '100%',
   },
 
-  agreeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.xs },
+  profileNote: { color: colors.muted2, fontSize: font.xs, fontWeight: '500', marginTop: -spacing.xs },
+  consentGroup: { gap: spacing.sm, marginTop: spacing.xs },
+  agreeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   checkbox: { width: 20, height: 20, borderRadius: 5, borderWidth: 1, borderColor: colors.line, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panel },
   checkboxOn: { backgroundColor: colors.brand, borderColor: colors.brand },
   agreeText: { color: colors.muted, fontSize: font.sm, flex: 1, fontWeight: '600' },
+  consentLink: { color: colors.brand, fontWeight: '700' },
   
   err: { color: colors.down, fontSize: font.sm, textAlign: 'center' },
 

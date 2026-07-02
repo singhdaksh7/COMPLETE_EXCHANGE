@@ -35,6 +35,8 @@ import { logger } from '../../lib/logger';
 import { notificationService } from '../notification/notification.service';
 import { featureControlsService } from '../feature-controls/feature-controls.service';
 import { securityService } from '../user-security/user-security.service';
+import { legalService } from '../legal/legal.service';
+import { REQUIRED_SIGNUP_POLICIES } from '../legal/legal.consent';
 import { recordAudit, AuditAction } from '../../lib/audit';
 import type {
   AuthResult,
@@ -258,6 +260,30 @@ export const authService = {
       userAgent: ctx.userAgent,
       requestId: ctx.requestId,
     });
+
+    // Stage 9A — record signup consent against the CURRENT policy versions. The
+    // validator guarantees `acceptedPolicies` is present (all true) on real
+    // signups; recording is best-effort so a legal-store hiccup never orphans an
+    // already-created account (the consent banner + gate will re-prompt). ip/ua
+    // are captured as acceptance evidence; each row is audit-logged in the
+    // legal service.
+    if (input.acceptedPolicies) {
+      try {
+        await legalService.currentDocuments({ actorId: user.id });
+        for (const documentType of REQUIRED_SIGNUP_POLICIES) {
+          await legalService.accept(user.id, { documentType }, {
+            ip: ctx.ip,
+            userAgent: ctx.userAgent,
+            requestId: ctx.requestId,
+          });
+        }
+      } catch (err) {
+        logger.error(
+          { err, userId: user.id },
+          'register: signup consent recording failed; account created, consent will be re-prompted',
+        );
+      }
+    }
 
     return {
       user: toPublicUser(user),

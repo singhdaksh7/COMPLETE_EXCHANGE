@@ -13,3 +13,16 @@ export const ADMIN_API_URL =
  */
 export const REQUIRE_LOGIN_LOCATION =
   process.env.NEXT_PUBLIC_REQUIRE_LOGIN_LOCATION === 'true';
+
+/**
+ * Stage 9A — feature visibility flags for INR-only audit/demo mode. These are
+ * frontend-only display gates (no backend module exists for either feature); the
+ * UI hides the entry points and any direct route renders an "unavailable" notice.
+ * Kept OFF until compliance/product approval. Override via NEXT_PUBLIC_* if ever
+ * re-enabled for internal use.
+ */
+export const API_MANAGEMENT_ENABLED =
+  process.env.NEXT_PUBLIC_API_MANAGEMENT_ENABLED === 'true';
+
+export const REFERRALS_ENABLED =
+  process.env.NEXT_PUBLIC_REFERRALS_ENABLED === 'true';

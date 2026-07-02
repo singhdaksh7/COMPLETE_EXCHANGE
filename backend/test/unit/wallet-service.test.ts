@@ -103,6 +103,40 @@ describe('walletService.getOverview', () => {
     expect(eth?.depositAddress).toBeNull(); // no address derived yet
   });
 
+  it('includes networkless fiat (INR) in assets from the ledger balance (Stage 9A regression)', async () => {
+    // INR has a real ledger balance but NO deposit network. Before the fix,
+    // `assets` was built only from networks, so INR was dropped and the wallet
+    // page showed a wrong/zero INR balance. It must now appear with its real
+    // ledger figures and an empty networks list.
+    ledger.listWallets.mockResolvedValue([
+      { asset: 'INR', available: '1500.50', locked: '250.00', total: '1750.50' },
+      { asset: 'USDT', available: '10', locked: '0', total: '10' },
+    ]);
+    repo.listSupportedNetworks.mockResolvedValue([
+      {
+        asset: 'USDT',
+        chain: 'TRON',
+        contractAddr: 'TR7NHq...',
+        decimals: 6,
+        minConfirmations: 20,
+        chainRef: { family: 'TRON' },
+      },
+    ] as never);
+    repo.listUserAddresses.mockResolvedValue([]);
+
+    const out = await walletService.getOverview(USER_ID);
+
+    const inr = out.assets.find((a) => a.asset.toUpperCase() === 'INR');
+    expect(inr).toBeDefined();
+    expect(inr?.available).toBe('1500.50');
+    expect(inr?.locked).toBe('250.00');
+    expect(inr?.total).toBe('1750.50');
+    expect(inr?.networks).toEqual([]);
+    // USDT still carries its network.
+    const usdt = out.assets.find((a) => a.asset.toUpperCase() === 'USDT');
+    expect(usdt?.networks).toHaveLength(1);
+  });
+
   it('defaults balance to zero when the user has no ledger account for the asset', async () => {
     ledger.listWallets.mockResolvedValue([]);
     repo.listSupportedNetworks.mockResolvedValue([

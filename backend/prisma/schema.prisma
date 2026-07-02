@@ -512,25 +512,57 @@ model AdminNotification {
 /// the service layer.
 model SupportTicket {
   id               String    @id @default(uuid()) @db.Uuid
+  // Human-readable id shown to users (e.g. TKT-XXXXXXXX). Nullable so legacy
+  // admin-created ops tickets (which predate user-facing tickets) keep working;
+  // every user-created ticket gets one. Unique allows many NULLs in Postgres.
+  ticketNumber     String?   @unique @map("ticket_number")
   userId           String?   @map("user_id") @db.Uuid
   subject          String
   category         String    @default("GENERAL")
   priority         String    @default("MEDIUM") // LOW | MEDIUM | HIGH | URGENT
-  status           String    @default("OPEN") // OPEN | IN_PROGRESS | WAITING | RESOLVED | CLOSED
+  // OPEN | IN_PROGRESS | WAITING | WAITING_FOR_ADMIN | WAITING_FOR_USER | RESOLVED | CLOSED
+  status           String    @default("OPEN")
   assignedAdminId  String?   @map("assigned_admin_id") @db.Uuid
   createdByAdminId String?   @map("created_by_admin_id") @db.Uuid
   closedByAdminId  String?   @map("closed_by_admin_id") @db.Uuid
+  // Optional link to a referenced entity (e.g. an INR withdrawal / deposit / UTR)
+  // supplied by the user when raising the ticket. Free-text, sanitized, no FK.
+  referenceType    String?   @map("reference_type")
+  referenceId      String?   @map("reference_id")
+  lastMessageAt    DateTime? @map("last_message_at")
+  resolvedAt       DateTime? @map("resolved_at")
   closedAt         DateTime? @map("closed_at")
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
-  user  User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
-  notes SupportTicketNote[]
+  user     User?                  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  notes    SupportTicketNote[]
+  messages SupportTicketMessage[]
 
   @@index([status, createdAt])
   @@index([assignedAdminId])
   @@index([userId])
   @@map("support_tickets")
+}
+
+/// A message in a support-ticket conversation (Stage 9A). Unlike SupportTicketNote
+/// (admin ops notes), these form the USER<->ADMIN thread. `isInternalNote=true`
+/// messages are admin-only and never returned on user-facing endpoints. Append-only.
+/// Actor ids are plain uuids (no FK), mirroring the other nullable-actor columns.
+model SupportTicketMessage {
+  id             String   @id @default(uuid()) @db.Uuid
+  ticketId       String   @map("ticket_id") @db.Uuid
+  senderType     String   @map("sender_type") // USER | ADMIN | SYSTEM
+  userId         String?  @map("user_id") @db.Uuid
+  adminId        String?  @map("admin_id") @db.Uuid
+  body           String
+  isInternalNote Boolean  @default(false) @map("is_internal_note")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+  @@map("support_ticket_messages")
 }
 
 /// A note/comment on a support ticket (Stage 8C). Append-only in practice.

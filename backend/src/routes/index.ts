@@ -24,6 +24,7 @@ import { legalRouter } from '../modules/legal/legal.routes';
 import { taxRouter } from '../modules/tax/tax.routes';
 import { healthRouter } from '../modules/health/health.routes';
 import { securityRouter } from '../modules/user-security/user-security.routes';
+import { supportUserRouter } from '../modules/support/support.user.routes';
 
 /**
  * Aggregates all versioned API routers mounted under the API prefix
@@ -66,3 +67,5 @@ apiRouter.use('/notifications', notificationRouter);
 // Legal acceptance + tax/TDS calculation-only foundation (Stage 5.5).
 apiRouter.use('/legal', legalRouter);
 apiRouter.use('/tax', taxRouter);
+// User-facing support tickets (Stage 9A). Admin side lives under /admin/v1/support.
+apiRouter.use('/support', supportUserRouter);
