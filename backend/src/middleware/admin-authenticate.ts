@@ -28,6 +28,20 @@ export async function adminAuthenticate(
         'IP_NOT_ALLOWED',
       );
     }
+    // Stage 9C — a SUPER_ADMIN-forced password reset locks the console: the admin
+    // may reach only their own profile (/auth/me) and the change-password
+    // endpoint until they set a new password. Everything else is refused.
+    if (admin.mustChangePassword) {
+      const path = req.path;
+      const allowed =
+        path.endsWith('/auth/change-password') || path.endsWith('/auth/me');
+      if (!allowed) {
+        throw new ForbiddenError(
+          'You must set a new password before continuing.',
+          'PASSWORD_CHANGE_REQUIRED',
+        );
+      }
+    }
     req.admin = {
       id: admin.id,
       sessionId: payload.sid,

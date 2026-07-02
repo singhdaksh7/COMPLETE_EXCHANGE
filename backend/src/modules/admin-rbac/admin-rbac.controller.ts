@@ -105,6 +105,33 @@ export const adminRbacController = {
     sendSuccess(res, { items });
   },
 
+  // --- Archived admins + password reset (Stage 9C) -------------------------
+
+  async listArchivedAdmins(_req: Request, res: Response): Promise<void> {
+    const items = await adminRbacService.listArchivedAdmins();
+    sendSuccess(res, { items });
+  },
+
+  async resetAdminPassword(req: Request, res: Response): Promise<void> {
+    const result = await adminRbacService.resetAdminPassword(
+      req.params.adminId,
+      { confirm: req.body?.confirm === true },
+      ctx(req),
+    );
+    // temporaryPassword is returned ONCE here and never logged.
+    sendSuccess(res, result);
+  },
+
+  async changePassword(req: Request, res: Response): Promise<void> {
+    if (!req.admin) throw new UnauthorizedError();
+    const admin = await adminRbacService.changeOwnPassword(
+      req.admin.id,
+      { currentPassword: req.body.currentPassword, newPassword: req.body.newPassword },
+      ctx(req),
+    );
+    sendSuccess(res, { admin });
+  },
+
   async createAdmin(req: Request, res: Response): Promise<void> {
     const created = await adminRbacService.createAdmin(
       { email: req.body.email, roleId: req.body.roleId, status: req.body.status },

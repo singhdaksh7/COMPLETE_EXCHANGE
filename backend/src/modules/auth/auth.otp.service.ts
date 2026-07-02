@@ -183,6 +183,10 @@ export const authOtpService = {
     let isNewUser: boolean;
 
     if (existing) {
+      // Stage 9C — archived (soft-deleted) accounts cannot authenticate via OTP.
+      if (existing.deletedAt) {
+        throw new ForbiddenError('Account is disabled. Contact support.', 'ACCOUNT_DISABLED');
+      }
       if (existing.status !== 'ACTIVE') {
         throw new ForbiddenError('Account is not active', 'ACCOUNT_NOT_ACTIVE');
       }

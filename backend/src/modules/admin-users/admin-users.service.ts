@@ -1,12 +1,25 @@
 import { Prisma, type CryptoWithdrawal, type InrTransaction, type Order, type Trade, type User } from '@prisma/client';
-import { ForbiddenError, NotFoundError } from '../../lib/errors';
+import { ConflictError, ForbiddenError, NotFoundError } from '../../lib/errors';
 import { recordAudit } from '../../lib/audit';
+import { adminRbacService } from '../admin-rbac/admin-rbac.service';
 import {
   adminUsersRepository,
+  type AdminArchivedUserRow,
   type AdminUserDetailRow,
   type AdminUserListRow,
+  type UserArchiveObligations,
 } from './admin-users.repository';
 import type { AccountStatusDto, AdminUserListQueryDto, RiskProfileDto } from './admin-users.validators';
+
+/**
+ * Admin-safe message returned when a user has open obligations (funds, pending
+ * money movement, open orders, unresolved compliance/support). The exact copy
+ * is stable so the admin UI can surface it verbatim.
+ */
+const ARCHIVE_BLOCKED_MESSAGE =
+  'User cannot be archived while funds, pending transactions, or open obligations exist.';
+
+const SUPER_ADMIN = 'SUPER_ADMIN';
 
 export interface AdminUserContext {
   actorId?: string;
@@ -85,6 +98,19 @@ export interface AdminUserDetailDto extends AdminUserListItemDto {
     occurredAt: Date;
   }>;
 }
+
+/** Archive audit anchors added to the archived (Deleted Users tab) DTOs. */
+interface ArchiveMetaDto {
+  fullName: string | null;
+  deletedAt: Date | null;
+  deletedByAdminId: string | null;
+  deletedByAdminEmail: string | null;
+  deletionReason: string | null;
+}
+
+export interface AdminArchivedUserListItemDto extends AdminUserListItemDto, ArchiveMetaDto {}
+
+export interface AdminArchivedUserDetailDto extends AdminUserDetailDto, ArchiveMetaDto {}
 
 function balanceSummary(accounts: AdminUserListRow['accounts']): BalanceSummaryItem[] {
   const byAsset = new Map<string, { available: Prisma.Decimal; locked: Prisma.Decimal }>();
@@ -255,6 +281,51 @@ function userState(user: User): Prisma.InputJsonObject {
   };
 }
 
+/** Machine-readable blocker codes for an attempted archive. Empty => archivable. */
+function collectArchiveBlockers(o: UserArchiveObligations): string[] {
+  const blockers: string[] = [];
+  if (o.nonZeroBalances.length > 0) blockers.push('NON_ZERO_BALANCE');
+  if (o.pendingInrDeposits > 0) blockers.push('PENDING_INR_DEPOSIT');
+  if (o.pendingInrWithdrawals > 0) blockers.push('PENDING_INR_WITHDRAWAL');
+  if (o.openOrders > 0) blockers.push('OPEN_ORDERS');
+  if (o.openComplianceCases > 0 || o.underComplianceReview) {
+    blockers.push('UNRESOLVED_COMPLIANCE_HOLD');
+  }
+  if (o.openSupportTickets > 0) blockers.push('OPEN_SUPPORT_CASE');
+  return blockers;
+}
+
+function toArchivedListItem(
+  row: AdminArchivedUserRow,
+  emailMap: Map<string, string>,
+): AdminArchivedUserListItemDto {
+  return {
+    ...toListItem(row),
+    fullName: row.kycProfile?.fullName ?? null,
+    deletedAt: row.deletedAt,
+    deletedByAdminId: row.deletedByAdminId,
+    deletedByAdminEmail: row.deletedByAdminId
+      ? emailMap.get(row.deletedByAdminId) ?? null
+      : null,
+    deletionReason: row.deletionReason,
+  };
+}
+
+/**
+ * Defence-in-depth SUPER_ADMIN gate for the archive/restore actions. The route
+ * permission (users.archive / users.viewArchived) is granted to NO non-super
+ * role, so only SUPER_ADMIN reaches here; this re-check ensures the service is
+ * safe even if a route is ever misconfigured.
+ */
+async function ensureSuperAdmin(ctx: AdminUserContext): Promise<void> {
+  const roles = ctx.actorId
+    ? (await adminRbacService.getAdminPermissions(ctx.actorId)).roles
+    : [];
+  if (!roles.includes(SUPER_ADMIN)) {
+    throw new ForbiddenError('Only SUPER_ADMIN can perform this action', 'FORBIDDEN');
+  }
+}
+
 export const adminUsersService = {
   async listUsers(input: AdminUserListQueryDto, ctx: AdminUserContext = {}) {
     const rows = await adminUsersRepository.listUsers({
@@ -369,6 +440,171 @@ export const adminUsersService = {
       targetId: userId,
       beforeState: userState(existing),
       afterState: userState(updated),
+    });
+    const detail = await adminUsersRepository.findUserDetail(userId);
+    return toListItem(detail as AdminUserDetailRow);
+  },
+
+  // --- Soft delete / archive (Stage 9C) — SUPER_ADMIN only ------------------
+
+  /** List archived (soft-deleted) users. Read-only; never shows active users. */
+  async listArchivedUsers(input: AdminUserListQueryDto, ctx: AdminUserContext = {}) {
+    const rows = await adminUsersRepository.listArchivedUsers({
+      email: input.email,
+      kycStatus: input.kycStatus,
+      accountStatus: input.accountStatus,
+      riskLevel: input.riskLevel,
+      createdFrom: dateOrUndefined(input.createdFrom),
+      createdTo: dateOrUndefined(input.createdTo),
+      cursor: input.cursor,
+      limit: input.limit,
+    });
+    const hasMore = rows.length > input.limit;
+    const slice = hasMore ? rows.slice(0, input.limit) : rows;
+    const emailMap = await adminUsersRepository.findAdminEmailsByIds(
+      slice.map((r) => r.deletedByAdminId).filter((x): x is string => Boolean(x)),
+    );
+    await this.auditAdmin(ctx, {
+      action: 'admin.users.archived_list',
+      targetType: 'user',
+      afterState: { count: slice.length },
+    });
+    return {
+      items: slice.map((r) => toArchivedListItem(r, emailMap)),
+      nextCursor: hasMore ? slice[slice.length - 1].id : null,
+    };
+  },
+
+  /** Read-only detail of a single archived user. */
+  async getArchivedUser(
+    userId: string,
+    ctx: AdminUserContext = {},
+  ): Promise<AdminArchivedUserDetailDto> {
+    const [user, inrTransactions, withdrawals, orders, trades, adminLogs, auditLogs] =
+      await Promise.all([
+        adminUsersRepository.findArchivedUserDetail(userId),
+        adminUsersRepository.recentInrTransactions(userId),
+        adminUsersRepository.recentWithdrawals(userId),
+        adminUsersRepository.recentOrders(userId),
+        adminUsersRepository.recentTrades(userId),
+        adminUsersRepository.recentAdminLogs(userId),
+        adminUsersRepository.recentAuditLogs(userId),
+      ]);
+    if (!user) throw new NotFoundError('Archived user not found', 'USER_NOT_FOUND');
+    const emailMap = await adminUsersRepository.findAdminEmailsByIds(
+      user.deletedByAdminId ? [user.deletedByAdminId] : [],
+    );
+    await this.auditAdmin(ctx, {
+      action: 'admin.users.archived_detail',
+      targetType: 'user',
+      targetId: userId,
+    });
+    const detail = toDetail(user, {
+      inrTransactions,
+      withdrawals,
+      orders,
+      trades,
+      adminLogs,
+      auditLogs,
+    });
+    return {
+      ...detail,
+      fullName: user.kycProfile?.fullName ?? null,
+      deletedAt: user.deletedAt,
+      deletedByAdminId: user.deletedByAdminId,
+      deletedByAdminEmail: user.deletedByAdminId
+        ? emailMap.get(user.deletedByAdminId) ?? null
+        : null,
+      deletionReason: user.deletionReason,
+    };
+  },
+
+  /**
+   * Soft-delete (archive) a user. SUPER_ADMIN only. Refuses when any open
+   * obligation exists (funds, pending INR deposit/withdrawal, open orders,
+   * unresolved compliance hold, open support case). On success the user is
+   * removed from every active list, ALL history is preserved, and existing
+   * sessions/tokens are revoked so the user cannot continue an in-flight session.
+   */
+  async archiveUser(
+    userId: string,
+    input: { reason: string },
+    ctx: AdminUserContext,
+  ): Promise<AdminArchivedUserDetailDto> {
+    await ensureSuperAdmin(ctx);
+    const existing = await adminUsersRepository.findActiveUser(userId);
+    if (!existing) throw new NotFoundError('User not found', 'USER_NOT_FOUND');
+
+    const obligations = await adminUsersRepository.userArchiveObligations(userId);
+    const blockers = collectArchiveBlockers(obligations);
+    if (blockers.length > 0) {
+      // Audit the blocked attempt (accountability) but never move money.
+      await this.auditAdmin(ctx, {
+        action: 'admin.user.archive_blocked',
+        targetType: 'user',
+        targetId: userId,
+        afterState: { event: 'USER_ARCHIVE_BLOCKED', blockers },
+      });
+      throw new ForbiddenError(ARCHIVE_BLOCKED_MESSAGE, 'USER_ARCHIVE_BLOCKED');
+    }
+
+    const updated = await adminUsersRepository.archiveUser(userId, {
+      deletedByAdminId: ctx.actorId,
+      reason: input.reason,
+    });
+    // Revoke live sessions/tokens: USER_ARCHIVED_BY_ADMIN.
+    const revoked = await adminUsersRepository.revokeAllUserSessions(userId);
+
+    await this.auditAdmin(ctx, {
+      action: 'admin.user.archived',
+      targetType: 'user',
+      targetId: userId,
+      beforeState: userState(existing),
+      afterState: {
+        event: 'USER_ARCHIVED',
+        status: updated.status,
+        deletedAt: updated.deletedAt,
+        reason: input.reason,
+        revokedSessions: revoked.count,
+        sessionRevokeReason: 'USER_ARCHIVED_BY_ADMIN',
+      },
+    });
+    return this.getArchivedUser(userId, {});
+  },
+
+  /**
+   * Restore a previously archived user. SUPER_ADMIN only. Blocked while a
+   * compliance hold is unresolved. Old sessions are NOT restored — the user
+   * must sign in fresh.
+   */
+  async restoreUser(
+    userId: string,
+    input: { reason: string },
+    ctx: AdminUserContext,
+  ): Promise<AdminUserListItemDto> {
+    await ensureSuperAdmin(ctx);
+    const existing = await adminUsersRepository.findArchivedUser(userId);
+    if (!existing) throw new NotFoundError('Archived user not found', 'USER_NOT_FOUND');
+
+    const obligations = await adminUsersRepository.userArchiveObligations(userId);
+    if (obligations.openComplianceCases > 0 || obligations.underComplianceReview) {
+      throw new ConflictError(
+        'User cannot be restored while a compliance hold is unresolved.',
+        'USER_RESTORE_BLOCKED',
+      );
+    }
+
+    const updated = await adminUsersRepository.restoreUser(userId);
+    await this.auditAdmin(ctx, {
+      action: 'admin.user.restored',
+      targetType: 'user',
+      targetId: userId,
+      beforeState: {
+        status: existing.status,
+        deletedAt: existing.deletedAt,
+        reason: input.reason,
+      },
+      afterState: { event: 'USER_RESTORED', status: updated.status },
     });
     const detail = await adminUsersRepository.findUserDetail(userId);
     return toListItem(detail as AdminUserDetailRow);

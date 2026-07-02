@@ -1,6 +1,9 @@
 import { ApiError, type Envelope } from './api';
 import { tokenStore } from './auth';
 import type {
+  AdminArchivedUserDetail,
+  AdminArchivedUserListItem,
+  AdminPasswordReset,
   AdminKycDetail,
   AdminKycQueue,
   AdminNotification,
@@ -286,6 +289,37 @@ export const adminApi = {
   userDetail: (userId: string) =>
     adminApiFetch<AdminUserDetail>(`/users/${userId}`, 'GET'),
 
+  // ---- Stage 9C: archived (soft-deleted) users — SUPER_ADMIN only ----
+  archivedUsers: (
+    params: {
+      email?: string;
+      kycStatus?: string;
+      accountStatus?: string;
+      riskLevel?: string;
+      createdFrom?: string;
+      createdTo?: string;
+      cursor?: string;
+      limit?: number;
+    } = {},
+  ) =>
+    adminApiFetch<Page<AdminArchivedUserListItem>>(
+      `/users/archived${buildQuery({ limit: 50, ...params })}`,
+      'GET',
+    ),
+
+  archivedUserDetail: (userId: string) =>
+    adminApiFetch<AdminArchivedUserDetail>(`/users/archived/${userId}`, 'GET'),
+
+  archiveUser: (userId: string, reason: string) =>
+    adminApiFetch<AdminArchivedUserDetail>(`/users/${userId}/archive`, 'POST', {
+      body: { reason },
+    }),
+
+  restoreUser: (userId: string, reason: string) =>
+    adminApiFetch<AdminUserListItem>(`/users/${userId}/restore`, 'POST', {
+      body: { reason },
+    }),
+
   // ---- Stage 5: full user profile aggregate ----
   userProfile: (userId: string) =>
     adminApiFetch<UserProfile>(`/users/${userId}/profile`, 'GET'),
@@ -492,6 +526,18 @@ export const adminApi = {
   // ---- admin management (Stage 3.4B) ----
   listAdmins: () =>
     adminApiFetch<{ items: AdminListItem[] }>('/admins', 'GET'),
+
+  // ---- Stage 9C: archived admins + password reset — SUPER_ADMIN only ----
+  listArchivedAdmins: () =>
+    adminApiFetch<{ items: AdminListItem[] }>('/admins/archived', 'GET'),
+
+  resetAdminPassword: (adminId: string, confirm = false) =>
+    adminApiFetch<AdminPasswordReset>(`/admins/${adminId}/password-reset`, 'POST', {
+      body: { confirm },
+    }),
+
+  changeAdminPassword: (body: { currentPassword: string; newPassword: string }) =>
+    adminApiFetch<{ admin: PublicAdmin }>('/auth/change-password', 'POST', { body }),
 
   listRoles: () =>
     adminApiFetch<{ items: AdminRoleOption[] }>('/roles', 'GET'),

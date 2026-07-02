@@ -854,10 +854,194 @@ function AdminUserDetailInner() {
   );
 }
 
+/**
+ * Read-only detail for an archived (soft-deleted) user (Stage 9C). Reached via
+ * `?archived=1` from the Deleted Users tab. It calls GET /users/archived/:id and
+ * renders a strictly read-only view: NONE of the active-user mutations (freeze,
+ * withdrawal block, risk note, session revoke, controls) are rendered here, so an
+ * archived account can never be edited from this page.
+ */
+function ArchivedUserDetailInner() {
+  const ready = useGuard('admin');
+  const search = useSearchParams();
+  const userId = search.get('id') ?? '';
+
+  const q = useQuery({
+    queryKey: ['admin-user-archived', userId],
+    queryFn: () => adminApi.archivedUserDetail(userId),
+    enabled: ready && !!userId,
+  });
+
+  if (!ready) return null;
+  const u = q.data?.data;
+
+  return (
+    <main className="mx-auto max-w-6xl px-4 pb-16">
+      <div className="mb-5 flex items-end justify-between gap-3">
+        <div>
+          <Link href="/admin/users" className="mb-2 block text-xs text-brand hover:underline">
+            Back to users
+          </Link>
+          <h1 className="text-xl font-semibold text-ink">Archived User</h1>
+          {u && <p className="mt-0.5 text-sm text-muted">{u.email}</p>}
+        </div>
+        <Button onClick={() => q.refetch()} variant="secondary" disabled={!userId}>Refresh</Button>
+      </div>
+
+      {!userId && <Alert>User ID is required.</Alert>}
+      {q.isLoading && <p className="text-sm text-muted">Loading archived user…</p>}
+      {q.isError && <Alert>{errorMessage(q.error)}</Alert>}
+
+      {u && (
+        <>
+          <div className="mb-4 flex flex-wrap gap-2">
+            <StatusBadge status="ARCHIVED" />
+            <StatusBadge status={u.accountStatus} />
+            <StatusBadge status={u.kycStatus} />
+          </div>
+
+          <p className="mb-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            This account is archived (soft-deleted). This is a <strong>read-only</strong>{' '}
+            historical view — account actions are disabled. History is preserved for audit;
+            records are never hard-deleted.
+          </p>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <div className="space-y-4 lg:col-span-2">
+              <Section title="Identity">
+                <Row label="User ID" value={<span className="font-mono text-xs">{u.id}</span>} />
+                <Row label="Email" value={u.email} />
+                <Row label="Name" value={u.fullName ?? u.kycProfile?.fullName ?? '—'} />
+                <Row label="KYC status" value={<StatusBadge status={u.kycStatus} />} />
+                <Row label="Account status" value={<StatusBadge status={u.accountStatus} />} />
+                <Row label="Last login" value={fmt(u.lastLoginAt)} />
+                <Row label="Created" value={fmt(u.createdAt)} />
+              </Section>
+
+              <Section title="Balances (read-only)">
+                {u.balances.length === 0 ? (
+                  <EmptyState title="No balances" />
+                ) : (
+                  <Table head={<><Th>Asset</Th><Th>Available</Th><Th>Locked</Th><Th>Total</Th></>}>
+                    {u.balances.map((b) => (
+                      <tr key={b.asset} className="border-b border-line last:border-0">
+                        <Td><span className="font-mono">{b.asset}</span></Td>
+                        <Td><span className="font-mono">{b.available}</span></Td>
+                        <Td><span className="font-mono">{b.locked}</span></Td>
+                        <Td><span className="font-mono">{b.total}</span></Td>
+                      </tr>
+                    ))}
+                  </Table>
+                )}
+              </Section>
+            </div>
+
+            <div className="space-y-4">
+              <Section title="Archive Details">
+                <Row label="Archived at" value={fmt(u.deletedAt)} />
+                <Row
+                  label="Archived by"
+                  value={
+                    u.deletedByAdminEmail ??
+                    (u.deletedByAdminId ? <ShortId id={u.deletedByAdminId} /> : '—')
+                  }
+                />
+                <Row label="Deletion reason" value={u.deletionReason ?? '—'} />
+              </Section>
+            </div>
+          </div>
+
+          {/* Preserved history (read-only) */}
+          <div className="mt-4 space-y-4">
+            <Section title="Login / Session History">
+              {u.sessions.length === 0 ? (
+                <EmptyState title="No sessions" />
+              ) : (
+                <Table head={<><Th>Session</Th><Th>IP</Th><Th>Created</Th><Th>Expires</Th><Th>State</Th></>}>
+                  {u.sessions.map((s) => (
+                    <tr key={s.id} className="border-b border-line last:border-0">
+                      <Td><ShortId id={s.id} /></Td>
+                      <Td><span className="font-mono text-xs">{s.ip ?? '—'}</span></Td>
+                      <Td><span className="text-muted">{fmt(s.createdAt)}</span></Td>
+                      <Td><span className="text-muted">{fmt(s.expiresAt)}</span></Td>
+                      <Td>{s.revokedAt ? <StatusBadge status="REVOKED" /> : <StatusBadge status="EXPIRED" />}</Td>
+                    </tr>
+                  ))}
+                </Table>
+              )}
+            </Section>
+
+            <Section title="INR Transactions">
+              {u.inrTransactions.length === 0 ? (
+                <EmptyState title="No INR transactions" />
+              ) : (
+                <Table head={<><Th>Type</Th><Th>Amount</Th><Th>Status</Th><Th>Method / Ref</Th><Th>Created</Th></>}>
+                  {u.inrTransactions.map((t) => (
+                    <tr key={t.id} className="border-b border-line last:border-0">
+                      <Td>{t.type}</Td>
+                      <Td><span className="font-mono">₹{t.amount}</span></Td>
+                      <Td><StatusBadge status={t.status} /></Td>
+                      <Td>{t.method ?? t.provider ?? '—'}{t.utr ? <span className="block text-xs text-muted">{t.utr}</span> : null}</Td>
+                      <Td><span className="text-muted">{fmt(t.createdAt)}</span></Td>
+                    </tr>
+                  ))}
+                </Table>
+              )}
+            </Section>
+
+            <Section title="Orders">
+              {u.orders.length === 0 ? (
+                <EmptyState title="No orders" />
+              ) : (
+                <Table head={<><Th>Market</Th><Th>Side</Th><Th>Type</Th><Th>Qty</Th><Th>Status</Th><Th>Created</Th></>}>
+                  {u.orders.map((o) => (
+                    <tr key={o.id} className="border-b border-line last:border-0">
+                      <Td><span className="font-mono">{o.marketSymbol}</span></Td>
+                      <Td>{o.side}</Td>
+                      <Td>{o.type}</Td>
+                      <Td><span className="font-mono">{o.quantity ?? '—'}</span></Td>
+                      <Td><StatusBadge status={o.status} /></Td>
+                      <Td><span className="text-muted">{fmt(o.createdAt)}</span></Td>
+                    </tr>
+                  ))}
+                </Table>
+              )}
+            </Section>
+
+            <Section title="Admin Audit Trail">
+              {u.adminLogs.length === 0 ? (
+                <EmptyState title="No admin actions on this user" />
+              ) : (
+                <Table head={<><Th>Action</Th><Th>Reason</Th><Th>When</Th></>}>
+                  {u.adminLogs.map((l) => (
+                    <tr key={l.id} className="border-b border-line last:border-0">
+                      <Td><span className="font-mono text-xs">{l.action}</span></Td>
+                      <Td>{l.reason ?? '—'}</Td>
+                      <Td><span className="text-muted">{fmt(l.occurredAt)}</span></Td>
+                    </tr>
+                  ))}
+                </Table>
+              )}
+            </Section>
+          </div>
+        </>
+      )}
+    </main>
+  );
+}
+
+/** Dispatch to the read-only archived view when `?archived=1`, else the normal
+ *  active-user profile. Kept inside Suspense so useSearchParams is safe. */
+function AdminUserDetailRouter() {
+  const search = useSearchParams();
+  const archived = search.get('archived') === '1';
+  return archived ? <ArchivedUserDetailInner /> : <AdminUserDetailInner />;
+}
+
 export default function AdminUserDetailPage() {
   return (
     <Suspense fallback={null}>
-      <AdminUserDetailInner />
+      <AdminUserDetailRouter />
     </Suspense>
   );
 }

@@ -216,6 +216,24 @@ describe('login', () => {
     );
   });
 
+  it('blocks login for an archived (soft-deleted) user without issuing a session or 2FA challenge', async () => {
+    repo.findUserByEmail.mockResolvedValue(
+      makeUser({ passwordHash: pwHash, totpEnabled: true, deletedAt: new Date(), status: 'CLOSED' }),
+    );
+
+    await expect(
+      authService.login({ email: 'user@example.com', password: PASSWORD }),
+    ).rejects.toMatchObject({ errorCode: 'ACCOUNT_DISABLED', statusCode: 403 });
+    // No session and no 2FA challenge are created for a disabled account.
+    expect(repo.createSession).not.toHaveBeenCalled();
+    expect(authSet).not.toHaveBeenCalledWith(
+      expect.stringMatching(/^auth:2fa:challenge:/),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
   it('returns a 2FA challenge (no session) when the account has TOTP enabled', async () => {
     repo.findUserByEmail.mockResolvedValue(
       makeUser({ passwordHash: pwHash, totpEnabled: true }),

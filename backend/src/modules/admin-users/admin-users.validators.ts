@@ -44,6 +44,25 @@ export const riskProfileSchema = z
     message: 'riskLevel or riskNote is required',
   });
 
+// --- Soft delete / archive (Stage 9C) --------------------------------------
+
+/** Archive (soft-delete) a user: a reason is mandatory for the audit trail. */
+export const archiveUserSchema = z
+  .object({
+    reason: z.string().trim().min(3, 'A reason is required').max(500),
+  })
+  .strict();
+
+/** Restore a previously archived user: a reason is mandatory for the audit trail. */
+export const restoreUserSchema = z
+  .object({
+    reason: z.string().trim().min(3, 'A reason is required').max(500),
+  })
+  .strict();
+
+export type ArchiveUserDto = z.infer<typeof archiveUserSchema>;
+export type RestoreUserDto = z.infer<typeof restoreUserSchema>;
+
 export type AdminUserListQueryDto = z.infer<typeof adminUserListQuerySchema>;
 export type AccountStatusDto = z.infer<typeof accountStatusSchema>;
 export type WithdrawalBlockDto = z.infer<typeof withdrawalBlockSchema>;

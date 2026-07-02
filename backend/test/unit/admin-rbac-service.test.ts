@@ -33,6 +33,11 @@ vi.mock('../../src/modules/admin-rbac/admin-rbac.repository', () => ({
     adminIdsForRole: vi.fn(),
     adminIdsForPermission: vi.fn(),
     writeAdminLog: vi.fn(),
+    // Stage 9C — archive listing + password reset / change.
+    listAdminsWithRoles: vi.fn(),
+    revokeAllAdminSessions: vi.fn(),
+    resetAdminPassword: vi.fn(),
+    changeAdminPassword: vi.fn(),
   },
 }));
 
@@ -264,5 +269,119 @@ describe('adminRbacService.profile (/auth/me payload)', () => {
     // A normal admin must NOT silently receive elevated permissions.
     expect(profile.permissions).not.toContain('admin.manage');
     expect(profile.permissions).not.toContain('role.manage');
+  });
+});
+
+describe('adminRbacService — Stage 9C password reset + archived admins', () => {
+  it('resets another admin password (SUPER_ADMIN), revokes sessions, forces change, never logs the temp password', async () => {
+    repo.findAdminById.mockResolvedValue(makeAdmin({ id: 'target-1', email: 't@example.com' }));
+    repo.adminsWithRole.mockResolvedValue([]); // target is not a SUPER_ADMIN
+    repo.resetAdminPassword.mockResolvedValue(makeAdmin({ id: 'target-1', mustChangePassword: true }));
+    repo.revokeAllAdminSessions.mockResolvedValue({ count: 1 } as never);
+
+    const result = await adminRbacService.resetAdminPassword(
+      'target-1',
+      {},
+      { adminId: 'admin-1', ip: '127.0.0.1' },
+    );
+
+    expect(result.temporaryPassword).toBeTruthy();
+    expect(repo.resetAdminPassword).toHaveBeenCalledWith(
+      'target-1',
+      expect.objectContaining({ resetBy: 'admin-1' }),
+    );
+    expect(repo.revokeAllAdminSessions).toHaveBeenCalledWith('target-1');
+    expect(repo.writeAdminLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'admin.password_reset',
+        afterState: expect.objectContaining({ event: 'ADMIN_PASSWORD_RESET_INITIATED' }),
+      }),
+    );
+    // The temporary password must never appear in any audit-log payload.
+    const logged = JSON.stringify(repo.writeAdminLog.mock.calls);
+    expect(logged).not.toContain(result.temporaryPassword);
+  });
+
+  it('forbids a non-SUPER_ADMIN from resetting an admin password', async () => {
+    repo.findAdminById.mockResolvedValue(makeAdmin({ id: 'target-1' }));
+    repo.getAdminRolesAndPermissions.mockResolvedValue({ roles: ['FINANCE'], permissions: [] });
+
+    await expect(
+      adminRbacService.resetAdminPassword('target-1', {}, { adminId: 'admin-2' }),
+    ).rejects.toMatchObject({ errorCode: 'FORBIDDEN' });
+    expect(repo.resetAdminPassword).not.toHaveBeenCalled();
+  });
+
+  it('refuses resetting your own password from this route', async () => {
+    repo.findAdminById.mockResolvedValue(makeAdmin({ id: 'admin-1' }));
+
+    await expect(
+      adminRbacService.resetAdminPassword('admin-1', {}, { adminId: 'admin-1' }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(repo.resetAdminPassword).not.toHaveBeenCalled();
+  });
+
+  it('requires explicit confirmation to reset the last active SUPER_ADMIN', async () => {
+    repo.findAdminById.mockResolvedValue(makeAdmin({ id: 'target-1' }));
+    repo.adminsWithRole.mockResolvedValue([{ adminId: 'target-1' }]);
+    repo.countActiveAdminsWithRole.mockResolvedValue(1);
+
+    await expect(
+      adminRbacService.resetAdminPassword('target-1', {}, { adminId: 'admin-1' }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(repo.resetAdminPassword).not.toHaveBeenCalled();
+
+    // With explicit confirmation it proceeds.
+    repo.resetAdminPassword.mockResolvedValue(makeAdmin({ id: 'target-1', mustChangePassword: true }));
+    repo.revokeAllAdminSessions.mockResolvedValue({ count: 0 } as never);
+    const ok = await adminRbacService.resetAdminPassword(
+      'target-1',
+      { confirm: true },
+      { adminId: 'admin-1' },
+    );
+    expect(ok.temporaryPassword).toBeTruthy();
+  });
+
+  it('changing own password clears the forced-change flag and revokes all sessions', async () => {
+    const password = 'CurrentPassw0rd!';
+    const current = makeAdmin({ id: 'admin-1', passwordHash: await hash(password) });
+    repo.findAdminById.mockResolvedValue(current);
+    repo.changeAdminPassword.mockResolvedValue(makeAdmin({ id: 'admin-1', mustChangePassword: false }));
+    repo.revokeAllAdminSessions.mockResolvedValue({ count: 3 } as never);
+
+    await adminRbacService.changeOwnPassword(
+      'admin-1',
+      { currentPassword: password, newPassword: 'BrandNewPassw0rd!' },
+      { adminId: 'admin-1' },
+    );
+
+    expect(repo.changeAdminPassword).toHaveBeenCalledOnce();
+    expect(repo.revokeAllAdminSessions).toHaveBeenCalledWith('admin-1');
+    expect(repo.writeAdminLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'admin.password_changed',
+        afterState: expect.objectContaining({ event: 'ADMIN_PASSWORD_CHANGED' }),
+      }),
+    );
+  });
+
+  it('lists only archived (DEACTIVATED) admins in the Deleted Admins tab', async () => {
+    repo.listAdminsWithRoles.mockResolvedValue([
+      {
+        ...makeAdmin({ id: 'arch-1', status: 'DEACTIVATED' }),
+        deactivatedBy: 'admin-1',
+        deactivatedAt: new Date(),
+        deactivationReason: 'left company',
+        ipAllowlist: [],
+        lastLoginAt: null,
+        mustChangePassword: false,
+        roles: [{ role: { name: 'FINANCE' } }],
+      },
+    ] as never);
+
+    const items = await adminRbacService.listArchivedAdmins();
+    expect(repo.listAdminsWithRoles).toHaveBeenCalledWith({ archived: true });
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ id: 'arch-1', status: 'DEACTIVATED', roles: ['FINANCE'] });
   });
 });

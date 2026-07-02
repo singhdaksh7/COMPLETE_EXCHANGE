@@ -52,6 +52,17 @@ Legal/External (LEGAL).
 
 ---
 
+## Stage 9C — Record preservation on account archive
+
+| Control | Status | Notes |
+| --- | --- | --- |
+| User/admin removal is **soft delete only** — records never physically deleted | Implemented | `deleted_at` marker + `DEACTIVATED` status; no `DELETE` on users/admins |
+| KYC, ledger, INR transaction, STR/compliance, support and legal-consent records preserved after archive | Implemented | Archive updates only the user row; related records are untouched and remain queryable via the Deleted tab |
+| Login/session/audit history retained + archive/reset events appended | Implemented | `admin_logs` + audit trail record actor, target, reason, prev/new status |
+| Archive refused while funds or pending INR obligations exist | Implemented | Prevents orphaning money-movement records under a closed account |
+
+---
+
 **No FIU compliance is asserted.** "Implemented" means a technical control exists
 and is verifiable; it does not mean it is legally sufficient. Mock providers and
 draft-only flows are explicitly marked Partial/Future.

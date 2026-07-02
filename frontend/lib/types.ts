@@ -264,6 +264,9 @@ export interface PublicAdmin {
   status: string;
   totpEnabled: boolean;
   createdAt: string;
+  /** Stage 9C — true after a SUPER_ADMIN password reset until the admin sets a
+   *  new password. The console is locked (only /auth/me + change-password) while true. */
+  mustChangePassword?: boolean;
 }
 
 export interface AdminLoginData {
@@ -294,7 +297,17 @@ export interface AdminListItem {
   createdAt: string;
   lastLoginAt: string | null;
   deactivatedAt: string | null;
+  deactivatedBy: string | null;
   deactivationReason: string | null;
+  /** Stage 9C — set when a SUPER_ADMIN password reset is pending for this admin. */
+  mustChangePassword: boolean;
+}
+
+/** Stage 9C — result of a SUPER_ADMIN password reset. The temporary password is
+ *  shown ONCE and never returned again. */
+export interface AdminPasswordReset {
+  admin: PublicAdmin;
+  temporaryPassword: string;
 }
 
 // --- Admin lifecycle + activity profile (Stage 7A) ---
@@ -478,6 +491,15 @@ export interface AdminUserListItem {
   balances: AdminUserBalance[];
 }
 
+/** Stage 9C — archive audit anchors added to the Deleted Users tab rows. */
+export interface AdminArchivedUserListItem extends AdminUserListItem {
+  fullName: string | null;
+  deletedAt: string | null;
+  deletedByAdminId: string | null;
+  deletedByAdminEmail: string | null;
+  deletionReason: string | null;
+}
+
 /** Per-user operational feature controls (User Control Center). */
 export interface UserFeatureControls {
   userId: string;
@@ -629,6 +651,15 @@ export interface AdminUserDetail extends AdminUserListItem {
     metadata: unknown;
     occurredAt: string;
   }>;
+}
+
+/** Stage 9C — read-only detail of an archived (soft-deleted) user. */
+export interface AdminArchivedUserDetail extends AdminUserDetail {
+  fullName: string | null;
+  deletedAt: string | null;
+  deletedByAdminId: string | null;
+  deletedByAdminEmail: string | null;
+  deletionReason: string | null;
 }
 
 // ---- Stage 5: full user profile aggregate ----

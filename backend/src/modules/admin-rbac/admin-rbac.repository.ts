@@ -129,12 +129,45 @@ export const adminRbacRepository = {
     });
   },
 
+  /**
+   * Stage 9C — SUPER_ADMIN-initiated password reset. Writes only the argon2 hash
+   * (never plaintext), flags mustChangePassword, and records the reset audit
+   * anchors. Sessions are revoked separately by the service.
+   */
+  resetAdminPassword(id: string, data: { passwordHash: string; resetBy?: string }) {
+    return prisma.admin.update({
+      where: { id },
+      data: {
+        passwordHash: data.passwordHash,
+        mustChangePassword: true,
+        passwordResetAt: new Date(),
+        passwordResetBy: data.resetBy ?? null,
+      },
+    });
+  },
+
+  /** Self-service password change: set the new hash and clear the forced-change
+   *  flag so the admin regains full console access. */
+  changeAdminPassword(id: string, passwordHash: string) {
+    return prisma.admin.update({
+      where: { id },
+      data: { passwordHash, mustChangePassword: false },
+    });
+  },
+
   // --- Admin management (Stage 3.4B) ---------------------------------------
 
-  /** List every admin with their role names, ordered newest first. */
-  listAdminsWithRoles() {
+  /**
+   * List admins with their role names, newest first. By default the ACTIVE list
+   * EXCLUDES archived (DEACTIVATED) admins so the active tab never shows them;
+   * pass { archived: true } for the Deleted/Archived Admins tab (Stage 9C).
+   */
+  listAdminsWithRoles(opts: { archived?: boolean } = {}) {
     return prisma.admin.findMany({
-      orderBy: { createdAt: 'desc' },
+      where: opts.archived ? { status: 'DEACTIVATED' } : { status: { not: 'DEACTIVATED' } },
+      orderBy: opts.archived
+        ? [{ deactivatedAt: 'desc' }, { createdAt: 'desc' }]
+        : { createdAt: 'desc' },
       include: { roles: { include: { role: true } } },
     });
   },

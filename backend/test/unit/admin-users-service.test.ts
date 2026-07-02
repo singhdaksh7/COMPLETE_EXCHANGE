@@ -14,7 +14,22 @@ vi.mock('../../src/modules/admin-users/admin-users.repository', () => ({
     findUserForUpdate: vi.fn(),
     updateUser: vi.fn(),
     writeAdminLog: vi.fn(),
+    // Stage 9C — archive / restore.
+    listArchivedUsers: vi.fn(),
+    findArchivedUserDetail: vi.fn(),
+    findActiveUser: vi.fn(),
+    findArchivedUser: vi.fn(),
+    userArchiveObligations: vi.fn(),
+    archiveUser: vi.fn(),
+    restoreUser: vi.fn(),
+    findAdminEmailsByIds: vi.fn(),
+    revokeAllUserSessions: vi.fn(),
   },
+}));
+
+// The archive/restore flow re-checks the SUPER_ADMIN role via the RBAC service.
+vi.mock('../../src/modules/admin-rbac/admin-rbac.service', () => ({
+  adminRbacService: { getAdminPermissions: vi.fn() },
 }));
 
 vi.mock('../../src/lib/audit', async (orig) => {
@@ -25,9 +40,24 @@ vi.mock('../../src/lib/audit', async (orig) => {
 import { recordAudit } from '../../src/lib/audit';
 import { adminUsersRepository } from '../../src/modules/admin-users/admin-users.repository';
 import { adminUsersService } from '../../src/modules/admin-users/admin-users.service';
+import { adminRbacService } from '../../src/modules/admin-rbac/admin-rbac.service';
 
 const repo = vi.mocked(adminUsersRepository);
 const audit = vi.mocked(recordAudit);
+const rbac = vi.mocked(adminRbacService);
+
+/** All obligations clear — the archivable baseline. */
+function noObligations() {
+  return {
+    nonZeroBalances: [],
+    pendingInrDeposits: 0,
+    pendingInrWithdrawals: 0,
+    openOrders: 0,
+    openComplianceCases: 0,
+    underComplianceReview: false,
+    openSupportTickets: 0,
+  };
+}
 
 const USER_ID = '11111111-1111-4111-8111-111111111111';
 
@@ -51,6 +81,8 @@ function user(over: Record<string, unknown> = {}) {
     createdAt: new Date('2026-06-01T00:00:00Z'),
     updatedAt: new Date('2026-06-02T00:00:00Z'),
     deletedAt: null,
+    deletedByAdminId: null,
+    deletionReason: null,
     accounts: [
       {
         asset: 'INR',
@@ -72,6 +104,17 @@ function user(over: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   repo.writeAdminLog.mockResolvedValue({} as never);
+  // Default: the acting admin is a SUPER_ADMIN (archive/restore are gated on it).
+  rbac.getAdminPermissions.mockResolvedValue({ roles: ['SUPER_ADMIN'], permissions: [] });
+  // History fetches used by the archived-detail projection default to empty.
+  repo.recentInrTransactions.mockResolvedValue([] as never);
+  repo.recentWithdrawals.mockResolvedValue([] as never);
+  repo.recentOrders.mockResolvedValue([] as never);
+  repo.recentTrades.mockResolvedValue([] as never);
+  repo.recentAdminLogs.mockResolvedValue([] as never);
+  repo.recentAuditLogs.mockResolvedValue([] as never);
+  repo.findAdminEmailsByIds.mockResolvedValue(new Map());
+  repo.revokeAllUserSessions.mockResolvedValue({ count: 2 } as never);
 });
 
 describe('adminUsersService', () => {
@@ -149,6 +192,97 @@ describe('adminUsersService', () => {
     );
     expect(repo.writeAdminLog).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'admin.user.risk_update' }),
+    );
+  });
+});
+
+describe('adminUsersService — soft delete / archive (Stage 9C)', () => {
+  const archived = () =>
+    user({ status: 'CLOSED', deletedAt: new Date('2026-07-02T00:00:00Z'), deletedByAdminId: 'admin-1', deletionReason: 'Account closure request' });
+
+  it('archives a user with no obligations, revokes sessions, and audits USER_ARCHIVED', async () => {
+    repo.findActiveUser.mockResolvedValue(user());
+    repo.userArchiveObligations.mockResolvedValue(noObligations());
+    repo.archiveUser.mockResolvedValue(archived());
+    repo.findArchivedUserDetail.mockResolvedValue(archived());
+
+    const result = await adminUsersService.archiveUser(
+      USER_ID,
+      { reason: 'Account closure request' },
+      { actorId: 'admin-1', ip: '127.0.0.1' },
+    );
+
+    expect(repo.archiveUser).toHaveBeenCalledWith(USER_ID, {
+      deletedByAdminId: 'admin-1',
+      reason: 'Account closure request',
+    });
+    expect(repo.revokeAllUserSessions).toHaveBeenCalledWith(USER_ID);
+    expect(result.deletionReason).toBe('Account closure request');
+    expect(repo.writeAdminLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'admin.user.archived',
+        afterState: expect.objectContaining({
+          event: 'USER_ARCHIVED',
+          sessionRevokeReason: 'USER_ARCHIVED_BY_ADMIN',
+        }),
+      }),
+    );
+  });
+
+  it('blocks archiving when a non-zero balance exists and never mutates', async () => {
+    repo.findActiveUser.mockResolvedValue(user());
+    repo.userArchiveObligations.mockResolvedValue({
+      ...noObligations(),
+      nonZeroBalances: [{ asset: 'INR', kind: 'USER_AVAILABLE', balance: '1000' }],
+    });
+
+    await expect(
+      adminUsersService.archiveUser(USER_ID, { reason: 'closure' }, { actorId: 'admin-1' }),
+    ).rejects.toMatchObject({ errorCode: 'USER_ARCHIVE_BLOCKED' });
+
+    expect(repo.archiveUser).not.toHaveBeenCalled();
+    expect(repo.revokeAllUserSessions).not.toHaveBeenCalled();
+    expect(repo.writeAdminLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'admin.user.archive_blocked' }),
+    );
+  });
+
+  it('blocks archiving when a pending obligation (open orders) exists', async () => {
+    repo.findActiveUser.mockResolvedValue(user());
+    repo.userArchiveObligations.mockResolvedValue({ ...noObligations(), openOrders: 3 });
+
+    await expect(
+      adminUsersService.archiveUser(USER_ID, { reason: 'closure' }, { actorId: 'admin-1' }),
+    ).rejects.toMatchObject({ errorCode: 'USER_ARCHIVE_BLOCKED' });
+    expect(repo.archiveUser).not.toHaveBeenCalled();
+  });
+
+  it('refuses archive for a non-SUPER_ADMIN actor', async () => {
+    rbac.getAdminPermissions.mockResolvedValue({ roles: ['COMPLIANCE_OFFICER'], permissions: [] });
+
+    await expect(
+      adminUsersService.archiveUser(USER_ID, { reason: 'closure' }, { actorId: 'admin-9' }),
+    ).rejects.toMatchObject({ errorCode: 'FORBIDDEN' });
+    expect(repo.findActiveUser).not.toHaveBeenCalled();
+  });
+
+  it('lists only archived users with the archive audit anchors', async () => {
+    repo.listArchivedUsers.mockResolvedValue([
+      { ...archived(), kycProfile: { fullName: 'Jane Doe' } },
+    ] as never);
+    repo.findAdminEmailsByIds.mockResolvedValue(new Map([['admin-1', 'root@exora.test']]));
+
+    const result = await adminUsersService.listArchivedUsers({ limit: 50 }, { actorId: 'admin-1' });
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({
+      fullName: 'Jane Doe',
+      deletionReason: 'Account closure request',
+      deletedByAdminEmail: 'root@exora.test',
+      accountStatus: 'CLOSED',
+    });
+    expect(repo.writeAdminLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'admin.users.archived_list' }),
     );
   });
 });

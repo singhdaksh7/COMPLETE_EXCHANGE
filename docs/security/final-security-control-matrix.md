@@ -62,6 +62,20 @@ Priority: **P0** production/FIU blocker · **P1** high · **P2** medium · **P3*
 
 ---
 
+## Stage 9C — Account lifecycle (soft delete) + admin password reset
+
+| Control | Status | Evidence |
+| --- | --- | --- |
+| User archive is **soft delete only** (no physical delete); history preserved | Implemented | `admin-users.service.ts` `archiveUser`, migration `20260702020000_stage9c_user_admin_archive` |
+| Archive blocked on open obligations (funds/pending/orders/compliance/support) | Implemented | `userArchiveObligations`, `collectArchiveBlockers`; `admin-users-service.test.ts` |
+| Archived user cannot log in (password, OTP, 2FA-verify) + sessions revoked | Implemented | `auth.service.ts`, `auth.otp.service.ts` `ACCOUNT_DISABLED`; `auth-service.test.ts` |
+| Deleted Users / Deleted Admins tabs are SUPER_ADMIN-only, read-only | Implemented | `users.viewArchived` / `admins.viewArchived` (granted to no other role) |
+| Admin archive reuses Stage 7A deactivate (self + last-super-admin refused) | Implemented | `admin-rbac.service.ts` `deactivateAdmin`; `listArchivedAdmins` |
+| Admin password reset: one-time temp password, never logged/stored plaintext | Implemented | `resetAdminPassword` (argon2 hash only); `admin-rbac-service.test.ts` |
+| Reset forces password change before console access; old sessions revoked | Implemented | `admin-authenticate.ts` `PASSWORD_CHANGE_REQUIRED`, `changeOwnPassword` |
+| All lifecycle actions audited (actor/target/reason/prev-new status/IP) | Implemented | `admin_logs` writes + `recordAudit` |
+| Crypto remains globally OFF; no ledger/KYC/txn/consent records deleted | Unchanged | archive touches no money-movement or compliance records |
+
 **Cross-references:** authoritative blocker list is
 [`../compliance/production-blockers.md`](../compliance/production-blockers.md);
 FIU technical matrix is

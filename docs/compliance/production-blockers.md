@@ -133,6 +133,24 @@ Progress: ❌ not started · 🟡 partial/mock/abstraction · ✅ done.
 - Do **not** integrate paid KYC/liveness/sanctions providers in this work.
 - Do **not** automate real FIU filing.
 
+## Stage 9C — Account archive + admin password reset (no new blockers)
+
+Implemented as soft-delete-only lifecycle; no production blocker is opened or
+closed by this change. Known gaps / future work (not blockers for staging/demo):
+
+- Granular RBAC for archive/reset is modeled as dedicated permissions
+  (`users.archive`, `users.viewArchived`, `admins.viewArchived`,
+  `admins.passwordReset`) but currently gated to SUPER_ADMIN only (granted to no
+  other role). Delegating these to a non-super role is future work.
+- Admin archive maps onto the Stage 7A `admins.deactivate` action (reused
+  deliberately); a distinct `admins.archive` permission exists in the baseline as
+  a reserved alias and is not yet wired to a separate route.
+- Temporary-password delivery is in-modal (shown once). An out-of-band delivery
+  channel (email reset link) is future work; the token-based variant is designed
+  for but not implemented in this stage.
+- "System/service admin" protection is N/A (no such account type exists); the
+  last-active-SUPER_ADMIN and self-action guards are the active protections.
+
 Closing a blocker should update its status here and link the implementing change +
 test/evidence. **This document does not certify production, FIU legal, or
 production-crypto readiness.**

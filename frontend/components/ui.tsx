@@ -5,6 +5,7 @@ import type {
   InputHTMLAttributes,
   ReactNode,
   SelectHTMLAttributes,
+  TextareaHTMLAttributes,
 } from 'react';
 
 /**
@@ -23,6 +24,61 @@ export function Card({
     <div className={`rounded-xl border border-line bg-panel p-5 shadow-sm ${className}`}>
       {children}
     </div>
+  );
+}
+
+/**
+ * Simple centered modal dialog (Stage 9C). Renders a dimmed backdrop + a panel.
+ * Backdrop click and the ✕ button call onClose. Composes the same primitives so
+ * the look stays consistent; no portal is needed for these admin flows.
+ */
+export function Modal({
+  open,
+  title,
+  onClose,
+  children,
+}: {
+  open: boolean;
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  if (!open) return null;
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-xl border border-line bg-panel p-5 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <h3 className="text-sm font-semibold text-ink">{title}</h3>
+          <button
+            className="text-muted hover:text-ink"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** Multi-line text input matching the Input styling. */
+export function Textarea(
+  props: TextareaHTMLAttributes<HTMLTextAreaElement>,
+) {
+  const { className = '', ...rest } = props;
+  return (
+    <textarea
+      {...rest}
+      className={`w-full rounded-lg border border-line bg-panel-2 px-3 py-2 text-sm text-ink placeholder:text-muted focus:border-brand focus:outline-none ${className}`}
+    />
   );
 }
 

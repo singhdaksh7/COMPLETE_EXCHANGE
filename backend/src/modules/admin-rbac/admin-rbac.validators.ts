@@ -99,6 +99,35 @@ export const reactivateAdminSchema = z
   })
   .strict();
 
+// --- Admin password reset / change (Stage 9C) ------------------------------
+
+/** SUPER_ADMIN resets another admin's password. `confirm` is required only when
+ *  the target is the last active SUPER_ADMIN (checked in the service). */
+export const resetAdminPasswordSchema = z
+  .object({
+    confirm: z.boolean().optional(),
+  })
+  .strict();
+
+/** Admin self-service password change. Enforces the admin password policy on the
+ *  new password and rejects a no-op (new === current). */
+export const adminChangePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, 'Current password is required').max(200),
+    newPassword: z
+      .string()
+      .min(12, 'Password must be at least 12 characters')
+      .max(200)
+      .regex(/[a-z]/, 'Password must contain a lowercase letter')
+      .regex(/[A-Z]/, 'Password must contain an uppercase letter')
+      .regex(/[0-9]/, 'Password must contain a digit'),
+  })
+  .strict()
+  .refine((v) => v.currentPassword !== v.newPassword, {
+    message: 'New password must differ from the current password',
+    path: ['newPassword'],
+  });
+
 /** Query filters for the admin activity timeline. */
 export const adminActivityQuerySchema = z
   .object({
@@ -119,4 +148,6 @@ export type IpAllowlistDto = z.infer<typeof ipAllowlistSchema>;
 export type TotpConfirmDto = z.infer<typeof totpConfirmSchema>;
 export type DeactivateAdminDto = z.infer<typeof deactivateAdminSchema>;
 export type ReactivateAdminDto = z.infer<typeof reactivateAdminSchema>;
+export type ResetAdminPasswordDto = z.infer<typeof resetAdminPasswordSchema>;
+export type AdminChangePasswordDto = z.infer<typeof adminChangePasswordSchema>;
 export type AdminActivityQueryDto = z.infer<typeof adminActivityQuerySchema>;

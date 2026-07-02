@@ -7,6 +7,7 @@ import { adminAuthorize, adminAuthorizeAny } from '../../middleware/admin-author
 import { adminRbacController } from './admin-rbac.controller';
 import {
   adminActivityQuerySchema,
+  adminChangePasswordSchema,
   adminIdParamSchema,
   adminLoginSchema,
   adminRoleParamSchema,
@@ -18,6 +19,7 @@ import {
   ipAllowlistSchema,
   permissionIdParamSchema,
   reactivateAdminSchema,
+  resetAdminPasswordSchema,
   roleIdParamSchema,
   rolePermissionParamSchema,
   totpConfirmSchema,
@@ -38,6 +40,17 @@ adminRbacRouter.get(
   '/auth/me',
   adminAuthenticate,
   asyncHandler(adminRbacController.me),
+);
+
+// Self-service password change (Stage 9C). Reachable even when the admin is in
+// the mustChangePassword state (allow-listed in adminAuthenticate) so a forced
+// reset can be cleared. Clears the flag and revokes all sessions on success.
+adminRbacRouter.post(
+  '/auth/change-password',
+  adminAuthenticate,
+  authRateLimiter,
+  validate({ body: adminChangePasswordSchema }),
+  asyncHandler(adminRbacController.changePassword),
 );
 
 // --- Self TOTP (re-)enrollment: any authenticated admin -------------------
@@ -64,12 +77,34 @@ adminRbacRouter.get(
   asyncHandler(adminRbacController.listAdmins),
 );
 
+// Deleted / Archived Admins tab (Stage 9C). SUPER_ADMIN-only
+// (admins.viewArchived granted to no other role). Registered before the
+// '/admins/:adminId/...' routes so the literal path is never shadowed.
+adminRbacRouter.get(
+  '/admins/archived',
+  adminAuthenticate,
+  adminAuthorize('admins.viewArchived'),
+  asyncHandler(adminRbacController.listArchivedAdmins),
+);
+
 adminRbacRouter.post(
   '/admins',
   adminAuthenticate,
   adminAuthorize('admin.manage'),
   validate({ body: createAdminSchema }),
   asyncHandler(adminRbacController.createAdmin),
+);
+
+// SUPER_ADMIN resets another admin's password (Stage 9C). admins.passwordReset
+// is granted to no other role; the service also re-checks SUPER_ADMIN, refuses
+// self-reset, and refuses archived targets. Throttled in the auth bucket.
+adminRbacRouter.post(
+  '/admins/:adminId/password-reset',
+  adminAuthenticate,
+  adminAuthorize('admins.passwordReset'),
+  authRateLimiter,
+  validate({ params: adminIdParamSchema, body: resetAdminPasswordSchema }),
+  asyncHandler(adminRbacController.resetAdminPassword),
 );
 
 adminRbacRouter.patch(

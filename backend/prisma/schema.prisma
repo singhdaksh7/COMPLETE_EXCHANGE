@@ -375,7 +375,16 @@ model User {
   referralCode       String?    @unique @map("referral_code")
   createdAt          DateTime   @default(now()) @map("created_at")
   updatedAt          DateTime   @updatedAt @map("updated_at")
+  // Soft delete / archive (Stage 9C). deletedAt is the archive marker: a
+  // non-null value removes the user from every active admin list and blocks
+  // login while ALL financial / KYC / support / legal / audit history is
+  // preserved forever. deletedByAdminId / deletionReason are the audit anchors
+  // (informational scalars, intentionally NOT relations so an actor admin can
+  // never be blocked from or cascade into a user row). Users are NEVER hard
+  // deleted.
   deletedAt          DateTime?  @map("deleted_at")
+  deletedByAdminId   String?    @map("deleted_by_admin_id") @db.Uuid
+  deletionReason     String?    @map("deletion_reason")
 
   sessions          AuthSession[]
   oauthAccounts     OAuthAccount[]
@@ -1594,6 +1603,16 @@ model Admin {
   deactivatedAt      DateTime? @map("deactivated_at")
   deactivatedBy      String?   @map("deactivated_by") @db.Uuid
   deactivationReason String?   @map("deactivation_reason")
+  // Stage 9C — SUPER_ADMIN-initiated password reset. When mustChangePassword is
+  // true the admin authenticates with the one-time temporary password but must
+  // set a new one before the console is usable (surfaced on /auth/me and
+  // enforced there); it is cleared when the admin changes their password. The
+  // reset revokes all live sessions. passwordResetAt / passwordResetBy are audit
+  // anchors (scalars, not relations). The temporary password is shown ONCE to
+  // the initiating SUPER_ADMIN and is never stored in plaintext or logged.
+  mustChangePassword Boolean   @default(false) @map("must_change_password")
+  passwordResetAt    DateTime? @map("password_reset_at")
+  passwordResetBy    String?   @map("password_reset_by") @db.Uuid
 
   roles                 AdminRole[]
   sessions              AdminSession[]

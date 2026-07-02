@@ -24,6 +24,9 @@ export interface PublicAdmin {
   status: string;
   totpEnabled: boolean;
   createdAt: Date;
+  /** Stage 9C — true when a SUPER_ADMIN reset forces a password change before
+   *  the console is usable. Surfaced on /auth/me so the UI can gate access. */
+  mustChangePassword: boolean;
 }
 
 export interface AdminProfile {
@@ -69,7 +72,9 @@ export interface AdminListItem {
   createdAt: Date;
   lastLoginAt: Date | null;
   deactivatedAt: Date | null;
+  deactivatedBy: string | null;
   deactivationReason: string | null;
+  mustChangePassword: boolean;
 }
 
 /**
@@ -117,6 +122,7 @@ export interface AdminSecurityProfile {
   deactivatedBy: string | null;
   deactivatedByEmail: string | null;
   deactivationReason: string | null;
+  mustChangePassword: boolean;
   activitySummary: AdminActivitySummary;
 }
 
@@ -161,6 +167,14 @@ export interface CreatedAdmin {
   initialPassword: string;
 }
 
+/** Result of a SUPER_ADMIN password reset: the one-time temporary password is
+ *  returned in the response body ONCE and is NEVER stored in plaintext or
+ *  logged. The admin must change it on next login (mustChangePassword=true). */
+export interface AdminPasswordReset {
+  admin: PublicAdmin;
+  temporaryPassword: string;
+}
+
 /** Secret material for a self TOTP (re-)enrollment. */
 export interface TotpEnrollment {
   secret: string; // base32 secret to enter into the authenticator app
@@ -181,7 +195,9 @@ export function toAdminListItem(
     createdAt: admin.createdAt,
     lastLoginAt: admin.lastLoginAt,
     deactivatedAt: admin.deactivatedAt,
+    deactivatedBy: admin.deactivatedBy,
     deactivationReason: admin.deactivationReason,
+    mustChangePassword: admin.mustChangePassword,
   };
 }
 
@@ -192,6 +208,7 @@ export function toPublicAdmin(admin: Admin): PublicAdmin {
     status: admin.status,
     totpEnabled: admin.totpEnabled,
     createdAt: admin.createdAt,
+    mustChangePassword: admin.mustChangePassword,
   };
 }
 

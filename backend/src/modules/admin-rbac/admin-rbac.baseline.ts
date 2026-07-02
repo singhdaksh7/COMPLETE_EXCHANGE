@@ -117,6 +117,15 @@ export const ADMIN_PERMISSIONS: PermissionDef[] = [
   { code: 'admins.activity.view', description: 'View an admin activity timeline' },
   { code: 'admins.deactivate', description: 'Deactivate (remove access from) an admin' },
   { code: 'admins.reactivate', description: 'Reactivate a previously deactivated admin' },
+  // Archive + password reset (Stage 9C). All SUPER_ADMIN-only: granted to no
+  // other role, so only SUPER_ADMIN passes (by role bypass). users.viewArchived
+  // / admins.viewArchived do NOT end in '.view', so they are never swept into
+  // the blanket VIEW_ONLY grant.
+  { code: 'users.archive', description: 'Archive (soft-delete) / restore a user account' },
+  { code: 'users.viewArchived', description: 'View archived (soft-deleted) users' },
+  { code: 'admins.archive', description: 'Archive (soft-delete) / restore an admin account' },
+  { code: 'admins.viewArchived', description: 'View archived (deactivated) admins' },
+  { code: 'admins.passwordReset', description: 'Reset another admin\'s password (SUPER_ADMIN only)' },
   { code: 'audit.view', description: 'Read audit & admin logs' },
   { code: 'operations.view', description: 'View the admin operations dashboard' },
   // Internal support / operations tickets (Stage 8C).

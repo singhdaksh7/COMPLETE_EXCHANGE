@@ -162,3 +162,53 @@ admin security actions, blocked logins). Nothing is synthesised.
 controls during any admin incident. Prefer config-only containment (deactivate,
 suspend, allowlist, rotate, revoke). **Never hard-delete admin records or audit
 logs** — deactivation is the only sanctioned removal.
+
+---
+
+## Stage 9C — User/Admin archive + admin password reset
+
+Soft-delete-only lifecycle for user and admin accounts, plus SUPER_ADMIN-driven
+admin password reset. **No hard deletes.** All financial, KYC, transaction,
+session/login, audit, support and legal-consent history is preserved forever.
+
+**User archive (soft delete)** — `POST /admin/v1/users/:id/archive`,
+permission `users.archive` (SUPER_ADMIN only; service re-checks the role).
+- Sets `users.deleted_at` / `deleted_by_admin_id` / `deletion_reason`, status
+  → `CLOSED`. The user leaves every active list (all active queries filter
+  `deleted_at IS NULL`) and appears only in the Deleted Users tab
+  (`GET /users/archived`, `users.viewArchived`).
+- **Blocked** when any open obligation exists (non-zero INR available/locked
+  balance, pending INR deposit/withdrawal, open orders, unresolved compliance
+  hold, open support case) → 403 `USER_ARCHIVE_BLOCKED` with the admin-safe
+  message *“User cannot be archived while funds, pending transactions, or open
+  obligations exist.”* Blocked attempts are audited (`admin.user.archive_blocked`).
+- On success: live sessions/tokens are revoked (`USER_ARCHIVED_BY_ADMIN`) and the
+  event is audited (`admin.user.archived`, `event: USER_ARCHIVED`). Login is
+  refused for archived users at password, OTP and 2FA-verify steps
+  (`ACCOUNT_DISABLED`).
+- Restore: `POST /users/:id/restore` (SUPER_ADMIN, audited `USER_RESTORED`);
+  refused while a compliance hold is unresolved. Old sessions are not restored.
+
+**Admin archive** reuses the Stage 7A soft-deactivation (`admins.deactivate`,
+SUPER_ADMIN only): self-archive and archiving the last active SUPER_ADMIN are
+refused; sessions + permission cache are killed; `status → DEACTIVATED` with
+`deactivated_at/by/reason`. Archived admins appear only in the Deleted Admins tab
+(`GET /admins/archived`, `admins.viewArchived`) and cannot log in (the status
+guard precedes TOTP).
+
+**Admin password reset** — `POST /admin/v1/admins/:id/password-reset`,
+permission `admins.passwordReset` (SUPER_ADMIN only).
+- Generates a strong one-time temporary password, hashed with the standard
+  argon2 policy; **the plaintext is shown once and never logged or stored**.
+- Sets `must_change_password = true`, records `password_reset_at/by`, revokes all
+  of the target's sessions, and invalidates the permission cache.
+- Self-reset is refused; resetting an archived admin is refused; resetting the
+  last active SUPER_ADMIN requires explicit `confirm`.
+- On next login the console is locked (`adminAuthenticate` allows only
+  `/auth/me` + `/auth/change-password`, else `PASSWORD_CHANGE_REQUIRED`) until
+  the admin sets a new password (`POST /auth/change-password`), which clears the
+  flag and revokes all sessions. Audit: `ADMIN_PASSWORD_RESET_INITIATED`,
+  `ADMIN_PASSWORD_CHANGED`.
+
+Every action above is written to `admin_logs` (+ user actions to the audit trail)
+with actor, target, reason, previous/new status, IP and request id.

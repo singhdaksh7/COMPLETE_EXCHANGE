@@ -452,6 +452,15 @@ export const authService = {
       );
     }
 
+    // Stage 9C — archived (soft-deleted) accounts can never authenticate. A
+    // generic, support-directed message avoids leaking the archive state; the
+    // account is also CLOSED so the status guard below would block it anyway,
+    // but this explicit check keeps the message clear and blocks BEFORE any 2FA
+    // challenge is issued.
+    if (user.deletedAt) {
+      throw new ForbiddenError('Account is disabled. Contact support.', 'ACCOUNT_DISABLED');
+    }
+
     if (user.status !== 'ACTIVE') {
       throw new ForbiddenError('Account is not active', 'ACCOUNT_NOT_ACTIVE');
     }
@@ -540,6 +549,11 @@ export const authService = {
       );
     }
     const user = await authRepository.findUserById(userId);
+    // Stage 9C — an account archived between the password step and the 2FA step
+    // must not complete login: no session is issued for a soft-deleted user.
+    if (user?.deletedAt) {
+      throw new ForbiddenError('Account is disabled. Contact support.', 'ACCOUNT_DISABLED');
+    }
     if (!user || user.status !== 'ACTIVE') {
       throw new ForbiddenError('Account is not active', 'ACCOUNT_NOT_ACTIVE');
     }

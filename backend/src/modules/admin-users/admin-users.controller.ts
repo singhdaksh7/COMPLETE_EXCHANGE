@@ -5,6 +5,8 @@ import { adminUsersService, type AdminUserContext } from './admin-users.service'
 import type {
   AccountStatusDto,
   AdminUserListQueryDto,
+  ArchiveUserDto,
+  RestoreUserDto,
   RiskProfileDto,
   WithdrawalBlockDto,
 } from './admin-users.validators';
@@ -30,6 +32,43 @@ export const adminUsersController = {
   async detail(req: Request, res: Response): Promise<void> {
     if (!req.admin) throw new UnauthorizedError();
     const result = await adminUsersService.getUser(req.params.userId, ctx(req));
+    sendSuccess(res, result);
+  },
+
+  // --- Soft delete / archive (Stage 9C) ------------------------------------
+
+  async listArchived(req: Request, res: Response): Promise<void> {
+    if (!req.admin) throw new UnauthorizedError();
+    const q = req.query as unknown as AdminUserListQueryDto;
+    const result = await adminUsersService.listArchivedUsers(q, ctx(req));
+    sendSuccess(res, result);
+  },
+
+  async archivedDetail(req: Request, res: Response): Promise<void> {
+    if (!req.admin) throw new UnauthorizedError();
+    const result = await adminUsersService.getArchivedUser(req.params.userId, ctx(req));
+    sendSuccess(res, result);
+  },
+
+  async archive(req: Request, res: Response): Promise<void> {
+    if (!req.admin) throw new UnauthorizedError();
+    const body = req.body as ArchiveUserDto;
+    const result = await adminUsersService.archiveUser(
+      req.params.userId,
+      { reason: body.reason },
+      ctx(req),
+    );
+    sendSuccess(res, result);
+  },
+
+  async restore(req: Request, res: Response): Promise<void> {
+    if (!req.admin) throw new UnauthorizedError();
+    const body = req.body as RestoreUserDto;
+    const result = await adminUsersService.restoreUser(
+      req.params.userId,
+      { reason: body.reason },
+      ctx(req),
+    );
     sendSuccess(res, result);
   },
 

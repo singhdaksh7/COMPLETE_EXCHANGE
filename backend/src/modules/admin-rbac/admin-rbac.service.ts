@@ -39,6 +39,7 @@ import type {
   AdminContext,
   AdminListItem,
   AdminLoginInput,
+  AdminPasswordReset,
   AdminProfile,
   AdminSecurityProfile,
   AdminTokenPair,
@@ -777,9 +778,17 @@ export const adminRbacService = {
   // Every mutation is recorded in admin_logs via audit().
   // ==========================================================================
 
+  /** Active Admins tab — excludes archived (DEACTIVATED) admins (Stage 9C). */
   listAdmins(): Promise<AdminListItem[]> {
     return adminRbacRepository
-      .listAdminsWithRoles()
+      .listAdminsWithRoles({ archived: false })
+      .then((admins) => admins.map(toAdminListItem));
+  },
+
+  /** Deleted / Archived Admins tab — only DEACTIVATED admins (Stage 9C). */
+  listArchivedAdmins(): Promise<AdminListItem[]> {
+    return adminRbacRepository
+      .listAdminsWithRoles({ archived: true })
       .then((admins) => admins.map(toAdminListItem));
   },
 
@@ -1080,6 +1089,116 @@ export const adminRbacService = {
     return toPublicAdmin(updated);
   },
 
+  // ==========================================================================
+  // Admin password reset / change (Stage 9C).
+  //
+  // A SUPER_ADMIN can reset ANOTHER admin's password. The old password is never
+  // recovered or displayed; a fresh strong temporary password is generated,
+  // hashed with the standard argon2 policy, and returned ONCE in the response
+  // (never logged, never stored in plaintext). The target's live sessions are
+  // revoked and mustChangePassword is set so the console is locked until the
+  // admin sets a new password via changeOwnPassword().
+  // ==========================================================================
+
+  async resetAdminPassword(
+    adminId: string,
+    input: { confirm?: boolean },
+    ctx: AdminContext,
+  ): Promise<AdminPasswordReset> {
+    const target = await adminRbacRepository.findAdminById(adminId);
+    if (!target) throw new NotFoundError('Admin not found');
+
+    const actor = ctx.adminId
+      ? await this.getAdminPermissions(ctx.adminId)
+      : { roles: [] as string[], permissions: [] as string[] };
+    if (!actor.roles.includes(SUPER_ADMIN)) {
+      throw new ForbiddenError('Only SUPER_ADMIN can reset an admin password', 'FORBIDDEN');
+    }
+    if (ctx.adminId === adminId) {
+      throw new BadRequestError('You cannot reset your own password from this route');
+    }
+    if (target.status === 'DEACTIVATED') {
+      throw new ConflictError(
+        'Cannot reset the password of an archived admin',
+        'ADMIN_ARCHIVED',
+      );
+    }
+    // Resetting the last active SUPER_ADMIN requires explicit confirmation so a
+    // single fat-finger cannot lock the break-glass account out of the console.
+    const supers = await adminRbacRepository.adminsWithRole(SUPER_ADMIN);
+    if (supers.some((a) => a.adminId === adminId)) {
+      const activeSupers =
+        await adminRbacRepository.countActiveAdminsWithRole(SUPER_ADMIN);
+      if (activeSupers <= 1 && !input.confirm) {
+        throw new BadRequestError(
+          'Resetting the last active SUPER_ADMIN requires explicit confirmation',
+        );
+      }
+    }
+
+    const temporaryPassword = newInitialPassword();
+    const passwordHash = await hash(temporaryPassword);
+    const updated = await adminRbacRepository.resetAdminPassword(adminId, {
+      passwordHash,
+      resetBy: ctx.adminId,
+    });
+    // The old session + password are dead immediately.
+    await adminRbacRepository.revokeAllAdminSessions(adminId);
+    await this.invalidateAdminPermissions(adminId);
+
+    // ADMIN_PASSWORD_RESET_INITIATED — the temporary password is NEVER logged.
+    await adminRbacRepository.writeAdminLog({
+      adminId: ctx.adminId ?? adminId,
+      action: 'admin.password_reset',
+      targetType: 'admin',
+      targetId: adminId,
+      afterState: {
+        event: 'ADMIN_PASSWORD_RESET_INITIATED',
+        mustChangePassword: true,
+        sessionsRevoked: true,
+      },
+      ip: ctx.ip,
+      requestId: ctx.requestId,
+    });
+    return { admin: toPublicAdmin(updated), temporaryPassword };
+  },
+
+  /**
+   * Self-service password change. Verifies the current password, sets the new
+   * one, clears mustChangePassword, and revokes every session (log out
+   * everywhere) so a leaked temporary password/session cannot be reused.
+   */
+  async changeOwnPassword(
+    adminId: string,
+    input: { currentPassword: string; newPassword: string },
+    ctx: AdminContext,
+  ): Promise<PublicAdmin> {
+    const admin = await adminRbacRepository.findAdminById(adminId);
+    if (!admin) throw new UnauthorizedError('Admin not found');
+    const ok = await verify(admin.passwordHash, input.currentPassword).catch(
+      () => false,
+    );
+    if (!ok) {
+      throw new UnauthorizedError('Current password is incorrect', 'INVALID_CREDENTIALS');
+    }
+    const passwordHash = await hash(input.newPassword);
+    const updated = await adminRbacRepository.changeAdminPassword(adminId, passwordHash);
+    await adminRbacRepository.revokeAllAdminSessions(adminId);
+    await this.invalidateAdminPermissions(adminId);
+
+    // ADMIN_PASSWORD_CHANGED — no secret material is recorded.
+    await adminRbacRepository.writeAdminLog({
+      adminId,
+      action: 'admin.password_changed',
+      targetType: 'admin',
+      targetId: adminId,
+      afterState: { event: 'ADMIN_PASSWORD_CHANGED' },
+      ip: ctx.ip,
+      requestId: ctx.requestId,
+    });
+    return toPublicAdmin(updated);
+  },
+
   /**
    * Full admin security + accountability profile (Stage 7A). Never exposes the
    * TOTP seed, recovery codes, password hash or any other secret material —
@@ -1131,6 +1250,7 @@ export const adminRbacService = {
         ? emails.get(admin.deactivatedBy) ?? null
         : null,
       deactivationReason: admin.deactivationReason,
+      mustChangePassword: admin.mustChangePassword,
       activitySummary: buildActivitySummary(counts, total),
     };
   },
