@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
 import { userApi } from '@/lib/user-api';
 import { errorMessage } from '@/lib/api';
-import { USER_API_URL } from '@/lib/config';
+import { USER_API_URL, REFERRALS_ENABLED } from '@/lib/config';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -19,7 +19,11 @@ export default function RegisterPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [referralCode, setReferralCode] = useState('');
+  // Stage 9A — required policy consent (Terms / Privacy / Risk). The INR-only
+  // audit-mode notice is informational and shown alongside these.
   const [agreeTerms, setAgreeTerms] = useState(false);
+  const [agreePrivacy, setAgreePrivacy] = useState(false);
+  const [agreeRisk, setAgreeRisk] = useState(false);
   
   // UI states
   const [showPassword, setShowPassword] = useState(false);
@@ -32,6 +36,11 @@ export default function RegisterPage() {
         email: email.trim(),
         password,
         phone: `+91${phone.trim()}`,
+        acceptedPolicies: {
+          termsOfService: true,
+          privacyPolicy: true,
+          riskDisclosure: true,
+        },
       }),
     onSuccess: (res) => {
       if (res.data.emailVerificationRequired) {
@@ -74,8 +83,8 @@ export default function RegisterPage() {
       setValidationError('Passwords do not match.');
       return;
     }
-    if (!agreeTerms) {
-      setValidationError('You must agree to the Terms & Conditions and Privacy Policy.');
+    if (!agreeTerms || !agreePrivacy || !agreeRisk) {
+      setValidationError('You must accept the Terms of Service, Privacy Policy and Risk Disclosure to continue.');
       return;
     }
 
@@ -221,7 +230,8 @@ export default function RegisterPage() {
                     </div>
                   </FormField>
 
-                  {/* Referral Code (Optional) */}
+                  {/* Referral Code — hidden in INR-only audit mode (Stage 9A). */}
+                  {REFERRALS_ENABLED && (
                   <FormField label="Referral Code (Optional)" htmlFor="referralCode">
                     <div className="relative">
                       <GiftIcon className="pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-white/30" />
@@ -235,30 +245,43 @@ export default function RegisterPage() {
                       />
                     </div>
                   </FormField>
+                  )}
 
-                  {/* Terms Checkbox */}
-                  <div className="flex items-start gap-2.5 pt-1">
-                    <button
-                      type="button"
-                      role="checkbox"
-                      aria-checked={agreeTerms}
-                      onClick={() => setAgreeTerms(!agreeTerms)}
-                      className={`flex h-[18px] w-[18px] shrink-0 mt-[2px] items-center justify-center rounded border transition focus:outline-none focus:ring-2 focus:ring-gold/25 hover:border-gold/60 ${
-                        agreeTerms ? 'border-gold bg-gold text-noir' : 'border-white/25 bg-transparent'
-                      }`}
+                  {/* INR-only audit/demo mode notice (Stage 9A). */}
+                  <div className="rounded-lg border border-gold/20 bg-gold/[0.05] px-3.5 py-2.5 text-[11px] leading-5 text-white/60">
+                    This is an <span className="font-semibold text-gold">INR-only</span> audit/demo
+                    environment. Crypto deposits, withdrawals and trading are disabled.
+                  </div>
+
+                  {/* Required policy consent (Stage 9A) */}
+                  <div className="space-y-2.5 pt-1">
+                    <ConsentCheckbox
+                      checked={agreeTerms}
+                      onToggle={() => setAgreeTerms((v) => !v)}
                     >
-                      {agreeTerms && <CheckIcon className="h-3 w-3" />}
-                    </button>
-                    <span className="text-xs leading-5 text-white/60">
-                      I agree to the{' '}
-                      <a href="#" className="text-gold hover:underline font-semibold">
-                        Terms & Conditions
-                      </a>{' '}
-                      and{' '}
-                      <a href="#" className="text-gold hover:underline font-semibold">
+                      I have read and accept the{' '}
+                      <Link href="/legal" className="text-gold hover:underline font-semibold">
+                        Terms of Service
+                      </Link>
+                    </ConsentCheckbox>
+                    <ConsentCheckbox
+                      checked={agreePrivacy}
+                      onToggle={() => setAgreePrivacy((v) => !v)}
+                    >
+                      I have read and accept the{' '}
+                      <Link href="/legal" className="text-gold hover:underline font-semibold">
                         Privacy Policy
-                      </a>
-                    </span>
+                      </Link>
+                    </ConsentCheckbox>
+                    <ConsentCheckbox
+                      checked={agreeRisk}
+                      onToggle={() => setAgreeRisk((v) => !v)}
+                    >
+                      I understand and accept the{' '}
+                      <Link href="/legal" className="text-gold hover:underline font-semibold">
+                        Risk Disclosure
+                      </Link>
+                    </ConsentCheckbox>
                   </div>
 
                   {/* Submit Button */}
@@ -367,6 +390,33 @@ function FormField({
   );
 }
 
+function ConsentCheckbox({
+  checked,
+  onToggle,
+  children,
+}: {
+  checked: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex items-start gap-2.5">
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={checked}
+        onClick={onToggle}
+        className={`flex h-[18px] w-[18px] shrink-0 mt-[2px] items-center justify-center rounded border transition focus:outline-none focus:ring-2 focus:ring-gold/25 hover:border-gold/60 ${
+          checked ? 'border-gold bg-gold text-noir' : 'border-white/25 bg-transparent'
+        }`}
+      >
+        {checked && <CheckIcon className="h-3 w-3" />}
+      </button>
+      <span className="text-xs leading-5 text-white/60">{children}</span>
+    </div>
+  );
+}
+
 function FeatureItem({ icon, title }: { icon: ReactNode; title: string }) {
   return (
     <div className="flex items-center gap-3 rounded-xl border border-white/5 bg-white/[0.02] p-3 backdrop-blur-sm">
@@ -381,9 +431,7 @@ function FeatureItem({ icon, title }: { icon: ReactNode; title: string }) {
 function Logo() {
   return (
     <div className="flex items-center gap-3">
-      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-gold to-gold-glow shadow-gold-glow">
-        <span className="text-xl font-black text-noir">E</span>
-      </div>
+      <img src="/brand/exora-logo.png" alt="EXORA" className="h-11 w-11 object-contain" />
       <div className="leading-tight">
         <div className="text-lg font-bold tracking-tight text-white">Exora</div>
         <div className="text-[11px] font-medium uppercase tracking-wider text-white/40">

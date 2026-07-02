@@ -10,6 +10,7 @@ import { userApi } from '@/api/userApi';
 import { colors, font, radius, spacing, cardShadow } from '@/theme';
 import { fmtNum, fmtAmount } from '@/utils/format';
 import type { WalletOverview } from '@/types/api';
+import { useAuth } from '@/store/auth';
 
 function AssetLogo({ asset }: { asset: string }) {
   const cleanAsset = asset.toUpperCase();
@@ -45,13 +46,17 @@ function AssetLogo({ asset }: { asset: string }) {
 export default function PortfolioScreen() {
   const router = useRouter();
   const [showBalance, setShowBalance] = useState(true);
+  const { features } = useAuth();
   
   const { data, loading, error, reload } = useApi<WalletOverview>(
     () => userApi.walletOverview().then((r) => r.data),
     [],
   );
 
-  const balances = data?.balances ?? [];
+  const balances = (data?.balances ?? []).filter((b) => {
+    if (b.asset.toUpperCase() === 'INR') return true;
+    return features?.cryptoWallet === true;
+  });
   const inr = balances.find((b) => b.asset.toUpperCase() === 'INR');
 
   // Calculate total portfolio value safely based on real wallet balances

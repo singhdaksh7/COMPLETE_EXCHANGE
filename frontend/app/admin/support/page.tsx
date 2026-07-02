@@ -185,6 +185,9 @@ function TicketDetail({ t, canManage, onChanged, onErr }: { t: import('@/lib/typ
         </div>
       </div>
 
+      {/* Stage 9A — user<->admin conversation thread */}
+      <AdminConversation ticketId={t.id} canManage={canManage} onChanged={onChanged} onErr={onErr} />
+
       {canManage && (
         <div className="rounded-xl border border-white/5 bg-white/[0.01] p-3 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
@@ -218,6 +221,70 @@ function TicketDetail({ t, canManage, onChanged, onErr }: { t: import('@/lib/typ
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function AdminConversation({ ticketId, canManage, onChanged, onErr }: { ticketId: string; canManage: boolean; onChanged: () => void; onErr: (e: unknown) => void }) {
+  const [reply, setReply] = useState('');
+  const [internal, setInternal] = useState(false);
+  const thread = useQuery({
+    queryKey: ['support-thread', ticketId],
+    queryFn: () => adminApi.supportThread(ticketId),
+    retry: false,
+  });
+  const send = useMutation({
+    mutationFn: () => adminApi.supportReply(ticketId, reply.trim(), internal),
+    onSuccess: () => { setReply(''); thread.refetch(); onChanged(); },
+    onError: onErr,
+  });
+  const action = useMutation({
+    mutationFn: (kind: 'resolve' | 'close' | 'reopen') =>
+      kind === 'resolve' ? adminApi.supportResolve(ticketId)
+        : kind === 'close' ? adminApi.supportCloseTicket(ticketId)
+          : adminApi.supportReopen(ticketId),
+    onSuccess: () => { thread.refetch(); onChanged(); },
+    onError: onErr,
+  });
+  const messages = thread.data?.data.messages ?? [];
+
+  return (
+    <div className="rounded-xl border border-white/5 bg-white/[0.01] p-3 space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-white/60">Conversation</h3>
+        {canManage && (
+          <div className="flex gap-1.5">
+            <button onClick={() => action.mutate('resolve')} disabled={action.isPending} className="rounded border border-emerald-500/20 bg-emerald-500/5 px-2 py-1 text-[9px] font-bold text-emerald-300 hover:bg-emerald-500/15 transition disabled:opacity-40">Resolve</button>
+            <button onClick={() => action.mutate('close')} disabled={action.isPending} className="rounded border border-white/10 px-2 py-1 text-[9px] font-bold text-white/60 hover:text-white transition disabled:opacity-40">Close</button>
+            <button onClick={() => action.mutate('reopen')} disabled={action.isPending} className="rounded border border-gold/20 bg-gold/5 px-2 py-1 text-[9px] font-bold text-gold hover:bg-gold/15 transition disabled:opacity-40">Reopen</button>
+          </div>
+        )}
+      </div>
+      {thread.isLoading ? <p className="text-xs text-white/35">Loading…</p> : messages.length === 0 ? <p className="text-xs text-white/35">No messages yet.</p> : (
+        <div className="space-y-2 max-h-72 overflow-y-auto">
+          {messages.map((m) => (
+            <div key={m.id} className={`rounded-lg border p-2.5 ${m.isInternalNote ? 'border-amber-500/20 bg-amber-500/[0.04]' : m.senderType === 'USER' ? 'border-white/5 bg-white/[0.02]' : 'border-gold/15 bg-gold/[0.03]'}`}>
+              <div className="flex items-center gap-2 text-[9px] font-bold uppercase tracking-wider text-white/40">
+                <span>{m.senderType}</span>
+                {m.isInternalNote && <span className="text-amber-300">Internal note</span>}
+                <span className="ml-auto text-white/25">{fmt(m.createdAt)}</span>
+              </div>
+              <p className="mt-1 whitespace-pre-wrap text-sm text-white/85">{m.body}</p>
+            </div>
+          ))}
+        </div>
+      )}
+      {canManage && (
+        <div className="space-y-2">
+          <textarea className={input} rows={2} placeholder={internal ? 'Internal note (not visible to the user)' : 'Reply to the user'} value={reply} onChange={(e) => setReply(e.target.value)} />
+          <div className="flex items-center gap-3">
+            <button onClick={() => send.mutate()} disabled={send.isPending || reply.trim().length === 0} className="rounded-lg bg-gold/90 px-3 py-1.5 text-xs font-bold text-noir hover:bg-gold transition disabled:opacity-40">{send.isPending ? 'Sending…' : internal ? 'Add internal note' : 'Send reply'}</button>
+            <label className="flex items-center gap-1.5 text-[10px] text-white/50">
+              <input type="checkbox" checked={internal} onChange={(e) => setInternal(e.target.checked)} /> Internal note only
+            </label>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -30,9 +30,9 @@ interface AuthState {
    */
   features: UserFeatureMap | null;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<LoginOutcome>;
+  login: (email: string, password: string, location?: { latitude: number; longitude: number; accuracy: number } | null) => Promise<LoginOutcome>;
   /** Finish a 2FA-gated login with the challenge token + TOTP/backup code. */
-  complete2fa: (challengeToken: string, code: string) => Promise<PublicUser>;
+  complete2fa: (challengeToken: string, code: string, location?: { latitude: number; longitude: number; accuracy: number } | null) => Promise<PublicUser>;
   register: (email: string, password: string, phone?: string) => Promise<{ emailVerificationRequired: boolean }>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -79,8 +79,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const login = useCallback(
-    async (email: string, password: string): Promise<LoginOutcome> => {
-      const res = await userApi.login({ email, password });
+    async (email: string, password: string, location?: { latitude: number; longitude: number; accuracy: number } | null): Promise<LoginOutcome> => {
+      const res = await userApi.login({ email, password, location });
       // 2FA-enabled accounts get no session here — only a short-lived challenge
       // token. No tokens are stored until the second factor is verified.
       if (isTwoFactorChallenge(res.data)) {
@@ -97,8 +97,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const complete2fa = useCallback(
-    async (challengeToken: string, code: string) => {
-      const res = await userApi.verify2fa(challengeToken, code);
+    async (challengeToken: string, code: string, location?: { latitude: number; longitude: number; accuracy: number } | null) => {
+      const res = await userApi.verify2fa(challengeToken, code, location);
       await tokenStore.set(res.data.tokens);
       setUser(res.data.user);
       await refreshUser();

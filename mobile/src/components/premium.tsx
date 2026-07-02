@@ -8,6 +8,7 @@ import {
   type TextInputProps,
   View,
   type ViewStyle,
+  Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -52,51 +53,12 @@ export function AppBackground() {
  * BrandMark — the EXORA emblem + wordmark.
  * ============================================================ */
 export function ExoraEmblem({ size = 60 }: { size?: number }) {
-  const borderWidth = size * 0.085;
   return (
-    <View style={[styles.emblem, { width: size, height: size, borderRadius: size / 2, backgroundColor: 'transparent' }]}>
-      {/* Outer Ring */}
-      <View style={{
-        position: 'absolute',
-        width: size,
-        height: size,
-        borderRadius: size / 2,
-        borderWidth: borderWidth,
-        borderColor: colors.brand,
-      }} />
-      
-      {/* Diagonal 1: Top-Left to Bottom-Right */}
-      <View style={{
-        position: 'absolute',
-        width: size * 0.09,
-        height: size * 0.58,
-        backgroundColor: colors.brand,
-        transform: [{ rotate: '45deg' }],
-        borderRadius: size * 0.015,
-      }} />
-
-      {/* Diagonal 2: Bottom-Left to Top-Right */}
-      <View style={{
-        position: 'absolute',
-        width: size * 0.09,
-        height: size * 0.50,
-        backgroundColor: colors.brand,
-        transform: [{ rotate: '-45deg' }, { translateY: size * 0.04 }, { translateX: -size * 0.04 }],
-        borderRadius: size * 0.015,
-      }} />
-
-      {/* Arrowhead pointing up-right */}
-      <View style={{
-        position: 'absolute',
-        top: size * 0.17,
-        right: size * 0.17,
-        width: size * 0.24,
-        height: size * 0.24,
-        borderTopWidth: size * 0.095,
-        borderRightWidth: size * 0.095,
-        borderColor: colors.brand,
-      }} />
-    </View>
+    <Image 
+      source={require('../../assets/exora-logo.png')} 
+      style={{ width: size, height: size }} 
+      resizeMode="contain" 
+    />
   );
 }
 

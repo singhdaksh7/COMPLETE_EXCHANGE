@@ -51,14 +51,14 @@ export const userApi = {
   register: (body: { email: string; password: string; phone?: string }) =>
     apiFetch<RegisterData>('/auth/register', { method: 'POST', body }),
 
-  login: (body: { email: string; password: string }) =>
+  login: (body: { email: string; password: string; location?: { latitude: number; longitude: number; accuracy: number } | null }) =>
     apiFetch<LoginResult>('/auth/login', { method: 'POST', body }),
 
   /** Second step of a 2FA-gated login: challenge token + TOTP/backup code. */
-  verify2fa: (challengeToken: string, code: string) =>
+  verify2fa: (challengeToken: string, code: string, location?: { latitude: number; longitude: number; accuracy: number } | null) =>
     apiFetch<LoginData>('/auth/2fa/verify', {
       method: 'POST',
-      body: { challengeToken, code },
+      body: { challengeToken, code, location },
     }),
 
   verifyEmail: (body: { token: string }) =>

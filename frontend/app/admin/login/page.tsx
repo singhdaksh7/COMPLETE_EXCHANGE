@@ -25,8 +25,11 @@ export default function AdminLoginPage() {
   return (
     <main className="mx-auto mt-16 max-w-md px-4">
       <Card>
-        <h1 className="mb-1 text-xl font-semibold">Admin login</h1>
-        <p className="mb-4 text-sm text-gray-500">
+        <div className="flex justify-center mb-4">
+          <img src="/brand/exora-logo.png" alt="EXORA" className="h-12 w-12 object-contain" />
+        </div>
+        <h1 className="mb-1 text-xl font-semibold text-center">Admin login</h1>
+        <p className="mb-4 text-sm text-gray-500 text-center">
           Operations console — admin credentials required.
         </p>
 

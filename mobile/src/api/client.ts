@@ -1,3 +1,4 @@
+import { Alert } from 'react-native';
 import { config } from '@/config';
 import { tokenStore } from '@/store/tokenStore';
 import type { Envelope } from '@/types/api';
@@ -99,9 +100,15 @@ async function tryRefresh(): Promise<boolean> {
     );
     await tokenStore.set(res.data.tokens);
     return true;
-  } catch {
+  } catch (err) {
     await tokenStore.clear();
     onUnauthorized?.();
+    if (err instanceof ApiError && err.code === 'SESSION_REVOKED_BY_NEW_LOGIN') {
+      Alert.alert(
+        'Signed Out',
+        'Your session was signed out because your account was opened on another device.'
+      );
+    }
     return false;
   }
 }
@@ -111,8 +118,31 @@ export async function authedFetch<T>(path: string, opts: FetchOpts = {}): Promis
   try {
     return await rawFetch<T>(path, { ...opts, token: tokenStore.getAccess() });
   } catch (err) {
-    if (err instanceof ApiError && err.status === 401 && (await tryRefresh())) {
-      return rawFetch<T>(path, { ...opts, token: tokenStore.getAccess() });
+    if (err instanceof ApiError && err.status === 401) {
+      if (err.code === 'SESSION_REVOKED_BY_NEW_LOGIN') {
+        await tokenStore.clear();
+        onUnauthorized?.();
+        Alert.alert(
+          'Signed Out',
+          'Your session was signed out because your account was opened on another device.'
+        );
+        throw err;
+      }
+      if (await tryRefresh()) {
+        try {
+          return await rawFetch<T>(path, { ...opts, token: tokenStore.getAccess() });
+        } catch (retryErr) {
+          if (retryErr instanceof ApiError && retryErr.code === 'SESSION_REVOKED_BY_NEW_LOGIN') {
+            await tokenStore.clear();
+            onUnauthorized?.();
+            Alert.alert(
+              'Signed Out',
+              'Your session was signed out because your account was opened on another device.'
+            );
+          }
+          throw retryErr;
+        }
+      }
     }
     throw err;
   }

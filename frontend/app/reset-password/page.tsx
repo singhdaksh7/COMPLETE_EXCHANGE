@@ -269,9 +269,7 @@ function FormField({
 function Logo() {
   return (
     <div className="flex items-center gap-3">
-      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-gold to-gold-glow shadow-gold-glow">
-        <span className="text-xl font-black text-noir">E</span>
-      </div>
+      <img src="/brand/exora-logo.png" alt="EXORA" className="h-11 w-11 object-contain" />
       <div className="leading-tight">
         <div className="text-lg font-bold tracking-tight text-white">Exora</div>
         <div className="text-[11px] font-medium uppercase tracking-wider text-white/40">

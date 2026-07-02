@@ -112,7 +112,10 @@ export default function HomeScreen() {
   const [showBalance, setShowBalance] = useState(true);
 
   const kycStatus = user?.kycStatus ?? 'NOT_STARTED';
-  const balances = data?.balances ?? [];
+  const balances = (data?.balances ?? []).filter((b) => {
+    if (b.asset.toUpperCase() === 'INR') return true;
+    return features?.cryptoWallet === true;
+  });
   const inr = balances.find((b) => b.asset.toUpperCase() === 'INR');
   
   // Calculate total portfolio value safely based on real wallet balances

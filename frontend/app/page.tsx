@@ -31,9 +31,7 @@ export default function LandingPage() {
           
           {/* Logo */}
           <Link href="/" className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-gold to-gold-glow shadow-gold-glow">
-              <span className="text-base font-black text-noir">E</span>
-            </div>
+            <img src="/brand/exora-logo.png" alt="EXORA" className="h-9 w-9 object-contain" />
             <div className="leading-tight">
               <div className="text-base font-bold tracking-tight text-white">Exora</div>
               <div className="text-[9px] font-medium uppercase tracking-wider text-white/40">

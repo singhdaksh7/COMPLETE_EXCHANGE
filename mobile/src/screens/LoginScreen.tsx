@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import { Screen } from '@/components/ui';
 import { BrandMark, GoldButton } from '@/components/premium';
 import { useAuth } from '@/store/auth';
-import { actionErrorMessage } from '@/api/client';
+import { actionErrorMessage, ApiError } from '@/api/client';
 import { colors, font, spacing, radius } from '@/theme';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -27,16 +28,64 @@ export default function LoginScreen() {
   const emailValid = EMAIL_RE.test(email.trim());
   const canSubmit = emailValid && password.length >= 1;
 
+  const requestAndGetLocation = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        throw new Error('Location permission is required for account security.');
+      }
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      return {
+        latitude: loc.coords.latitude,
+        longitude: loc.coords.longitude,
+        accuracy: loc.coords.accuracy ?? 0,
+      };
+    } catch {
+      throw new Error('Location permission is required for account security.');
+    }
+  };
+
   const onSubmit = async () => {
     setError(null);
     setBusy(true);
     try {
-      const outcome = await login(email.trim(), password);
-      if (outcome.status === '2fa_required') {
-        setChallengeToken(outcome.challengeToken);
-        return;
+      let locData = null;
+      try {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          locData = {
+            latitude: loc.coords.latitude,
+            longitude: loc.coords.longitude,
+            accuracy: loc.coords.accuracy ?? 0,
+          };
+        }
+      } catch {
+        // ignore pre-check errors
       }
-      router.replace('/(tabs)');
+
+      try {
+        const outcome = await login(email.trim(), password, locData);
+        if (outcome.status === '2fa_required') {
+          setChallengeToken(outcome.challengeToken);
+          return;
+        }
+        router.replace('/(tabs)');
+      } catch (err) {
+        if (err instanceof ApiError && err.code === 'LOCATION_REQUIRED') {
+          setError('Location permission is required for account security.');
+          const fetchedLoc = await requestAndGetLocation();
+          setError(null);
+          const outcome = await login(email.trim(), password, fetchedLoc);
+          if (outcome.status === '2fa_required') {
+            setChallengeToken(outcome.challengeToken);
+            return;
+          }
+          router.replace('/(tabs)');
+        } else {
+          throw err;
+        }
+      }
     } catch (err) {
       setError(actionErrorMessage(err));
     } finally {
@@ -49,8 +98,35 @@ export default function LoginScreen() {
     setError(null);
     setBusy(true);
     try {
-      await complete2fa(challengeToken, twoFaCode.trim());
-      router.replace('/(tabs)');
+      let locData = null;
+      try {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          locData = {
+            latitude: loc.coords.latitude,
+            longitude: loc.coords.longitude,
+            accuracy: loc.coords.accuracy ?? 0,
+          };
+        }
+      } catch {
+        // ignore
+      }
+
+      try {
+        await complete2fa(challengeToken, twoFaCode.trim(), locData);
+        router.replace('/(tabs)');
+      } catch (err) {
+        if (err instanceof ApiError && err.code === 'LOCATION_REQUIRED') {
+          setError('Location permission is required for account security.');
+          const fetchedLoc = await requestAndGetLocation();
+          setError(null);
+          await complete2fa(challengeToken, twoFaCode.trim(), fetchedLoc);
+          router.replace('/(tabs)');
+        } else {
+          throw err;
+        }
+      }
     } catch (err) {
       setError(actionErrorMessage(err));
     } finally {

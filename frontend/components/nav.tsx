@@ -8,6 +8,7 @@ import { tokenStore } from '@/lib/auth';
 import { disconnectSocket } from '@/lib/socket';
 import { userApi } from '@/lib/user-api';
 import { adminApi } from '@/lib/admin-api';
+import { API_MANAGEMENT_ENABLED, REFERRALS_ENABLED } from '@/lib/config';
 
 // SVG Icons
 function DashboardIcon() {
@@ -182,12 +183,12 @@ export function UserNav() {
     { href: '/kyc/enhanced', label: 'KYC Verification', icon: <KycIcon /> },
     { href: '/legal', label: 'Legal & Policies', icon: <KycIcon /> },
     { href: '/tax', label: 'Tax & TDS', icon: <KycIcon /> },
-    { href: '#referrals', label: 'Referral Program', icon: <ReferralIcon /> },
-    { href: '#notifications', label: 'Notifications', icon: <BellIcon /> },
-    { href: '#api', label: 'API Management', icon: <ApiIcon /> },
+    // Referral + API Management are disabled in INR-only audit mode (Stage 9A).
+    { href: '#referrals', label: 'Referral Program', icon: <ReferralIcon />, hidden: !REFERRALS_ENABLED },
+    { href: '#api', label: 'API Management', icon: <ApiIcon />, hidden: !API_MANAGEMENT_ENABLED },
     { href: '/settings', label: 'Settings', icon: <SettingsIcon /> },
-    { href: '#support', label: 'Support', icon: <SupportIcon /> },
-  ];
+    { href: '/support', label: 'Support', icon: <SupportIcon /> },
+  ].filter((l) => !('hidden' in l && l.hidden));
 
   return (
     <>
@@ -198,9 +199,7 @@ export function UserNav() {
         {/* Brand Area */}
         <div className="flex items-center justify-between mb-8 px-2">
           <Link href="/dashboard" className="flex items-center gap-2.5">
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-gold to-gold-glow text-noir font-black text-sm shadow-gold-glow">
-              E
-            </span>
+            <img src="/brand/exora-logo.png" alt="EXORA" className="h-7 w-7 object-contain" />
             <div>
               <span className="font-bold text-sm tracking-tight text-white block">Exora</span>
               <span className="text-[9px] text-white/30 tracking-wider uppercase block font-semibold">India Pvt. Ltd</span>
@@ -268,7 +267,8 @@ export function UserNav() {
           </div>
         </nav>
 
-        {/* Bottom Referral Card */}
+        {/* Bottom Referral Card — hidden in INR-only audit mode (Stage 9A). */}
+        {REFERRALS_ENABLED && (
         <div className="mt-auto pt-6">
           <div className="relative rounded-2xl border border-gold/20 bg-white/[0.03] p-4 shadow-gold-soft overflow-hidden">
             <div className="pointer-events-none absolute -inset-px rounded-2xl bg-gradient-to-b from-gold/10 to-transparent opacity-50" />
@@ -283,6 +283,7 @@ export function UserNav() {
             </div>
           </div>
         </div>
+        )}
       </aside>
 
       {/* Top Header / Market Ticker Bar */}
@@ -608,9 +609,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
   const brand = (
     <Link href="/admin/dashboard" onClick={() => setMobileOpen(false)} className="flex items-center gap-2.5">
-      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-gold to-gold-glow text-sm font-black text-noir shadow-gold-glow">
-        A
-      </span>
+      <img src="/brand/exora-logo.png" alt="EXORA" className="h-7 w-7 object-contain" />
       <div>
         <span className="block text-sm font-bold tracking-tight text-white">Exora Admin</span>
         <span className="block text-[9px] font-semibold uppercase tracking-wider text-white/30">Compliance Console</span>

@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { userApi } from '@/lib/user-api';
-import { errorMessage } from '@/lib/api';
 import { useGuard } from '@/components/guards';
 import { UserShell } from '@/components/user-shell';
 import { useUserFeatures } from '@/components/feature-gate';
@@ -88,8 +87,8 @@ export default function WalletPage() {
         </div>
       </div>
 
-      {q.isLoading && <p className="text-sm text-white/40 py-6">Retrieving ledger balances…</p>}
-      {q.isError && <div className="mb-6 rounded-lg bg-red-500/10 border border-red-500/20 p-4 text-xs text-red-300">{errorMessage(q.error)}</div>}
+      {q.isLoading && <p className="text-sm text-white/40 py-6">Loading balance…</p>}
+      {q.isError && <div className="mb-6 rounded-lg bg-red-500/10 border border-red-500/20 p-4 text-xs text-red-300">Balance unavailable. Please refresh.</div>}
 
       {data && (
         <div className="space-y-6">
