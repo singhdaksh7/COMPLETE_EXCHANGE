@@ -53,8 +53,32 @@ deposit/withdrawal services).
   Evidence: `kyc.validators.ts` (`ALLOWED_KYC_MIME_TYPES`), `kyc.service.ts`
   (`submitDocument`), tests in `test/unit/kyc-validators.test.ts` and
   `test/unit/kyc-service.test.ts`.
+- **Object storage (Stage 10B):** document metadata registration and the
+  presigned-upload contract are vendor-neutral
+  (`backend/src/modules/kyc/storage/`), mirroring the identity-provider
+  pattern. Two implementations exist:
+  - `mock` (default in every environment today) — a non-routable stub host;
+    no document bytes are ever actually persisted.
+  - `s3` — a real private-bucket implementation (short-lived presigned PUT for
+    upload, presigned GET for admin review, SSE-KMS when a CMK is configured
+    else SSE-S3, opaque UUID object keys that never contain email/phone/PAN/
+    Aadhaar/name, no public ACL, no client-chosen key). Selecting it requires
+    `KYC_S3_BUCKET` + `KYC_S3_REGION`; the process fails to validate its
+    environment (never silently falls back to the mock host) if that config is
+    missing. **No AWS bucket/KMS key/IAM role has been created** — this is a
+    CODE READY / INFRA REQUIRED state, not a deployed one.
+  - The client-confirmed upload outcome is tracked separately from document
+    review status via `KycDocument.uploadStatus`
+    (`REGISTERED`/`UPLOADED`/`FAILED`), so "metadata registered" is never
+    conflated with "bytes actually reached storage."
 - **Malware/AV scanning** of uploaded files is a **production requirement** (not
-  implemented in staging) — see `production-blockers.md`.
+  implemented in staging, and not implemented by the Stage 10B storage change
+  either) — see `production-blockers.md`.
+- **Retention of document bytes**: no legally-approved retention/deletion
+  schedule for KYC document *files* (as distinct from the KYC profile/decision
+  records covered by §7) has been confirmed. This requires legal/compliance
+  sign-off before real documents are stored — do not treat §7's general
+  record-retention language as covering document bytes until that is settled.
 
 ## 5. Manual review
 
@@ -93,8 +117,13 @@ deposit/withdrawal services).
 ## 9. Production requirements (not implemented in staging)
 
 - Real KYC/liveness/document vendor integration (replacing mocks).
-- Malware/AV scanning of uploads and real object-storage with private buckets.
+- Malware/AV scanning of uploads.
+- Real object storage **provisioned** — the `s3` storage provider is CODE
+  READY (Stage 10B) but no bucket/CMK/IAM has actually been created; staging
+  still runs on the non-routable `mock` provider by default.
 - KMS-managed key for PII encryption (currently derived from a config secret).
+- A legally-approved retention/deletion schedule specifically for KYC document
+  bytes (see §4).
 - Enhanced due diligence wiring for high-risk customers (see `aml-cft-policy.md`).
 
 **Do not represent EXORA KYC as vendor-integrated or production-compliant until

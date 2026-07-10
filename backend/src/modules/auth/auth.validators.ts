@@ -19,7 +19,7 @@ const email = z.string().email().toLowerCase().trim();
  * security/audit signal, not a fraud control. Coordinates are range-checked
  * here and rounded to reduced precision server-side before storage.
  */
-const loginLocation = z
+export const loginLocation = z
   .object({
     latitude: z.number().min(-90).max(90),
     longitude: z.number().min(-180).max(180),
@@ -30,7 +30,12 @@ const loginLocation = z
 
 // Opaque tokens are 32 random bytes in base64url (≈43 chars). Be lenient on the
 // upper bound but reject anything implausibly short.
-const opaqueToken = z.string().min(16, 'Invalid token').max(512);
+export const opaqueToken = z.string().min(16, 'Invalid token').max(512);
+
+/** E.164-ish phone, shared with the federated-registration completion flow. */
+export const phoneNumber = z
+  .string()
+  .regex(/^\+?[1-9]\d{7,14}$/, 'Invalid phone number');
 
 /**
  * Stage 9A — signup must capture explicit acceptance of the required policies.
@@ -38,7 +43,7 @@ const opaqueToken = z.string().min(16, 'Invalid token').max(512);
  * required checkbox was ticked. The versions accepted are the CURRENT ones,
  * resolved and recorded server-side (never trusted from the client).
  */
-const acceptedPolicies = z
+export const acceptedPolicies = z
   .object({
     termsOfService: z.literal(true),
     privacyPolicy: z.literal(true),

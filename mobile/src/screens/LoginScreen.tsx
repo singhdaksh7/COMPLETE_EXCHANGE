@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { Screen } from '@/components/ui';
 import { BrandMark, GoldButton } from '@/components/premium';
+import { FederatedAuthButtons } from '@/components/federated-auth';
 import { useAuth } from '@/store/auth';
 import { actionErrorMessage, ApiError } from '@/api/client';
 import { colors, font, spacing, radius } from '@/theme';
@@ -140,10 +141,6 @@ export default function LoginScreen() {
     setError(null);
   };
 
-  const handleOAuth = (provider: string) => {
-    // Stub OAuth login
-  };
-
   if (challengeToken) {
     return (
       <Screen contentStyle={styles.screenContent}>
@@ -259,24 +256,10 @@ export default function LoginScreen() {
         {/* Login CTA */}
         <GoldButton title="Login" onPress={onSubmit} loading={busy} disabled={!canSubmit} />
 
-        {/* Social Login Divider */}
-        <View style={styles.dividerRow}>
-          <View style={styles.hairline} />
-          <Text style={styles.dividerText}>Or continue with</Text>
-          <View style={styles.hairline} />
-        </View>
-
-        {/* Social CTAs */}
-        <View style={styles.oauthRow}>
-          <Pressable style={styles.oauthBtn} onPress={() => handleOAuth('google')}>
-            <Ionicons name="logo-google" size={18} color="#EA4335" />
-            <Text style={styles.oauthBtnText}>Google</Text>
-          </Pressable>
-          <Pressable style={styles.oauthBtn} onPress={() => handleOAuth('apple')}>
-            <Ionicons name="logo-apple" size={18} color="#FFF" />
-            <Text style={styles.oauthBtnText}>Apple</Text>
-          </Pressable>
-        </View>
+        <FederatedAuthButtons
+          onAuthenticated={() => router.replace('/(tabs)')}
+          onTwoFactorChallenge={(token) => setChallengeToken(token)}
+        />
       </View>
 
       {/* Footer Nav */}
@@ -361,27 +344,6 @@ const styles = StyleSheet.create({
   linkGold: { color: colors.brand, fontWeight: '700', fontSize: font.sm },
   
   err: { color: colors.down, fontSize: font.sm, textAlign: 'center' },
-
-  // Social divider
-  dividerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginVertical: spacing.sm },
-  hairline: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.06)' },
-  dividerText: { color: colors.muted2, fontSize: 11, fontWeight: '700' },
-
-  // OAuth buttons row
-  oauthRow: { flexDirection: 'row', gap: spacing.md },
-  oauthBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.glass,
-    borderWidth: 1,
-    borderColor: colors.glassBorder,
-    borderRadius: radius.md,
-    height: 48,
-  },
-  oauthBtnText: { color: colors.ink, fontSize: font.sm, fontWeight: '700' },
 
   footerRow: { flexDirection: 'row', justifyContent: 'center', gap: 6, alignItems: 'center', marginTop: spacing.xs },
   backRow: { flexDirection: 'row', justifyContent: 'center', gap: 6, alignItems: 'center', marginTop: spacing.xs },

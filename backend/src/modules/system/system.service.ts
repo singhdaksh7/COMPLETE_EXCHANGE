@@ -43,7 +43,7 @@ export interface SystemQueues {
 }
 
 export interface SystemMail {
-  provider: 'log' | 'ses';
+  provider: 'log' | 'ses' | 'resend';
   fromDomain: string | null;
   replyToConfigured: boolean;
   region: string | null;
@@ -76,7 +76,7 @@ export interface SystemRiskAlerts {
 }
 
 export interface SystemFlags {
-  mailProvider: 'log' | 'ses';
+  mailProvider: 'log' | 'ses' | 'resend';
   withdrawalSigner: string;
   mockProvidersAllowed: boolean;
   mockWithdrawalSignerAllowed: boolean;
@@ -102,7 +102,7 @@ export interface SystemOverview {
     mailFailures: number;
   };
   scanner: { chains: Array<{ chain: string; providerMode: string; lastScannedBlock: string | null }> };
-  mail: { provider: 'log' | 'ses'; fromDomain: string | null };
+  mail: { provider: 'log' | 'ses' | 'resend'; fromDomain: string | null };
   risk: {
     highRiskUsers: number;
     frozenUsers: number;

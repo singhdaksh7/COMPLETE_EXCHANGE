@@ -2,6 +2,7 @@ import type {
   KycCheckStatus,
   KycDocument,
   KycDocType,
+  KycDocumentUploadStatus,
   KycProfile,
 } from '@prisma/client';
 import type { KycSession } from './providers';
@@ -30,6 +31,9 @@ export const KycAction = {
   REQUEST_INFO: 'kyc.request_info',
   NOTE: 'kyc.note',
   COMPLIANCE_VIEW: 'kyc.compliance.view',
+  DOCUMENT_UPLOAD_CONFIRMED: 'kyc.document.upload_confirmed',
+  DOCUMENT_UPLOAD_FAILED: 'kyc.document.upload_failed',
+  DOCUMENT_READ_URL_ISSUED: 'kyc.document.read_url_issued',
 } as const;
 
 export interface SubmitProfileInput {
@@ -75,6 +79,8 @@ export interface KycDocumentDto {
   id: string;
   docType: KycDocType;
   status: string;
+  /** Whether bytes actually reached storage — distinct from `status` above. */
+  uploadStatus: KycDocumentUploadStatus;
   createdAt: Date;
 }
 
@@ -82,6 +88,19 @@ export interface KycDocumentDto {
 export interface KycDocumentUploadDto {
   documentId: string;
   uploadUrl: string;
+  requiredMethod: 'PUT';
+  /** Headers the client MUST send on the PUT for the signature to validate. */
+  requiredHeaders: Record<string, string>;
+  expiresIn: number;
+}
+
+export interface ConfirmDocumentUploadInput {
+  status: 'UPLOADED' | 'FAILED';
+}
+
+/** Short-lived authorized read access for one document (admin review only). */
+export interface KycDocumentReadUrlDto {
+  url: string;
   expiresIn: number;
 }
 
@@ -268,6 +287,7 @@ export function toKycDocumentDto(doc: KycDocument): KycDocumentDto {
     id: doc.id,
     docType: doc.docType,
     status: doc.status,
+    uploadStatus: doc.uploadStatus,
     createdAt: doc.createdAt,
   };
 }

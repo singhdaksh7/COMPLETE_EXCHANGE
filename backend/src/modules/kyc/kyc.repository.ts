@@ -2,6 +2,7 @@ import type {
   KycCheckStatus,
   KycDocType,
   KycDocument,
+  KycDocumentUploadStatus,
   KycProfile,
   KycStatus,
   Prisma,
@@ -115,6 +116,26 @@ export const kycRepository = {
     return prisma.kycDocument.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
+    });
+  },
+
+  /** Scoped lookup — a user may only confirm upload outcome for their own document. */
+  findDocumentForUser(userId: string, documentId: string): Promise<KycDocument | null> {
+    return prisma.kycDocument.findFirst({ where: { id: documentId, userId } });
+  },
+
+  /** Unscoped lookup for admin document read access. */
+  findDocumentById(documentId: string): Promise<KycDocument | null> {
+    return prisma.kycDocument.findUnique({ where: { id: documentId } });
+  },
+
+  updateDocumentUploadStatus(
+    documentId: string,
+    uploadStatus: KycDocumentUploadStatus,
+  ): Promise<KycDocument> {
+    return prisma.kycDocument.update({
+      where: { id: documentId },
+      data: { uploadStatus },
     });
   },
 

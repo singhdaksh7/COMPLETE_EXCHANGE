@@ -67,4 +67,15 @@ export const kycController = {
     const result = await kycService.submitDocument(req.user.id, req.body, ctx(req));
     sendSuccess(res, result, 201);
   },
+
+  async confirmDocumentUpload(req: Request, res: Response): Promise<void> {
+    if (!req.user) throw new UnauthorizedError();
+    const result = await kycService.confirmDocumentUpload(
+      req.user.id,
+      req.params.documentId,
+      req.body,
+      ctx(req),
+    );
+    sendSuccess(res, result);
+  },
 };

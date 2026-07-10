@@ -15,8 +15,11 @@ import type {
   MasterCryptoDepositPage,
   SubmitCryptoDepositInput,
   DepositAddress,
+  FederatedLoginOutcome,
+  FederatedProvider,
   InrDeposit,
   InrDepositIntent,
+  InrDepositInstructions,
   KycDocument,
   KycDocumentUpload,
   KycProfile,
@@ -136,6 +139,36 @@ export const userApi = {
   /** Redeem the one-time OAuth code (from /auth/callback) for a normal session. */
   oauthExchange: (body: { code: string }) =>
     apiFetch<LoginData>(USER_API_URL, '/auth/oauth/exchange', { method: 'POST', body }),
+
+  // ---- Federated identity: Google/Apple via Firebase (Stage 12) ----
+  federatedLogin: (body: { idToken: string; provider: FederatedProvider; location?: LoginLocation }) =>
+    apiFetch<FederatedLoginOutcome>(USER_API_URL, '/auth/federated/firebase', {
+      method: 'POST',
+      body,
+    }),
+
+  federatedRequestLinkOtp: (challengeToken: string) =>
+    apiFetch<{ sent: true }>(USER_API_URL, '/auth/federated/link/request-otp', {
+      method: 'POST',
+      body: { challengeToken },
+    }),
+
+  federatedConfirmLink: (challengeToken: string, otp: string, location?: LoginLocation) =>
+    apiFetch<FederatedLoginOutcome>(USER_API_URL, '/auth/federated/link/confirm', {
+      method: 'POST',
+      body: { challengeToken, otp, ...(location ? { location } : {}) },
+    }),
+
+  federatedCompleteRegistration: (body: {
+    challengeToken: string;
+    phone: string;
+    acceptedPolicies: { termsOfService: true; privacyPolicy: true; riskDisclosure: true };
+    location?: LoginLocation;
+  }) =>
+    apiFetch<FederatedLoginOutcome>(USER_API_URL, '/auth/federated/register/complete', {
+      method: 'POST',
+      body,
+    }),
 
   forgotPassword: (body: { email: string }) =>
     apiFetch<void>(USER_API_URL, '/auth/forgot-password', { method: 'POST', body }),
@@ -324,6 +357,12 @@ export const userApi = {
     }),
 
   listInrDeposits: () => authed<Page<InrDeposit>>('/inr/deposits'),
+
+  // ---- INR deposit manual-transfer instructions (Stage 10A) ----
+  // Backend source of truth for the bank/UPI transfer destination — replaces
+  // the values that used to be hardcoded directly in this file's deposit page.
+  inrDepositInstructions: () =>
+    authed<InrDepositInstructions>('/inr/deposits/instructions'),
 
   // ---- INR withdrawal (Phase 16: manual payout, admin-processed) ----
   // Requires a step-up token (X-Step-Up-Token) obtained from stepUp(); the

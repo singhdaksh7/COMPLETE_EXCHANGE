@@ -24,14 +24,16 @@ interface DashData {
     time: string;
     rawTime: number;
   }[];
+  unreadNotifications: number;
 }
 
 async function loadDashboard(): Promise<DashData> {
-  const [overview, marketsRes, depositsRes, withdrawalsRes] = await Promise.all([
+  const [overview, marketsRes, depositsRes, withdrawalsRes, notificationsRes] = await Promise.all([
     userApi.walletOverview(),
     userApi.listMarkets(),
     userApi.listInrDeposits().catch(() => ({ data: { items: [] } })),
     userApi.listInrWithdrawals().catch(() => ({ data: { items: [] } })),
+    userApi.listNotifications().catch(() => ({ data: { unread: 0 } })),
   ]);
 
   const markets = marketsRes.data.items.slice(0, 4);
@@ -73,6 +75,7 @@ async function loadDashboard(): Promise<DashData> {
     balances: overview.data.balances,
     snapshot: markets.map((market, i) => ({ market, ticker: tickers[i] })),
     transactions: txList.slice(0, 3),
+    unreadNotifications: notificationsRes.data.unread ?? 0,
   };
 }
 
@@ -102,6 +105,23 @@ function MiniBalanceCard({ asset, label, value, sub }: { asset: string; label: s
       <Text style={styles.miniCardValue} numberOfLines={1}>{value}</Text>
       {sub ? <Text style={styles.miniCardSub}>{sub}</Text> : null}
     </View>
+  );
+}
+
+function ConsentBanner() {
+  const router = useRouter();
+  const { consentStatus } = useAuth();
+  if (!consentStatus || consentStatus.upToDate || consentStatus.missing.length === 0) return null;
+  const labels = consentStatus.missing.map((m) => m.replace(/_/g, ' ')).join(', ');
+  return (
+    <Pressable style={styles.consentBanner} onPress={() => router.push('/legal')}>
+      <Ionicons name="alert-circle-outline" size={16} color={colors.brand} />
+      <Text style={styles.consentBannerText}>
+        Please review and accept the current <Text style={{ fontWeight: '800' }}>{labels}</Text> to keep
+        deposits, withdrawals, trading and KYC available.
+      </Text>
+      <Ionicons name="chevron-forward" size={14} color={colors.brand} />
+    </Pressable>
   );
 }
 
@@ -136,14 +156,16 @@ export default function HomeScreen() {
       <View style={styles.header}>
         <BrandMark size="sm" subtitle="India" />
         <View style={styles.headerRight}>
-          {/* Notification bell with indicator badge */}
+          {/* Notification bell with real unread-count indicator */}
           <Pressable style={styles.bellBtn} onPress={() => router.push('/notifications')} hitSlop={10}>
             <Ionicons name="notifications" size={22} color={colors.ink} />
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>8</Text>
-            </View>
+            {(data?.unreadNotifications ?? 0) > 0 ? (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{Math.min(data!.unreadNotifications, 9)}{data!.unreadNotifications > 9 ? '+' : ''}</Text>
+              </View>
+            ) : null}
           </Pressable>
-          
+
           <Pressable onPress={() => router.push('/(tabs)/profile')} hitSlop={10}>
             <View style={styles.avatar}>
               <Ionicons name="person-sharp" size={16} color={colors.brand} />
@@ -151,6 +173,8 @@ export default function HomeScreen() {
           </Pressable>
         </View>
       </View>
+
+      <ConsentBanner />
 
       {/* KYC / Status Badges Row */}
       <View style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'center' }}>
@@ -356,8 +380,20 @@ const styles = StyleSheet.create({
   avatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.panel2, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.glassBorderGold },
   
   bellBtn: { position: 'relative', width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
-  badge: { position: 'absolute', top: 0, right: 0, width: 14, height: 14, borderRadius: 7, backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center' },
+  badge: { position: 'absolute', top: 0, right: 0, minWidth: 14, height: 14, borderRadius: 7, paddingHorizontal: 2, backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center' },
   badgeText: { color: '#1A1206', fontSize: 8, fontWeight: '800' },
+
+  consentBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(245,194,66,0.3)',
+    backgroundColor: 'rgba(245,194,66,0.08)',
+    borderRadius: radius.md,
+    padding: spacing.sm,
+  },
+  consentBannerText: { flex: 1, color: colors.brand, fontSize: 11, lineHeight: 15 },
 
   heroSkeleton: { height: 160 },
   

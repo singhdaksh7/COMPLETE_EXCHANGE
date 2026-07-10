@@ -8,7 +8,7 @@ import { useMutation } from '@tanstack/react-query';
 import { userApi } from '@/lib/user-api';
 import { tokenStore } from '@/lib/auth';
 import { errorMessage } from '@/lib/api';
-import { USER_API_URL, REQUIRE_LOGIN_LOCATION } from '@/lib/config';
+import { REQUIRE_LOGIN_LOCATION } from '@/lib/config';
 import {
   getCurrentLocation,
   isGeolocationSupported,
@@ -16,9 +16,10 @@ import {
   type GeoStatus,
 } from '@/lib/geolocation';
 import { OtpAuthForm } from '@/components/otp-auth-form';
-import { isTwoFactorChallenge } from '@/lib/types';
+import { FederatedGoogleButton } from '@/components/federated-google-button';
+import { isTwoFactorChallenge, type LoginResult } from '@/lib/types';
 
-/** Map a backend OAuth error code (?error=) to a safe, user-facing message. */
+/** Map a legacy backend OAuth error code (?error=) to a safe, user-facing message. */
 function oauthErrorMessage(code: string | null): string | null {
   if (!code) return null;
   if (code === 'oauth_email_unverified') {
@@ -162,9 +163,12 @@ function LoginPageContent() {
                     : null
             }
             error={m.isError ? errorMessage(m.error) : oauthError}
-            onGoogle={() => {
-              window.location.href = `${USER_API_URL}/auth/google/start`;
+            onFederatedAuthenticated={(result) => {
+              const { accessToken, refreshToken } = result.tokens;
+              tokenStore.setUser(accessToken, refreshToken);
+              router.replace('/dashboard');
             }}
+            onFederatedTwoFactorChallenge={(token) => setChallengeToken(token)}
             onEmail={setEmail}
             onPassword={setPassword}
             onToggleShow={() => setShowPassword((s) => !s)}
@@ -356,7 +360,8 @@ function LoginCard(props: {
   isPending: boolean;
   notice: string | null;
   error: string | null;
-  onGoogle: () => void;
+  onFederatedAuthenticated: (result: Extract<LoginResult, { tokens: unknown }>) => void;
+  onFederatedTwoFactorChallenge: (challengeToken: string) => void;
   onEmail: (v: string) => void;
   onPassword: (v: string) => void;
   onToggleShow: () => void;
@@ -509,12 +514,12 @@ function LoginCard(props: {
             <span className="h-px flex-1 bg-white/10" />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <SocialButton icon={<GoogleIcon className="h-5 w-5" />} onClick={props.onGoogle}>
-              Google
-            </SocialButton>
-            <SocialButton icon={<AppleIcon className="h-5 w-5" />}>Apple</SocialButton>
-          </div>
+          {/* Apple Sign-In is iOS-only for Stage 12 (see mobile readiness);
+              not shown on web. */}
+          <FederatedGoogleButton
+            onAuthenticated={props.onFederatedAuthenticated}
+            onTwoFactorChallenge={props.onFederatedTwoFactorChallenge}
+          />
 
               <button
                 type="button"
@@ -589,27 +594,6 @@ function FormField({
       </label>
       {children}
     </div>
-  );
-}
-
-function SocialButton({
-  icon,
-  children,
-  onClick,
-}: {
-  icon: ReactNode;
-  children: ReactNode;
-  onClick?: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex items-center justify-center gap-2.5 rounded-lg border border-white/[0.12] bg-white/[0.03] px-4 py-2.5 text-sm font-medium text-white/80 transition hover:border-gold/40 hover:bg-white/[0.06]"
-    >
-      {icon}
-      {children}
-    </button>
   );
 }
 
@@ -758,37 +742,6 @@ function HeadsetIcon(p: SVGProps<SVGSVGElement>) {
       <rect x="2.5" y="13" width="4" height="6" rx="1.5" />
       <rect x="17.5" y="13" width="4" height="6" rx="1.5" />
       <path d="M20 19a4 4 0 0 1-4 3h-2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function GoogleIcon(p: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" {...p}>
-      <path
-        fill="#FFC107"
-        d="M21.8 10.25H21V10.2h-9v3.6h5.05A5.4 5.4 0 1 1 12 6.6c1.38 0 2.63.52 3.58 1.37l2.55-2.55A9 9 0 1 0 21 12c0-.6-.06-1.2-.2-1.75Z"
-      />
-      <path
-        fill="#FF3D00"
-        d="M3.04 7.84 6 10.01A5.4 5.4 0 0 1 12 6.6c1.38 0 2.63.52 3.58 1.37l2.55-2.55A9 9 0 0 0 3.04 7.84Z"
-      />
-      <path
-        fill="#4CAF50"
-        d="M12 21c2.32 0 4.43-.89 6.03-2.33l-2.78-2.36A5.36 5.36 0 0 1 6.96 13.6l-2.95 2.27A9 9 0 0 0 12 21Z"
-      />
-      <path
-        fill="#1976D2"
-        d="M21.8 10.25H21V10.2h-9v3.6h5.05a5.43 5.43 0 0 1-1.84 2.5l2.78 2.36C19.66 17.74 21 15.1 21 12c0-.6-.06-1.2-.2-1.75Z"
-      />
-    </svg>
-  );
-}
-
-function AppleIcon(p: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" {...p}>
-      <path d="M16.4 12.7c0-2.4 2-3.6 2-3.6a4.3 4.3 0 0 0-3.4-1.9c-1.4-.1-2.8.9-3.5.9s-1.8-.8-3-.8a4.6 4.6 0 0 0-3.9 2.4c-1.6 2.9-.4 7.2 1.2 9.5.8 1.2 1.7 2.4 3 2.4 1.2-.1 1.6-.8 3-.8s1.8.8 3 .7c1.3 0 2.1-1.1 2.9-2.3a10 10 0 0 0 1.3-2.7s-2.5-1-2.6-3.9ZM14 6.3a4 4 0 0 0 1-3 4.3 4.3 0 0 0-2.8 1.5 3.8 3.8 0 0 0-1 2.9c1.1.1 2.2-.6 2.8-1.4Z" />
     </svg>
   );
 }

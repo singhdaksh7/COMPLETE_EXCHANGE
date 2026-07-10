@@ -38,7 +38,7 @@ Priority: **P0** production/FIU blocker · **P1** high · **P2** medium · **P3*
 | RBAC | Per-admin IP allowlist (application layer) | ✅ | `admin-access-runbook.md` | code | edge/network allowlist not enforced | P1 |
 | Admin audit | Admin lifecycle (soft-deactivate only) + activity timeline | ✅ | Stage 7A; `admin-access-runbook.md` | manual | — | — |
 | User audit | Security events + audit log (append-only) | ✅ | `evidence-pack/README.md` | doc | hash-chain not populated | P2 |
-| KYC upload security | MIME + size validation; PII encrypted at rest | ✅ | `kyc-aml-technical-workflow.md`, `secret-inventory.md` | code | real AV scan + object storage | P0 (FIU) |
+| KYC upload security | MIME + size validation; PII encrypted at rest; private-storage code path (presigned PUT/GET, opaque keys, SSE) CODE READY / INFRA REQUIRED (Stage 10B) | ✅ | `kyc-aml-technical-workflow.md`, `secret-inventory.md`, `../compliance/kyc-policy.md` §4 | code | real AV scan; S3/KMS/IAM not yet provisioned | P0 (FIU) |
 | INR deposit approval | Admin approval / UTR capture on deposit flow | ✅ | `../compliance/kyc-aml-technical-workflow.md` | manual | — | — |
 | INR withdrawal step-up | Step-up gate before INR withdrawal | ✅ | `user-2fa-step-up-auth.md` | manual | — | — |
 | Notifications / alerts | Real alerts only (no fake alert/security data) | ✅ | `user-session-security.md`; Stage 8 scan | scan | — | — |

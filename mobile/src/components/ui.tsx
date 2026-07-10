@@ -235,6 +235,7 @@ const STATUS_COLOR: Record<string, string> = {
   PENDING: colors.warn, SUBMITTED: colors.warn, UNDER_REVIEW: colors.warn, CONFIRMING: colors.warn,
   PARTIALLY_FILLED: colors.warn, REVIEW_REQUIRED: colors.warn, NEEDS_MORE_INFO: colors.warn,
   PENDING_APPROVAL: colors.warn, REQUESTED: colors.warn, DETECTED: colors.warn,
+  IN_REVIEW: colors.warn, MANUAL_REVIEW: colors.warn,
   REJECTED: colors.down, FAILED: colors.down, CANCELLED: colors.down, BLOCKED: colors.down,
   EXPIRED: colors.down, PROHIBITED: colors.down,
 };

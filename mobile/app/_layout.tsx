@@ -5,6 +5,8 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from '@/store/auth';
 import SplashScreen from '@/screens/SplashScreen';
+import ConsentGateScreen from '@/screens/ConsentGateScreen';
+import ConsentUnavailableScreen from '@/screens/ConsentUnavailableScreen';
 import { colors } from '@/theme';
 
 const stackScreenOptions = {
@@ -19,7 +21,7 @@ const stackScreenOptions = {
  * and authenticated users out of it. Everything outside (auth) requires a session.
  */
 function RootNavigator() {
-  const { bootstrapping, isAuthenticated } = useAuth();
+  const { bootstrapping, isAuthenticated, consentStatus, consentCheckFailed } = useAuth();
   const segments = useSegments();
   const router = useRouter();
 
@@ -41,6 +43,33 @@ function RootNavigator() {
     );
   }
 
+  // Consent safe mode (Stage 10B): a failed /legal/consent-status fetch
+  // (network/timeout/5xx) must NEVER be treated as "consent confirmed" — this
+  // used to fail OPEN into the normal app. Now it shows a distinct limited
+  // screen (Retry / view legal docs / logout) instead of either the normal
+  // app or the accept-policies gate below, which only renders on a CONFIRMED
+  // backend response saying policies are missing.
+  if (isAuthenticated && consentCheckFailed) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.bg }}>
+        <ConsentUnavailableScreen />
+      </View>
+    );
+  }
+
+  // Proactive consent gate (Stage 10A): block the normal app for an
+  // authenticated user until required policies (Terms/Privacy/Risk) are
+  // accepted, per backend /legal/consent-status. The backend's own
+  // requireLegalConsent middleware remains the real enforcement layer on
+  // every gated financial action regardless of this client-side gate.
+  if (isAuthenticated && consentStatus?.enforced && !consentStatus.upToDate) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.bg }}>
+        <ConsentGateScreen />
+      </View>
+    );
+  }
+
   return (
     <Stack screenOptions={stackScreenOptions}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
@@ -54,6 +83,8 @@ function RootNavigator() {
       <Stack.Screen name="kyc" options={{ title: 'KYC Status' }} />
       <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
       <Stack.Screen name="security" options={{ title: 'Security' }} />
+      <Stack.Screen name="legal" options={{ title: 'Legal & Policies' }} />
+      <Stack.Screen name="support" options={{ title: 'Support' }} />
     </Stack>
   );
 }

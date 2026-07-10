@@ -10,6 +10,8 @@ import { adminApiRouter } from '../../src/routes/admin';
 import { prisma } from '../../src/lib/prisma';
 import { connectRedis, disconnectRedis } from '../../src/lib/redis';
 import { signAccessToken } from '../../src/lib/jwt';
+import { legalService } from '../../src/modules/legal/legal.service';
+import { REQUIRED_SIGNUP_POLICIES } from '../../src/modules/legal/legal.consent';
 
 /**
  * End-to-end KYC flow against REAL Postgres + Redis. Skipped automatically when
@@ -70,6 +72,15 @@ d('kyc module (integration)', () => {
       },
     });
     userId = user.id;
+
+    // This fixture creates the user directly (bypassing /auth/register), so it
+    // must also simulate the signup-time consent capture that real registration
+    // performs (auth.service.ts) — otherwise the Stage 9A requireLegalConsent
+    // guard correctly blocks KYC submission with 403 CONSENT_REQUIRED.
+    for (const documentType of REQUIRED_SIGNUP_POLICIES) {
+      await legalService.accept(userId, { documentType }, {});
+    }
+
     sessionId = randomUUID();
     await prisma.authSession.create({
       data: {

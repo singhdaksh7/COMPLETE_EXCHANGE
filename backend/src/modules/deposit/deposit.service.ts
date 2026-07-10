@@ -11,6 +11,7 @@ import {
 import { recordAudit } from '../../lib/audit';
 import { ledgerService } from '../ledger/ledger.service';
 import { notificationService } from '../notification/notification.service';
+import { featureControlsService } from '../feature-controls/feature-controls.service';
 import { depositRepository } from './deposit.repository';
 import type { AdminDepositFilter } from './deposit.repository';
 import { getRazorpayProvider } from './providers';
@@ -28,6 +29,7 @@ import type {
   DepositContext,
   InrDepositDto,
   InrDepositIntentDto,
+  InrDepositInstructionsDto,
   ManualDecisionInput,
   VerifyPaymentInput,
   WebhookResult,
@@ -152,6 +154,37 @@ export const depositService = {
       keyId: provider.keyId,
       amount: deposit.amount.toFixed(2),
       status: deposit.status,
+    };
+  },
+
+  // ------------------------------------------------------------------
+  // Manual INR deposit transfer instructions (Stage 10A). Single backend
+  // source of truth for both web and mobile — no bank/UPI details are ever
+  // hardcoded client-side. `enabled` reflects EFFECTIVE access (global AND
+  // per-user canDepositInr); when false, no transfer details are returned.
+  // ------------------------------------------------------------------
+  async getInstructions(userId: string): Promise<InrDepositInstructionsDto> {
+    const access = await featureControlsService.getEffectiveAccessControls(userId);
+    if (!access.canDepositInr) return { enabled: false, reason: 'FEATURE_DISABLED' };
+
+    const d = config.inrDepositInstructions;
+    // Stage 10B: deposits may be globally enabled while the transfer
+    // destination itself has not been operator-confirmed as real/current.
+    // Never return usable account/UPI values in that state.
+    if (!d.verified) return { enabled: false, reason: 'UNAVAILABLE' };
+
+    return {
+      enabled: true,
+      method: 'BANK_TRANSFER',
+      bankName: d.bankName,
+      beneficiaryName: d.beneficiaryName,
+      accountNumber: d.accountNumber,
+      ifsc: d.ifsc,
+      accountType: d.accountType,
+      upiId: d.upiId,
+      referenceRequired: true,
+      instructions:
+        'Transfer using UPI, IMPS or NEFT with the details below, then submit the amount and UTR/reference number for verification. Your balance is credited once an admin verifies the payment — transfers are not credited automatically.',
     };
   },
 

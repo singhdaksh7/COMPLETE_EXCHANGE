@@ -63,4 +63,10 @@ export const adminKycController = {
     const result = await kycService.complianceSummary(ctx(req));
     sendSuccess(res, result);
   },
+
+  async documentReadUrl(req: Request, res: Response): Promise<void> {
+    if (!req.admin) throw new UnauthorizedError();
+    const result = await kycService.getDocumentReadUrl(req.params.documentId, ctx(req));
+    sendSuccess(res, result);
+  },
 };

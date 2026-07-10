@@ -5,7 +5,12 @@ import { authenticate } from '../../middleware/authenticate';
 import { authRateLimiter } from '../../middleware/rate-limit';
 import { requireLegalConsent } from '../legal/legal.consent';
 import { kycController } from './kyc.controller';
-import { kycDocumentSchema, kycSubmitSchema } from './kyc.validators';
+import {
+  documentIdParamSchema,
+  kycConfirmUploadSchema,
+  kycDocumentSchema,
+  kycSubmitSchema,
+} from './kyc.validators';
 
 /**
  * User-facing KYC routes.
@@ -48,4 +53,15 @@ kycRouter.post(
   authRateLimiter,
   validate({ body: kycDocumentSchema }),
   asyncHandler(kycController.submitDocument),
+);
+
+// Stage 10B — client-reported outcome of the presigned PUT (UPLOADED/FAILED).
+// Scoped to the caller's own document; never trusted alone as proof of upload,
+// only as a UX signal gating whether the document needs re-upload.
+kycRouter.post(
+  '/documents/:documentId/confirm-upload',
+  authenticate,
+  authRateLimiter,
+  validate({ params: documentIdParamSchema, body: kycConfirmUploadSchema }),
+  asyncHandler(kycController.confirmDocumentUpload),
 );

@@ -47,7 +47,6 @@ export default function ProfileScreen() {
 
   const [copied, setCopied] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [showSupportModal, setShowSupportModal] = useState(false);
 
   const userInitials = useMemo(() => {
     if (!user?.email) return 'EX';
@@ -234,9 +233,17 @@ export default function ProfileScreen() {
           
           <View style={styles.separator} />
           
-          <Pressable style={styles.actionItem} onPress={() => setShowSupportModal(true)}>
+          <Pressable style={styles.actionItem} onPress={() => router.push('/support')}>
             <Ionicons name="chatbubble-ellipses-outline" size={18} color={colors.brand} />
             <Text style={styles.actionLabel}>Support & helpdesk</Text>
+            <Ionicons name="chevron-forward" size={14} color={colors.muted2} />
+          </Pressable>
+
+          <View style={styles.separator} />
+
+          <Pressable style={styles.actionItem} onPress={() => router.push('/legal')}>
+            <Ionicons name="document-text-outline" size={18} color={colors.brand} />
+            <Text style={styles.actionLabel}>Legal & policies</Text>
             <Ionicons name="chevron-forward" size={14} color={colors.muted2} />
           </Pressable>
 
@@ -280,29 +287,6 @@ export default function ProfileScreen() {
               </Text>
               <Pressable style={styles.modalButton} onPress={() => setShowEditModal(false)}>
                 <Text style={styles.modalButtonText}>I Understand</Text>
-              </Pressable>
-            </GlassCard>
-          </View>
-        </Modal>
-
-        {/* Support Tickets Placeholder Modal */}
-        <Modal
-          visible={showSupportModal}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setShowSupportModal(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <GlassCard padded style={styles.modalCard}>
-              <View style={styles.modalHeader}>
-                <Ionicons name="chatbox-ellipses" size={24} color={colors.brand} />
-                <Text style={styles.modalTitle}>Helpdesk Staged Mode</Text>
-              </View>
-              <Text style={styles.modalContent}>
-                EXORA support tickets can be created, updated, and verified through our admin console on the Web dashboard. User support ticket integration on mobile is coming soon.
-              </Text>
-              <Pressable style={styles.modalButton} onPress={() => setShowSupportModal(false)}>
-                <Text style={styles.modalButtonText}>Close</Text>
               </Pressable>
             </GlassCard>
           </View>

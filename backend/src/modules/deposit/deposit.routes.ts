@@ -64,6 +64,17 @@ depositRouter.get(
   asyncHandler(depositController.list),
 );
 
+// Manual transfer destination (Stage 10A). No requireUserFeature gate here —
+// the response itself carries `enabled: false` when INR deposits are
+// disabled (global or per-user) so the client can render an honest
+// unavailable state instead of a hard 403. Registered before the `:id` param
+// route so "instructions" is never captured as a deposit id.
+depositRouter.get(
+  '/instructions',
+  authenticate,
+  asyncHandler(depositController.instructions),
+);
+
 depositRouter.get(
   '/:id',
   authenticate,

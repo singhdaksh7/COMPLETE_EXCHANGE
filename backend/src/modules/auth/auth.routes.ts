@@ -22,6 +22,13 @@ import {
   resendEmailOtpSchema,
   verifyEmailOtpSchema,
 } from './auth.otp.validators';
+import { authFederatedController } from './auth.federated.controller';
+import {
+  federatedLinkConfirmSchema,
+  federatedLinkRequestOtpSchema,
+  federatedLoginSchema,
+  federatedRegisterCompleteSchema,
+} from './auth.federated.validators';
 
 /**
  * Auth routes.
@@ -84,6 +91,40 @@ authRouter.post(
   authRateLimiter,
   validate({ body: oauthExchangeSchema }),
   asyncHandler(authController.oauthExchange),
+);
+
+// ---- Federated identity (Google/Apple via Firebase Authentication, Stage 12) ----
+// Firebase is a verification layer only; EXORA remains authoritative for
+// users/sessions/tokens (see auth.federated.service.ts). Kept ALONGSIDE the
+// legacy /auth/google/* + /auth/oauth/exchange routes above (not replacing
+// them at the route level) — the web client is what's being migrated onto
+// this endpoint; existing linked oauth_accounts rows keep resolving here too.
+authRouter.post(
+  '/federated/firebase',
+  authRateLimiter,
+  validate({ body: federatedLoginSchema }),
+  asyncHandler(authFederatedController.login),
+);
+
+authRouter.post(
+  '/federated/link/request-otp',
+  authRateLimiter,
+  validate({ body: federatedLinkRequestOtpSchema }),
+  asyncHandler(authFederatedController.requestLinkOtp),
+);
+
+authRouter.post(
+  '/federated/link/confirm',
+  authRateLimiter,
+  validate({ body: federatedLinkConfirmSchema }),
+  asyncHandler(authFederatedController.confirmLink),
+);
+
+authRouter.post(
+  '/federated/register/complete',
+  authRateLimiter,
+  validate({ body: federatedRegisterCompleteSchema }),
+  asyncHandler(authFederatedController.completeRegistration),
 );
 
 authRouter.post(

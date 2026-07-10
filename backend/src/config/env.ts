@@ -129,8 +129,9 @@ export const envSchema = z
   // ---- EMAIL / MAILER ----
   // Provider selection. 'log' is a fully-offline stub (dev + tests) that records
   // to an in-memory outbox and logs the dispatch; 'ses' sends real email via AWS
-  // SES (staging/prod). 'ses' requires AWS_REGION (enforced in superRefine).
-  MAIL_PROVIDER: z.enum(['log', 'ses']).default('log'),
+  // SES (staging/prod, requires AWS_REGION); 'resend' sends via the Resend API
+  // (Stage 12, requires RESEND_API_KEY + RESEND_FROM_EMAIL — enforced below).
+  MAIL_PROVIDER: z.enum(['log', 'ses', 'resend']).default('log'),
   // From identity for outbound mail. In 'ses' mode this MUST be an SES-verified
   // identity in AWS_REGION. Accepts "Name <addr@domain>" or a bare address.
   MAIL_FROM: z.string().min(3).default('Exora <no-reply@exora.local>'),
@@ -150,6 +151,21 @@ export const envSchema = z
   // Optional SES configuration set for bounce/complaint tracking.
   SES_CONFIGURATION_SET: optionalNonEmptyString,
 
+  // ---- RESEND (Stage 12) ----
+  // Transactional email via Resend. Required only when MAIL_PROVIDER=resend
+  // (enforced in superRefine). The operator has not provisioned these yet —
+  // left unset, MAIL_PROVIDER stays 'log' and nothing here is read.
+  RESEND_API_KEY: optionalNonEmptyString,
+  // Verified Resend sending identity, e.g. "Exora <no-reply@mail.exorain.com>"
+  // or a bare address. Kept separate from MAIL_FROM so switching to Resend
+  // never silently reuses an SES-only identity that Resend has not verified.
+  RESEND_FROM_EMAIL: optionalNonEmptyString,
+  RESEND_FROM_NAME: z.string().trim().min(1).default('Exora'),
+  // Svix signing secret for the inbound Resend webhook (delivery/bounce
+  // events). Optional: absent = the webhook route verifies nothing and
+  // rejects every event as unverified (never silently "succeeds").
+  RESEND_WEBHOOK_SECRET: optionalNonEmptyString,
+
   // ---- GOOGLE OAUTH ----
   // Off by default. When enabled, CLIENT_ID/SECRET/CALLBACK_URL are required
   // (enforced in superRefine) and the /auth/google/* routes go live; otherwise
@@ -163,6 +179,27 @@ export const envSchema = z
   // Must exactly match an Authorized Redirect URI on the Google OAuth client,
   // e.g. https://api.example.com/api/v1/auth/google/callback
   GOOGLE_CALLBACK_URL: optionalUrl,
+
+  // ---- FEDERATED IDENTITY / FIREBASE (Stage 12) ----
+  // Firebase Authentication is a verification layer only — EXORA remains
+  // authoritative for users/sessions/tokens (see auth.federated.service.ts).
+  // Off by default. Deliberately DOES NOT use the GOOGLE_OAUTH_ENABLED
+  // fail-fast-at-boot pattern: the operator has not provisioned Firebase
+  // credentials yet, and per design this must never crash unrelated app boot.
+  // Enabling the flag without configuring the verifier below is safe — the
+  // federated endpoint returns a clear provider-unavailable response instead
+  // of creating users or issuing sessions (see federated-identity-verifier.ts).
+  FEDERATED_AUTH_ENABLED: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
+  FIREBASE_PROJECT_ID: optionalNonEmptyString,
+  // Firebase Admin service-account credential (three-field form — avoids
+  // shipping a whole escaped JSON blob through .env). All three required
+  // together for the verifier to initialize; partially-set is treated as
+  // "not configured" (never a crash, never a partial/bypassed verifier).
+  FIREBASE_CLIENT_EMAIL: optionalNonEmptyString,
+  FIREBASE_PRIVATE_KEY: optionalNonEmptyString,
 
   // ---- EMAIL OTP (passwordless login/signup, Stage 3A) ----
   // Server secret used to key the HMAC over each OTP code. A DB leak alone is
@@ -215,6 +252,28 @@ export const envSchema = z
     .default('dev-only-kyc-webhook-secret-change-me'),
   // Default KYC tier granted on approval when the reviewer omits an explicit one.
   KYC_DEFAULT_APPROVED_TIER: z.coerce.number().int().min(1).max(5).default(1),
+  // Document object-storage provider. 'mock' (default) is a non-routable stub —
+  // document bytes are never actually persisted. 's3' requires KYC_S3_BUCKET +
+  // KYC_S3_REGION/AWS_REGION (enforced below) and fails loudly if absent rather
+  // than silently degrading to the mock host in a real environment.
+  KYC_STORAGE_PROVIDER: z.enum(['mock', 's3']).default('mock'),
+  KYC_S3_BUCKET: optionalNonEmptyString,
+  KYC_S3_REGION: optionalNonEmptyString,
+  // Customer-managed KMS key id/ARN for SSE-KMS. Optional — falls back to
+  // SSE-S3 (AES256) when absent, but a CMK is required before this is treated
+  // as production-ready (see docs/security/kms-readiness.md).
+  KYC_S3_KMS_KEY_ID: optionalNonEmptyString,
+
+  // Operator-controlled attestation that the configured INR deposit transfer
+  // instructions (bank/UPI details, below) have been confirmed as the real,
+  // current collection destination. Defaults to FALSE — must never be set
+  // true automatically by code; only a human who has verified the banking
+  // details should flip this. While false, the instructions endpoint returns
+  // a safe "temporarily unavailable" state instead of the account/UPI values.
+  INR_DEPOSIT_INSTRUCTIONS_VERIFIED: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
 
   // ---- COMPLIANCE / FIU-PMLA (Stage 5.0) ----
   // Liveness provider selection. 'mock' is a fully-offline deterministic stub
@@ -316,6 +375,21 @@ export const envSchema = z
     .string()
     .regex(/^\d+(\.\d{1,2})?$/)
     .default('1000000.00'),
+  // Manual INR deposit transfer destination (Stage 10A). Moved out of the
+  // frontend source (previously hardcoded client-side) into config so web and
+  // mobile both read the same backend-served source of truth via
+  // GET /inr/deposits/instructions. These are the staging demo bank/UPI
+  // details already in use for the manual-transfer flow — not secrets.
+  INR_DEPOSIT_BANK_NAME: z.string().trim().min(1).default('HDFC Bank'),
+  INR_DEPOSIT_BENEFICIARY_NAME: z
+    .string()
+    .trim()
+    .min(1)
+    .default('Exora India Private Limited'),
+  INR_DEPOSIT_ACCOUNT_NUMBER: z.string().trim().min(1).default('50200084192837'),
+  INR_DEPOSIT_IFSC: z.string().trim().min(1).default('HDFC0000240'),
+  INR_DEPOSIT_ACCOUNT_TYPE: z.string().trim().min(1).default('Current Account'),
+  INR_DEPOSIT_UPI_ID: z.string().trim().min(1).default('exora.india@icici'),
   // Manual INR deposits at/above this amount require dual approval
   // (maker-checker): a first admin approves, then a DIFFERENT second admin
   // credits. Below it, a single approval credits as before.
@@ -667,6 +741,33 @@ export const envSchema = z
         path: ['AWS_REGION'],
         message: 'AWS_REGION is required when MAIL_PROVIDER=ses',
       });
+    }
+    if (val.MAIL_PROVIDER === 'resend') {
+      for (const key of ['RESEND_API_KEY', 'RESEND_FROM_EMAIL'] as const) {
+        if (!val[key]) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message: `${key} is required when MAIL_PROVIDER=resend`,
+          });
+        }
+      }
+    }
+    if (val.KYC_STORAGE_PROVIDER === 's3') {
+      if (!val.KYC_S3_BUCKET) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['KYC_S3_BUCKET'],
+          message: 'KYC_S3_BUCKET is required when KYC_STORAGE_PROVIDER=s3',
+        });
+      }
+      if (!val.KYC_S3_REGION && !val.AWS_REGION) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['KYC_S3_REGION'],
+          message: 'KYC_S3_REGION (or AWS_REGION) is required when KYC_STORAGE_PROVIDER=s3',
+        });
+      }
     }
     // Production-safety: refuse to boot with unsafe staging/demo toggles in
     // production unless each is explicitly acknowledged via its ALLOW_* override.

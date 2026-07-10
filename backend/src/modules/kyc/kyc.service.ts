@@ -1,5 +1,4 @@
-import { randomUUID } from 'node:crypto';
-import type { KycDocType, KycProfile, Prisma } from '@prisma/client';
+import type { KycProfile, Prisma } from '@prisma/client';
 import { config } from '../../config';
 import { BadRequestError, ConflictError, NotFoundError } from '../../lib/errors';
 import { recordAudit } from '../../lib/audit';
@@ -8,6 +7,7 @@ import { kycRepository } from './kyc.repository';
 import { notificationService } from '../notification/notification.service';
 import { getKycProvider } from './providers';
 import type { KycProviderResult, KycWebhookInput } from './providers';
+import { getKycStorageProvider } from './storage';
 import {
   assertTransition,
   mapProviderStatusToKyc,
@@ -25,9 +25,11 @@ import {
 import type {
   AdminKycDetail,
   ComplianceSummary,
+  ConfirmDocumentUploadInput,
   KycContext,
   KycDecisionInput,
   KycDocumentDto,
+  KycDocumentReadUrlDto,
   KycDocumentUploadDto,
   KycProfileDto,
   KycQueueResult,
@@ -37,30 +39,6 @@ import type {
   SubmitProfileInput,
 } from './kyc.types';
 import type { KycStatus, RiskLevel, UserStatus } from '@prisma/client';
-
-/**
- * Build a secure, namespaced object-storage key. We persist ONLY this key; the
- * presigned upload URL derived from it is returned to the client and never
- * stored, so a leaked DB row exposes no fetchable document URL.
- */
-function buildStorageKey(userId: string, docType: KycDocType): string {
-  return `kyc/${userId}/${docType.toLowerCase()}/${randomUUID()}`;
-}
-
-/**
- * STUB presigned upload URL. A real implementation returns a short-lived signed
- * PUT URL from object storage (S3/GCS). The host is non-routable so it can never
- * accidentally hit a real bucket.
- */
-function buildStubUploadUrl(
-  storageKey: string,
-  contentType: string,
-  ttlSec: number,
-): string {
-  const expires = Math.floor(Date.now() / 1000) + ttlSec;
-  const params = new URLSearchParams({ contentType, expires: String(expires) });
-  return `https://kyc-storage.mock.local/${storageKey}?${params.toString()}`;
-}
 
 /**
  * Service layer: all KYC business logic and orchestration.
@@ -186,15 +164,25 @@ export const kycService = {
       }
     }
 
-    const storageKey = buildStorageKey(userId, input.docType);
+    // Storage provider owns the object key (opaque, namespaced by userId —
+    // never email/phone/PAN/Aadhaar/name) and the presigned PUT. We persist
+    // only the key; the URL itself is never stored, so a leaked DB row exposes
+    // no fetchable document.
+    const storage = getKycStorageProvider();
+    const target = await storage.createUploadTarget({
+      userId,
+      docType: input.docType,
+      contentType: input.contentType,
+    });
     const doc = await kycRepository.createDocument({
       userId,
       docType: input.docType,
-      storageKey,
+      storageKey: target.storageKey,
       sha256: input.sha256,
     });
 
-    // Register the document with the provider (mock accepts + marks pending).
+    // Register the document with the identity-verification provider (mock
+    // accepts + marks pending) — separate concern from object storage above.
     const profile = await kycRepository.findProfileByUserId(userId);
     if (profile?.providerSessionId) {
       const provider = getKycProvider();
@@ -202,16 +190,10 @@ export const kycService = {
         userId,
         providerSessionId: profile.providerSessionId,
         docType: input.docType,
-        storageKey,
+        storageKey: target.storageKey,
         sha256: input.sha256,
       });
     }
-
-    const uploadUrl = buildStubUploadUrl(
-      storageKey,
-      input.contentType,
-      config.kyc.uploadUrlTtlSec,
-    );
 
     // sha256 + docType are non-sensitive; the storage key is intentionally NOT
     // audited (it is an internal locator).
@@ -224,19 +206,65 @@ export const kycService = {
       ip: ctx.ip,
       userAgent: ctx.userAgent,
       requestId: ctx.requestId,
-      metadata: { docType: input.docType, sha256: input.sha256 },
+      metadata: { docType: input.docType, sha256: input.sha256, storageProvider: storage.name },
     });
 
     return {
       documentId: doc.id,
-      uploadUrl,
-      expiresIn: config.kyc.uploadUrlTtlSec,
+      uploadUrl: target.uploadUrl,
+      requiredMethod: target.requiredMethod,
+      requiredHeaders: target.requiredHeaders,
+      expiresIn: target.expiresIn,
     };
   },
 
   async listDocuments(userId: string): Promise<KycDocumentDto[]> {
     const docs = await kycRepository.listDocumentsByUser(userId);
     return docs.map(toKycDocumentDto);
+  },
+
+  /**
+   * Client-reported outcome of the presigned PUT. Never trusted alone for
+   * anything security-sensitive (a client claiming UPLOADED does not make the
+   * bytes real) — it only gates whether the document is treated as available
+   * for review vs. needing a re-upload. Idempotent: re-confirming the same
+   * terminal outcome is a no-op; flipping FAILED -> UPLOADED (retry after
+   * reselecting) is allowed, but a document already UPLOADED cannot silently
+   * regress without a fresh registration (a new POST /kyc/documents call).
+   */
+  async confirmDocumentUpload(
+    userId: string,
+    documentId: string,
+    input: ConfirmDocumentUploadInput,
+    ctx: KycContext = {},
+  ): Promise<KycDocumentDto> {
+    const doc = await kycRepository.findDocumentForUser(userId, documentId);
+    if (!doc) throw new NotFoundError('KYC document not found');
+    if (doc.uploadStatus === 'UPLOADED' && input.status === 'FAILED') {
+      throw new ConflictError(
+        'Document is already marked uploaded',
+        'KYC_DOCUMENT_ALREADY_UPLOADED',
+      );
+    }
+
+    const updated = await kycRepository.updateDocumentUploadStatus(documentId, input.status);
+
+    await recordAudit({
+      actorType: 'USER',
+      actorId: userId,
+      action:
+        input.status === 'UPLOADED'
+          ? KycAction.DOCUMENT_UPLOAD_CONFIRMED
+          : KycAction.DOCUMENT_UPLOAD_FAILED,
+      entityType: 'kyc_document',
+      entityId: documentId,
+      ip: ctx.ip,
+      userAgent: ctx.userAgent,
+      requestId: ctx.requestId,
+      metadata: { docType: doc.docType },
+    });
+
+    return toKycDocumentDto(updated);
   },
 
   // ------------------------------------------------------------------
@@ -479,6 +507,40 @@ export const kycService = {
       activity,
       timeline: timeline.map(toKycTimelineEntry),
     };
+  },
+
+  // ------------------------------------------------------------------
+  // Admin: short-lived authorized read access to one document. Never a
+  // permanent/public URL — a fresh presigned GET is issued on every call and
+  // expires quickly. Only documents the client has confirmed as UPLOADED are
+  // readable; REGISTERED/FAILED documents have no real bytes to fetch.
+  // ------------------------------------------------------------------
+  async getDocumentReadUrl(
+    documentId: string,
+    ctx: KycContext = {},
+  ): Promise<KycDocumentReadUrlDto> {
+    const doc = await kycRepository.findDocumentById(documentId);
+    if (!doc) throw new NotFoundError('KYC document not found');
+    if (doc.uploadStatus !== 'UPLOADED') {
+      throw new ConflictError(
+        'Document upload was never confirmed successful; there are no bytes to read',
+        'KYC_DOCUMENT_NOT_UPLOADED',
+      );
+    }
+
+    const storage = getKycStorageProvider();
+    const target = await storage.createReadUrl(doc.storageKey);
+
+    await this.auditAdmin(ctx, {
+      action: KycAction.DOCUMENT_READ_URL_ISSUED,
+      targetType: 'kyc_document',
+      targetId: documentId,
+      // storageKey is intentionally NOT audited (internal locator); docType is
+      // non-sensitive and useful for the trail.
+      afterState: { docType: doc.docType, storageProvider: storage.name },
+    });
+
+    return target;
   },
 
   // ------------------------------------------------------------------

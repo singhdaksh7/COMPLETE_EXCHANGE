@@ -38,7 +38,9 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1081.0",
     "@aws-sdk/client-sesv2": "^3.1070.0",
+    "@aws-sdk/s3-request-presigner": "^3.1081.0",
     "@node-rs/argon2": "^2.0.2",
     "@prisma/client": "^5.22.0",
     "compression": "^1.7.5",
@@ -46,6 +48,7 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "express-rate-limit": "^7.4.1",
+    "firebase-admin": "^14.1.0",
     "google-auth-library": "^9.15.1",
     "helmet": "^8.0.0",
     "ioredis": "^5.4.2",
@@ -53,7 +56,9 @@
     "pino": "^9.5.0",
     "pino-http": "^10.3.0",
     "rate-limit-redis": "^4.2.0",
+    "resend": "^6.17.2",
     "socket.io": "^4.8.3",
+    "svix": "^1.96.1",
     "zod": "^3.24.1"
   },
   "devDependencies": {

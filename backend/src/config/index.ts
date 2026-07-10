@@ -82,6 +82,12 @@ export const config = {
     replyTo: env.MAIL_REPLY_TO,
     awsRegion: env.AWS_REGION,
     sesConfigurationSet: env.SES_CONFIGURATION_SET,
+    resend: {
+      apiKey: env.RESEND_API_KEY,
+      fromEmail: env.RESEND_FROM_EMAIL,
+      fromName: env.RESEND_FROM_NAME,
+      webhookSecret: env.RESEND_WEBHOOK_SECRET,
+    },
   },
 
   urls: {
@@ -93,6 +99,19 @@ export const config = {
     clientId: env.GOOGLE_CLIENT_ID,
     clientSecret: env.GOOGLE_CLIENT_SECRET,
     callbackUrl: env.GOOGLE_CALLBACK_URL,
+  },
+
+  // Federated identity (Google/Apple via Firebase Authentication, Stage 12).
+  // Firebase is a verification layer only — see federated-identity-verifier.ts.
+  federatedAuth: {
+    enabled: env.FEDERATED_AUTH_ENABLED,
+  },
+  firebase: {
+    projectId: env.FIREBASE_PROJECT_ID,
+    clientEmail: env.FIREBASE_CLIENT_EMAIL,
+    // Service-account keys in .env commonly escape newlines as literal "\n" —
+    // Firebase Admin requires the real PEM with actual line breaks.
+    privateKey: env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
   },
 
   // Email OTP (passwordless login/signup, Stage 3A).
@@ -111,6 +130,15 @@ export const config = {
     provider: env.KYC_PROVIDER,
     webhookSecret: env.KYC_WEBHOOK_SECRET,
     defaultApprovedTier: env.KYC_DEFAULT_APPROVED_TIER,
+    // Document object storage (Stage 10B). 'mock' = non-routable stub, bytes
+    // never persisted. 's3' = real private bucket; getKycStorageProvider()
+    // throws loudly at call time if bucket/region are absent.
+    storage: {
+      provider: env.KYC_STORAGE_PROVIDER,
+      bucket: env.KYC_S3_BUCKET,
+      region: env.KYC_S3_REGION ?? env.AWS_REGION,
+      kmsKeyId: env.KYC_S3_KMS_KEY_ID,
+    },
   },
 
   compliance: {
@@ -148,6 +176,22 @@ export const config = {
     apiBase: env.RAZORPAY_API_BASE,
     depositMin: env.INR_DEPOSIT_MIN,
     depositMax: env.INR_DEPOSIT_MAX,
+  },
+
+  // Manual INR deposit transfer instructions (Stage 10A) — the single backend
+  // source of truth consumed by both web and mobile via
+  // GET /inr/deposits/instructions. Not secrets; customer-safe transfer info.
+  inrDepositInstructions: {
+    bankName: env.INR_DEPOSIT_BANK_NAME,
+    beneficiaryName: env.INR_DEPOSIT_BENEFICIARY_NAME,
+    accountNumber: env.INR_DEPOSIT_ACCOUNT_NUMBER,
+    ifsc: env.INR_DEPOSIT_IFSC,
+    accountType: env.INR_DEPOSIT_ACCOUNT_TYPE,
+    upiId: env.INR_DEPOSIT_UPI_ID,
+    // Stage 10B: operator attestation gate. FALSE until a human confirms these
+    // are the real, current collection destination — see env.ts comment.
+    // While false, the instructions endpoint withholds the values above.
+    verified: env.INR_DEPOSIT_INSTRUCTIONS_VERIFIED,
   },
 
   inrOps: {

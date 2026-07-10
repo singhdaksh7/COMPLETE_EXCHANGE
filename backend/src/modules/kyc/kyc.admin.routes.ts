@@ -5,6 +5,7 @@ import { adminAuthenticate } from '../../middleware/admin-authenticate';
 import { adminAuthorize } from '../../middleware/admin-authorize';
 import { adminKycController } from './kyc.admin.controller';
 import {
+  documentIdParamSchema,
   kycDecisionSchema,
   kycNoteSchema,
   kycQueueQuerySchema,
@@ -60,4 +61,14 @@ adminKycRouter.post(
   adminAuthorize('kyc.review'),
   validate({ params: userIdParamSchema, body: kycNoteSchema }),
   asyncHandler(adminKycController.note),
+);
+
+// Stage 10B — short-lived authorized read access to one document's bytes.
+// Never a permanent/public URL; a fresh presigned GET is issued per call.
+adminKycRouter.get(
+  '/documents/:documentId/read-url',
+  adminAuthenticate,
+  adminAuthorize('kyc.view'),
+  validate({ params: documentIdParamSchema }),
+  asyncHandler(adminKycController.documentReadUrl),
 );

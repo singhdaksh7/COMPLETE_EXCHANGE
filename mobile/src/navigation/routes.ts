@@ -22,4 +22,7 @@ export const ROUTES = {
   kyc: '/kyc',
   notifications: '/notifications',
   security: '/security',
+  legal: '/legal',
+  support: '/support',
+  supportTicket: (ticketId: string) => `/support?ticket=${encodeURIComponent(ticketId)}` as const,
 } as const;

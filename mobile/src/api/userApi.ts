@@ -1,14 +1,23 @@
 import { apiFetch, authedFetch } from './client';
 import type {
   AcceptedPolicies,
+  ConsentStatus,
   CreateInrWithdrawalInput,
   CreateManualDepositInput,
   CryptoWithdrawal,
   DepositAddress,
+  FederatedLoginOutcome,
+  FederatedProvider,
   InrDeposit,
+  InrDepositInstructions,
   InrWithdrawal,
+  KycDocumentDto,
+  KycDocumentUploadDto,
   KycProfile,
   LedgerEntry,
+  LegalAcceptanceItem,
+  LegalDocument,
+  LegalDocumentType,
   LoginData,
   LoginResult,
   Market,
@@ -21,6 +30,10 @@ import type {
   PlaceOrderInput,
   RegisterData,
   StepUpData,
+  SubmitKycDocumentInput,
+  SubmitKycInput,
+  SupportTicketSummaryPage,
+  SupportTicketThread,
   Ticker,
   Trade,
   TwoFaConfirmData,
@@ -56,14 +69,61 @@ export const userApi = {
     acceptedPolicies: AcceptedPolicies;
   }) => apiFetch<RegisterData>('/auth/register', { method: 'POST', body }),
 
+  // NOTE: `location` is typed `| null` because callers use null to mean "not
+  // captured yet", but the backend's zod schema is `.optional()` (undefined),
+  // not `.nullable()` — an explicit `location: null` in the JSON body fails
+  // validation ("Expected object, received null") before the LOCATION_REQUIRED
+  // business check ever runs. Every call below normalizes null -> undefined so
+  // JSON.stringify omits the key instead of encoding a literal null.
   login: (body: { email: string; password: string; location?: { latitude: number; longitude: number; accuracy: number } | null }) =>
-    apiFetch<LoginResult>('/auth/login', { method: 'POST', body }),
+    apiFetch<LoginResult>('/auth/login', {
+      method: 'POST',
+      body: { ...body, location: body.location ?? undefined },
+    }),
 
   /** Second step of a 2FA-gated login: challenge token + TOTP/backup code. */
   verify2fa: (challengeToken: string, code: string, location?: { latitude: number; longitude: number; accuracy: number } | null) =>
     apiFetch<LoginData>('/auth/2fa/verify', {
       method: 'POST',
-      body: { challengeToken, code, location },
+      body: { challengeToken, code, location: location ?? undefined },
+    }),
+
+  // ---- Federated identity: Google/Apple via Firebase (Stage 12) ----
+  federatedLogin: (body: {
+    idToken: string;
+    provider: FederatedProvider;
+    location?: { latitude: number; longitude: number; accuracy: number } | null;
+  }) =>
+    apiFetch<FederatedLoginOutcome>('/auth/federated/firebase', {
+      method: 'POST',
+      body: { ...body, location: body.location ?? undefined },
+    }),
+
+  federatedRequestLinkOtp: (challengeToken: string) =>
+    apiFetch<{ sent: true }>('/auth/federated/link/request-otp', {
+      method: 'POST',
+      body: { challengeToken },
+    }),
+
+  federatedConfirmLink: (
+    challengeToken: string,
+    otp: string,
+    location?: { latitude: number; longitude: number; accuracy: number } | null,
+  ) =>
+    apiFetch<FederatedLoginOutcome>('/auth/federated/link/confirm', {
+      method: 'POST',
+      body: { challengeToken, otp, location: location ?? undefined },
+    }),
+
+  federatedCompleteRegistration: (body: {
+    challengeToken: string;
+    phone: string;
+    acceptedPolicies: AcceptedPolicies;
+    location?: { latitude: number; longitude: number; accuracy: number } | null;
+  }) =>
+    apiFetch<FederatedLoginOutcome>('/auth/federated/register/complete', {
+      method: 'POST',
+      body: { ...body, location: body.location ?? undefined },
     }),
 
   verifyEmail: (body: { token: string }) =>
@@ -123,6 +183,9 @@ export const userApi = {
       headers: { 'Idempotency-Key': idemKey() },
     }),
   listInrDeposits: () => authedFetch<Page<InrDeposit>>('/inr/deposits'),
+  /** Backend source of truth for the manual-transfer bank/UPI destination (Stage 10A). */
+  inrDepositInstructions: () =>
+    authedFetch<InrDepositInstructions>('/inr/deposits/instructions'),
 
   // ---- INR withdrawal (manual payout: UPI / bank, admin-processed) ----
   // Requires a fresh step-up token (X-Step-Up-Token) from stepUp(); the backend
@@ -183,9 +246,27 @@ export const userApi = {
       `/trades?limit=${limit}${symbol ? `&symbol=${encodeURIComponent(symbol)}` : ''}`,
     ),
 
-  // ---- KYC / compliance (READ-ONLY status for the user) ----
+  // ---- KYC / compliance ----
   getKyc: () => authedFetch<KycProfile>('/kyc'),
   complianceStatus: () => authedFetch<UserCompliance | null>('/kyc/status'),
+  /**
+   * POST /kyc — opens/updates the identity profile. The provider session rides
+   * in the envelope `meta.session` (mirrors backend kycController.submitProfile),
+   * not in `data`, so callers read `res.meta?.session as KycSessionDto | undefined`.
+   */
+  submitKyc: (body: SubmitKycInput) =>
+    authedFetch<KycProfile>('/kyc', { method: 'POST', body }),
+  refreshKyc: () => authedFetch<KycProfile>('/kyc/refresh', { method: 'POST' }),
+  listKycDocuments: () => authedFetch<{ items: KycDocumentDto[] }>('/kyc/documents'),
+  /** POST /kyc/documents — registers document metadata, returns a presigned upload handle. */
+  submitKycDocument: (body: SubmitKycDocumentInput) =>
+    authedFetch<KycDocumentUploadDto>('/kyc/documents', { method: 'POST', body }),
+  /** POST /kyc/documents/:id/confirm-upload — reports the client-observed PUT outcome. */
+  confirmKycDocumentUpload: (documentId: string, status: 'UPLOADED' | 'FAILED') =>
+    authedFetch<KycDocumentDto>(`/kyc/documents/${encodeURIComponent(documentId)}/confirm-upload`, {
+      method: 'POST',
+      body: { status },
+    }),
 
   // ---- notifications ----
   listNotifications: (cursor?: string) =>
@@ -196,4 +277,44 @@ export const userApi = {
     authedFetch<{ read: true }>(`/notifications/${id}/read`, { method: 'POST' }),
   markAllNotificationsRead: () =>
     authedFetch<{ updated: number }>('/notifications/read-all', { method: 'POST' }),
+
+  // ---- legal / policy consent (Stage 9A) ----
+  /** Public — current live versions of every legal document type. */
+  legalCurrent: () => apiFetch<{ items: LegalDocument[] }>('/legal/documents/current'),
+  legalAccept: (documentType: LegalDocumentType) =>
+    authedFetch<LegalAcceptanceItem>('/legal/accept', { method: 'POST', body: { documentType } }),
+  legalMyAcceptances: () => authedFetch<{ items: LegalAcceptanceItem[] }>('/legal/acceptances/me'),
+  /** Outstanding required-policy status for the post-login consent gate. */
+  consentStatus: () => authedFetch<ConsentStatus>('/legal/consent-status'),
+
+  // ---- support tickets (Stage 9A — user's own tickets only) ----
+  supportTickets: (opts: { status?: string; cursor?: string; limit?: number } = {}) => {
+    const params = new URLSearchParams();
+    if (opts.status) params.set('status', opts.status);
+    if (opts.cursor) params.set('cursor', opts.cursor);
+    if (opts.limit) params.set('limit', String(opts.limit));
+    const qs = params.toString();
+    return authedFetch<SupportTicketSummaryPage>(`/support/tickets${qs ? `?${qs}` : ''}`);
+  },
+  supportTicket: (ticketId: string) =>
+    authedFetch<SupportTicketThread>(`/support/tickets/${ticketId}`),
+  supportCreateTicket: (body: {
+    category: string;
+    subject: string;
+    message: string;
+    referenceType?: string;
+    referenceId?: string;
+  }) =>
+    authedFetch<SupportTicketThread>('/support/tickets', {
+      method: 'POST',
+      body,
+      headers: { 'Idempotency-Key': idemKey() },
+    }),
+  supportReply: (ticketId: string, body: string) =>
+    authedFetch<SupportTicketThread>(`/support/tickets/${ticketId}/messages`, {
+      method: 'POST',
+      body: { body },
+    }),
+  supportCloseTicket: (ticketId: string) =>
+    authedFetch<SupportTicketThread>(`/support/tickets/${ticketId}/close`, { method: 'POST' }),
 };

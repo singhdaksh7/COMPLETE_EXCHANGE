@@ -167,6 +167,12 @@ export function actionErrorMessage(err: unknown): string {
     ADDRESS_COOLING_OFF: 'This address is in a cooling-off period.',
     MINIMUM_AMOUNT_NOT_MET: 'Below the minimum amount.',
     AMOUNT_TOO_SMALL: 'Below the minimum amount.',
+    CONSENT_REQUIRED: 'Please accept the current Terms, Privacy Policy and Risk Disclosure in Legal & Policies to continue.',
+    RATE_LIMITED: 'Too many attempts. Please wait a moment before trying again.',
+    DB_REQUEST_ERROR: 'EXORA is temporarily unavailable. Please try again shortly.',
+    DB_VALIDATION_ERROR: 'EXORA is temporarily unavailable. Please try again shortly.',
+    INTERNAL_ERROR: 'EXORA is temporarily unavailable. Please try again shortly.',
+    SERVICE_UNAVAILABLE: 'EXORA is temporarily unavailable. Please try again shortly.',
   };
   return map[err.code] ?? err.message;
 }

@@ -1,12 +1,15 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '@/components/ui';
-import { BrandMark, GoldButton, PremiumInput } from '@/components/premium';
+import { BrandMark, GlassCard, GoldButton, PremiumInput } from '@/components/premium';
+import { FederatedAuthButtons } from '@/components/federated-auth';
 import { useAuth } from '@/store/auth';
 import { actionErrorMessage } from '@/api/client';
+import { userApi } from '@/api/userApi';
 import { colors, font, spacing, radius } from '@/theme';
+import type { LegalDocument, LegalDocumentType } from '@/types/api';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -40,6 +43,74 @@ function ConsentRow({
   );
 }
 
+/**
+ * Pre-auth policy viewer. Registration happens before a session exists, so
+ * this fetches the public `/legal/documents/current` list directly rather
+ * than routing to the authenticated Legal screen. Acceptance itself is still
+ * only ever recorded server-side once the account exists.
+ */
+function PolicyViewerModal({
+  type,
+  onClose,
+}: {
+  type: LegalDocumentType | null;
+  onClose: () => void;
+}) {
+  const [doc, setDoc] = useState<LegalDocument | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!type) {
+      setDoc(null);
+      return;
+    }
+    let active = true;
+    setLoading(true);
+    setErr(null);
+    userApi
+      .legalCurrent()
+      .then((res) => {
+        if (!active) return;
+        setDoc(res.data.items.find((d) => d.type === type) ?? null);
+      })
+      .catch(() => {
+        if (active) setErr('Could not load this document right now.');
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [type]);
+
+  return (
+    <Modal visible={!!type} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <GlassCard padded style={styles.docModalCard}>
+          <View style={styles.modalHeader}>
+            <Ionicons name="document-text-outline" size={22} color={colors.brand} />
+            <Text style={styles.modalTitle}>{doc?.title ?? 'Loading…'}</Text>
+          </View>
+          <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
+            {loading ? (
+              <Text style={styles.modalContent}>Loading…</Text>
+            ) : err ? (
+              <Text style={[styles.modalContent, { color: colors.down }]}>{err}</Text>
+            ) : (
+              <Text style={styles.modalContent}>{doc?.content}</Text>
+            )}
+          </ScrollView>
+          <Pressable style={styles.modalButton} onPress={onClose}>
+            <Text style={styles.modalButtonText}>Close</Text>
+          </Pressable>
+        </GlassCard>
+      </View>
+    </Modal>
+  );
+}
+
 export default function RegisterScreen() {
   const { register } = useAuth();
   const router = useRouter();
@@ -57,6 +128,7 @@ export default function RegisterScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [viewingPolicy, setViewingPolicy] = useState<LegalDocumentType | null>(null);
 
   const emailValid = EMAIL_RE.test(email.trim());
   const passOk = password.length >= 8;
@@ -181,17 +253,24 @@ export default function RegisterScreen() {
         <View style={styles.consentGroup}>
           <ConsentRow checked={agreeTerms} onToggle={() => setAgreeTerms((v) => !v)}>
             I have read and accept the{' '}
-            <Text style={styles.consentLink}>Terms of Service</Text>
+            <Text style={styles.consentLink} onPress={() => setViewingPolicy('TERMS_OF_SERVICE')}>
+              Terms of Service
+            </Text>
           </ConsentRow>
           <ConsentRow checked={agreePrivacy} onToggle={() => setAgreePrivacy((v) => !v)}>
             I have read and accept the{' '}
-            <Text style={styles.consentLink}>Privacy Policy</Text>
+            <Text style={styles.consentLink} onPress={() => setViewingPolicy('PRIVACY_POLICY')}>
+              Privacy Policy
+            </Text>
           </ConsentRow>
           <ConsentRow checked={agreeRisk} onToggle={() => setAgreeRisk((v) => !v)}>
             I acknowledge the{' '}
-            <Text style={styles.consentLink}>Risk Disclosure</Text>
+            <Text style={styles.consentLink} onPress={() => setViewingPolicy('RISK_DISCLOSURE')}>
+              Risk Disclosure
+            </Text>
           </ConsentRow>
         </View>
+        <PolicyViewerModal type={viewingPolicy} onClose={() => setViewingPolicy(null)} />
 
         {error ? <Text style={styles.err}>{error}</Text> : null}
 
@@ -204,6 +283,14 @@ export default function RegisterScreen() {
           <Text style={styles.dividerText}>OR</Text>
           <View style={styles.hairline} />
         </View>
+
+        <FederatedAuthButtons
+          onAuthenticated={() => router.replace('/(tabs)')}
+          // This screen has no 2FA-entry UI; a Google/Apple identity linked to
+          // an existing 2FA-enabled account hands off to the login screen,
+          // which has the full challenge flow.
+          onTwoFactorChallenge={() => router.replace('/(auth)/login')}
+        />
       </View>
 
       {/* Footer login row */}
@@ -322,4 +409,12 @@ const styles = StyleSheet.create({
   },
   trustLabel: { color: colors.ink, fontSize: font.xs, fontWeight: '700', textAlign: 'center' },
   trustDesc: { color: colors.muted2, fontSize: 9, fontWeight: '500', textAlign: 'center', lineHeight: 12, marginTop: 2 },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
+  docModalCard: { width: '100%', maxWidth: 340, gap: spacing.md, borderWidth: 1, borderColor: colors.glassBorderGold },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  modalTitle: { color: '#fff', fontSize: font.md, fontWeight: '800', flex: 1 },
+  modalContent: { color: colors.muted, fontSize: font.sm, lineHeight: 20 },
+  modalButton: { backgroundColor: colors.brand, borderRadius: radius.md, height: 40, alignItems: 'center', justifyContent: 'center' },
+  modalButtonText: { color: colors.bg, fontSize: font.sm, fontWeight: '800' },
 });

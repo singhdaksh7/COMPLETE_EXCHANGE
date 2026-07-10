@@ -70,6 +70,17 @@ export const AuditAction = {
   // Admin-initiated user 2FA management.
   ADMIN_USER_2FA_RESET: 'admin.user_2fa_reset',
   ADMIN_USER_2FA_STATUS_VIEWED: 'admin.user_2fa_status_viewed',
+
+  // Transactional email delivery telemetry (Stage 12 — Resend webhook).
+  EMAIL_DELIVERY_EVENT: 'email.delivery_event',
+
+  // Federated identity (Google/Apple via Firebase Authentication, Stage 12).
+  FEDERATED_LOGIN_SUCCEEDED: 'federated.login_succeeded',
+  FEDERATED_LOGIN_FAILED: 'federated.login_failed',
+  FEDERATED_IDENTITY_LINK_REQUIRED: 'federated.identity_link_required',
+  FEDERATED_IDENTITY_LINKED: 'federated.identity_linked',
+  FEDERATED_REGISTRATION_STARTED: 'federated.registration_started',
+  FEDERATED_USER_REGISTERED: 'federated.user_registered',
 } as const;
 
 export async function recordAudit(input: AuditInput): Promise<void> {

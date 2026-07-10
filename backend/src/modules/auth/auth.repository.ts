@@ -1,4 +1,10 @@
-import type { Prisma, User, AuthSession, LoginAttempt } from '@prisma/client';
+import type {
+  Prisma,
+  User,
+  AuthSession,
+  LoginAttempt,
+  FederatedIdentityProvider,
+} from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 
 /**
@@ -69,6 +75,70 @@ export const authRepository = {
             provider: data.provider,
             providerAccountId: data.providerAccountId,
             email: data.email,
+          },
+        },
+      },
+    });
+  },
+
+  // ------------------------------------------------------------------
+  // Federated identity (Google/Apple via Firebase Authentication, Stage 12)
+  // ------------------------------------------------------------------
+  /** Find a linked federated identity (with its owning user), or null. */
+  findFederatedIdentityWithUser(provider: FederatedIdentityProvider, providerSubject: string) {
+    return prisma.userFederatedIdentity.findUnique({
+      where: { provider_providerSubject: { provider, providerSubject } },
+      include: { user: true },
+    });
+  },
+
+  /** Link a federated identity to an existing user. */
+  linkFederatedIdentity(data: {
+    userId: string;
+    provider: FederatedIdentityProvider;
+    providerSubject: string;
+    firebaseUid: string;
+    emailAtLink?: string;
+  }) {
+    return prisma.userFederatedIdentity.create({
+      data: { ...data, lastLoginAt: new Date() },
+    });
+  },
+
+  touchFederatedIdentityLastLogin(id: string): Promise<Prisma.BatchPayload> {
+    return prisma.userFederatedIdentity.updateMany({
+      where: { id },
+      data: { lastLoginAt: new Date() },
+    });
+  },
+
+  /**
+   * Create a brand-new federated-only user plus its linked identity,
+   * atomically. Email is treated as verified (Firebase asserted it via the
+   * provider) and the caller supplies an unusable random password hash so
+   * password login can never succeed for this account.
+   */
+  createUserWithFederatedIdentity(data: {
+    email: string;
+    phone: string;
+    passwordHash: string;
+    provider: FederatedIdentityProvider;
+    providerSubject: string;
+    firebaseUid: string;
+  }): Promise<User> {
+    return prisma.user.create({
+      data: {
+        email: data.email,
+        phone: data.phone,
+        passwordHash: data.passwordHash,
+        emailVerifiedAt: new Date(),
+        federatedIdentities: {
+          create: {
+            provider: data.provider,
+            providerSubject: data.providerSubject,
+            firebaseUid: data.firebaseUid,
+            emailAtLink: data.email,
+            lastLoginAt: new Date(),
           },
         },
       },

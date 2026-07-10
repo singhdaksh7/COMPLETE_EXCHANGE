@@ -3,6 +3,7 @@ import {
   registerSchema,
   loginSchema,
   refreshSchema,
+  verify2faSchema,
 } from '../../src/modules/auth/auth.validators';
 
 describe('auth validators', () => {
@@ -76,5 +77,65 @@ describe('auth validators', () => {
     expect(
       refreshSchema.parse({ refreshToken: 'x'.repeat(40) }).refreshToken,
     ).toHaveLength(40);
+  });
+
+  /**
+   * `location` is `.optional()`, not `.nullable()` — it must be either a
+   * valid {latitude, longitude, accuracy?} object or absent entirely. A mobile
+   * client that sends an explicit `location: null` (e.g. before permission is
+   * granted) fails here with a generic VALIDATION_ERROR, before the
+   * LOCATION_REQUIRED business check in auth.service ever runs. This locks in
+   * the contract so a client-side regression is caught by a schema change,
+   * not by a support ticket.
+   */
+  describe('login location contract (undefined-absent, not nullable)', () => {
+    const base = { email: 'a@b.com', password: 'x' };
+
+    it('accepts a login with no location field at all', () => {
+      expect(loginSchema.safeParse(base).success).toBe(true);
+    });
+
+    it('accepts a login with a valid {latitude, longitude, accuracy} location', () => {
+      const result = loginSchema.safeParse({
+        ...base,
+        location: { latitude: 12.9716, longitude: 77.5946, accuracy: 15 },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('rejects an explicit location: null (must be omitted, not nulled)', () => {
+      const result = loginSchema.safeParse({ ...base, location: null });
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects a location object with extra fields (strict)', () => {
+      const result = loginSchema.safeParse({
+        ...base,
+        location: { latitude: 1, longitude: 1, accuracy: 1, altitude: 5 },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('verify2faSchema has the same undefined-only location contract', () => {
+      const okAbsent = verify2faSchema.safeParse({
+        challengeToken: 'x'.repeat(20),
+        code: '123456',
+      });
+      expect(okAbsent.success).toBe(true);
+
+      const okPresent = verify2faSchema.safeParse({
+        challengeToken: 'x'.repeat(20),
+        code: '123456',
+        location: { latitude: 1, longitude: 1, accuracy: 1 },
+      });
+      expect(okPresent.success).toBe(true);
+
+      const rejectsNull = verify2faSchema.safeParse({
+        challengeToken: 'x'.repeat(20),
+        code: '123456',
+        location: null,
+      });
+      expect(rejectsNull.success).toBe(false);
+    });
   });
 });

@@ -20,6 +20,7 @@
     "android": {
       "package": "com.exora.mobile",
       "versionCode": 1,
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0B0E11"
@@ -33,6 +34,13 @@
       "expo-router",
       "expo-secure-store",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "EXORA needs access to your photo library to attach identity documents for KYC verification.",
+          "cameraPermission": "EXORA needs camera access to capture identity documents and a selfie for KYC verification."
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/splash-icon.png",
@@ -40,7 +48,9 @@
           "resizeMode": "contain",
           "backgroundColor": "#0B0E11"
         }
-      ]
+      ],
+      "expo-apple-authentication",
+      "@react-native-google-signin/google-signin"
     ],
     "extra": {
       "router": {

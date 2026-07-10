@@ -17,6 +17,9 @@ vi.mock('../../src/modules/kyc/kyc.repository', () => ({
     submitProfile: vi.fn(),
     createDocument: vi.fn(),
     listDocumentsByUser: vi.fn(),
+    findDocumentForUser: vi.fn(),
+    findDocumentById: vi.fn(),
+    updateDocumentUploadStatus: vi.fn(),
     listProfiles: vi.fn(),
     decide: vi.fn(),
     applyProviderUpdate: vi.fn(),
@@ -82,6 +85,7 @@ function makeDoc(over: Partial<KycDocument> = {}): KycDocument {
     storageKey: 'kyc/user-1/pan/abc',
     sha256: 'a'.repeat(64),
     status: 'PENDING',
+    uploadStatus: 'REGISTERED',
     createdAt: new Date(),
     ...over,
   } as KycDocument;
@@ -215,6 +219,118 @@ describe('kycService.submitDocument', () => {
       }),
     ).rejects.toMatchObject({ statusCode: 400, details: { code: 'KYC_UNSUPPORTED_FILE_TYPE' } });
     expect(repo.createDocument).not.toHaveBeenCalled();
+  });
+});
+
+describe('kycService.submitDocument — storage contract (Stage 10B)', () => {
+  it('returns the presigned PUT contract (method + required headers) alongside the upload URL', async () => {
+    repo.findUserById.mockResolvedValue(makeUser());
+    repo.createDocument.mockResolvedValue(makeDoc());
+
+    const result = await kycService.submitDocument('user-1', {
+      docType: 'PAN',
+      sha256: 'a'.repeat(64),
+      contentType: 'image/png',
+    });
+
+    expect(result.requiredMethod).toBe('PUT');
+    expect(result.requiredHeaders).toMatchObject({ 'Content-Type': 'image/png' });
+  });
+});
+
+describe('kycService.confirmDocumentUpload', () => {
+  it('marks a document UPLOADED and audits without exposing the storage key', async () => {
+    repo.findDocumentForUser.mockResolvedValue(makeDoc({ uploadStatus: 'REGISTERED' }));
+    repo.updateDocumentUploadStatus.mockResolvedValue(makeDoc({ uploadStatus: 'UPLOADED' }));
+
+    const result = await kycService.confirmDocumentUpload('user-1', 'doc-1', { status: 'UPLOADED' });
+
+    expect(result.uploadStatus).toBe('UPLOADED');
+    expect(repo.updateDocumentUploadStatus).toHaveBeenCalledWith('doc-1', 'UPLOADED');
+    const auditArg = audit.mock.calls[0][0];
+    expect(auditArg.action).toBe('kyc.document.upload_confirmed');
+    expect(JSON.stringify(auditArg.metadata)).not.toContain('kyc/user-1/pan/abc');
+  });
+
+  it('marks a document FAILED when the client reports the PUT did not complete', async () => {
+    repo.findDocumentForUser.mockResolvedValue(makeDoc({ uploadStatus: 'REGISTERED' }));
+    repo.updateDocumentUploadStatus.mockResolvedValue(makeDoc({ uploadStatus: 'FAILED' }));
+
+    const result = await kycService.confirmDocumentUpload('user-1', 'doc-1', { status: 'FAILED' });
+
+    expect(result.uploadStatus).toBe('FAILED');
+    expect(audit.mock.calls[0][0].action).toBe('kyc.document.upload_failed');
+  });
+
+  it('is idempotent when re-confirming the same UPLOADED outcome', async () => {
+    repo.findDocumentForUser.mockResolvedValue(makeDoc({ uploadStatus: 'UPLOADED' }));
+    repo.updateDocumentUploadStatus.mockResolvedValue(makeDoc({ uploadStatus: 'UPLOADED' }));
+
+    const result = await kycService.confirmDocumentUpload('user-1', 'doc-1', { status: 'UPLOADED' });
+    expect(result.uploadStatus).toBe('UPLOADED');
+  });
+
+  it('rejects flipping an already-UPLOADED document to FAILED', async () => {
+    repo.findDocumentForUser.mockResolvedValue(makeDoc({ uploadStatus: 'UPLOADED' }));
+
+    await expect(
+      kycService.confirmDocumentUpload('user-1', 'doc-1', { status: 'FAILED' }),
+    ).rejects.toMatchObject({ errorCode: 'KYC_DOCUMENT_ALREADY_UPLOADED' });
+    expect(repo.updateDocumentUploadStatus).not.toHaveBeenCalled();
+  });
+
+  it('throws NotFound for a document that does not belong to the caller', async () => {
+    repo.findDocumentForUser.mockResolvedValue(null);
+
+    await expect(
+      kycService.confirmDocumentUpload('user-1', 'not-mine', { status: 'UPLOADED' }),
+    ).rejects.toMatchObject({ errorCode: 'NOT_FOUND' });
+  });
+});
+
+describe('kycService.getDocumentReadUrl (admin)', () => {
+  it('issues a short-lived read URL only for a document confirmed UPLOADED', async () => {
+    repo.findDocumentById.mockResolvedValue(makeDoc({ uploadStatus: 'UPLOADED' }));
+
+    const result = await kycService.getDocumentReadUrl('doc-1', { actorId: 'admin-1' });
+
+    expect(result.url).toContain('kyc/user-1/pan/abc');
+    expect(result.expiresIn).toBeGreaterThan(0);
+    expect(repo.writeAdminLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'kyc.document.read_url_issued' }),
+    );
+  });
+
+  it('refuses to issue a read URL for a document never confirmed uploaded', async () => {
+    repo.findDocumentById.mockResolvedValue(makeDoc({ uploadStatus: 'REGISTERED' }));
+
+    await expect(
+      kycService.getDocumentReadUrl('doc-1', { actorId: 'admin-1' }),
+    ).rejects.toMatchObject({ errorCode: 'KYC_DOCUMENT_NOT_UPLOADED' });
+  });
+
+  it('refuses to issue a read URL for a document whose upload failed', async () => {
+    repo.findDocumentById.mockResolvedValue(makeDoc({ uploadStatus: 'FAILED' }));
+
+    await expect(
+      kycService.getDocumentReadUrl('doc-1', { actorId: 'admin-1' }),
+    ).rejects.toMatchObject({ errorCode: 'KYC_DOCUMENT_NOT_UPLOADED' });
+  });
+
+  it('throws NotFound for an unknown document id', async () => {
+    repo.findDocumentById.mockResolvedValue(null);
+
+    await expect(
+      kycService.getDocumentReadUrl('missing', { actorId: 'admin-1' }),
+    ).rejects.toMatchObject({ errorCode: 'NOT_FOUND' });
+  });
+
+  it('never returns a permanent/public URL shape — always the short-lived mock host with an expiry', async () => {
+    repo.findDocumentById.mockResolvedValue(makeDoc({ uploadStatus: 'UPLOADED' }));
+
+    const result = await kycService.getDocumentReadUrl('doc-1', { actorId: 'admin-1' });
+    expect(result.url).toContain('kyc-storage.mock.local');
+    expect(result.url).toContain('expires=');
   });
 });
 

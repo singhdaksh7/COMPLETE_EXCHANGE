@@ -110,6 +110,18 @@ export function isTwoFactorChallenge(
   return (v as TwoFactorChallengeData).twoFactorRequired === true;
 }
 
+// ------------------------------------------------------------------
+// Federated identity (Google/Apple via Firebase Authentication, Stage 12)
+// ------------------------------------------------------------------
+
+export type FederatedProvider = 'GOOGLE' | 'APPLE';
+
+/** Mirrors the backend's central federated-auth response contract exactly. */
+export type FederatedLoginOutcome =
+  | { status: 'AUTHENTICATED'; result: LoginResult }
+  | { status: 'ACCOUNT_LINK_REQUIRED'; challengeToken: string; maskedEmail: string }
+  | { status: 'FEDERATED_REGISTRATION_REQUIRED'; challengeToken: string; email: string };
+
 export interface TwoFaStatusData {
   enabled: boolean;
   backupCodesRemaining: number;
@@ -967,6 +979,31 @@ export interface InrDeposit {
   createdAt: string;
   updatedAt: string;
 }
+
+// ---- INR deposit transfer instructions (Stage 10A) ----
+// Backend source of truth for the manual-transfer destination — never
+// hardcode these values client-side. `enabled` reflects effective
+// (global AND per-user) canDepositInr access.
+export type InrDepositInstructions =
+  | {
+      enabled: true;
+      method: 'BANK_TRANSFER';
+      bankName: string;
+      beneficiaryName: string;
+      accountNumber: string;
+      ifsc: string;
+      accountType: string;
+      upiId: string;
+      referenceRequired: true;
+      instructions: string;
+    }
+  | {
+      enabled: false;
+      // FEATURE_DISABLED = INR deposits off for this user. UNAVAILABLE = on,
+      // but the transfer destination isn't operator-confirmed yet (Stage
+      // 10B) — both render the same honest "unavailable" UI.
+      reason: 'FEATURE_DISABLED' | 'UNAVAILABLE';
+    };
 
 // --- Admin operations (Stage 3.4C) ---
 export interface OperationsAuditLog {

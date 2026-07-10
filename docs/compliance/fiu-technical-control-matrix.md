@@ -15,7 +15,7 @@ Legal/External (LEGAL).
 | Control area | Technical evidence in EXORA | Status | Evidence source (file / API / table / log) | Owner | Gap / future action |
 |---|---|---|---|---|---|
 | Customer onboarding | Registration + account creation; INR-only defaults | Implemented | `auth.service.ts`; table `User`; `feature-controls.types.ts` (crypto OFF default) | BE | — |
-| KYC document capture | Submit + MIME/size validation; PII sealed at rest (AES-256-GCM) | Partial (mock provider) | `kyc.service.ts`, `kyc.validators.ts`; tables `KycProfile`, `KycDocument`; `lib/encryption.ts` | BE/CO | Real KYC/liveness vendor; real object storage + AV scan |
+| KYC document capture | Submit + MIME/size validation; PII sealed at rest (AES-256-GCM); private-storage upload/read code path (Stage 10B, `KYC_STORAGE_PROVIDER=s3`) implemented but not provisioned | Partial (mock provider/storage) | `kyc.service.ts`, `kyc.validators.ts`, `kyc/storage/`; tables `KycProfile`, `KycDocument` (`uploadStatus`); `lib/encryption.ts` | BE/CO | Real KYC/liveness vendor; provision S3 bucket + CMK + IAM; AV scan |
 | KYC admin review | Approve/reject, permission-gated; webhook events recorded | Implemented | `kyc.admin.routes.ts`; table `KycWebhookEvent`; admin RBAC | CO | Tie decisions to real vendor results |
 | KYC rejection / resubmission | Status lifecycle supports rejection + resubmit | Implemented | `kyc.service.ts` (status transitions); `KycProfile.status` | BE/CO | — |
 | User identity records | User profile, contact, KYC tier, risk level | Implemented | table `User`, `KycProfile`, `ComplianceProfile` | BE | Enrich with verified vendor identity |

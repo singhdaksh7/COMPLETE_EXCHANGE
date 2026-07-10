@@ -26,3 +26,24 @@ export const API_MANAGEMENT_ENABLED =
 
 export const REFERRALS_ENABLED =
   process.env.NEXT_PUBLIC_REFERRALS_ENABLED === 'true';
+
+/**
+ * Stage 12 — Google sign-in via Firebase Authentication (federated identity
+ * layer only; EXORA remains authoritative for sessions — see
+ * backend/auth.federated.service.ts). Default OFF. The operator has not
+ * provisioned a Firebase project yet; even when this flag is flipped true,
+ * `isGoogleAuthAvailable()` (lib/firebase.ts) also requires every
+ * NEXT_PUBLIC_FIREBASE_* value below to be present before showing the button.
+ */
+export const GOOGLE_AUTH_ENABLED =
+  process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED === 'true';
+
+/** Firebase web client config — public values, not secrets. */
+export const FIREBASE_CONFIG = (() => {
+  const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
+  const authDomain = process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN;
+  const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+  const appId = process.env.NEXT_PUBLIC_FIREBASE_APP_ID;
+  if (!apiKey || !authDomain || !projectId || !appId) return null;
+  return { apiKey, authDomain, projectId, appId };
+})();

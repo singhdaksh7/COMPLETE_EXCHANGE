@@ -82,6 +82,17 @@ export const kycDocumentSchema = z
   })
   .strict();
 
+/** Client-reported outcome of the presigned PUT (Stage 10B). Backend never
+ *  trusts this alone for anything security-sensitive — it only gates whether
+ *  the document is treated as available for review vs. needing a re-upload. */
+export const kycConfirmUploadSchema = z
+  .object({ status: z.enum(['UPLOADED', 'FAILED']) })
+  .strict();
+
+export const documentIdParamSchema = z
+  .object({ documentId: z.string().uuid('Invalid document id') })
+  .strict();
+
 export const kycDecisionSchema = z
   .object({
     decision: z.enum(['APPROVE', 'REJECT', 'REQUEST_INFO']),
@@ -124,6 +135,7 @@ export const userIdParamSchema = z
 
 export type KycSubmitDto = z.infer<typeof kycSubmitSchema>;
 export type KycDocumentDto = z.infer<typeof kycDocumentSchema>;
+export type KycConfirmUploadDto = z.infer<typeof kycConfirmUploadSchema>;
 export type KycDecisionDto = z.infer<typeof kycDecisionSchema>;
 export type KycNoteDto = z.infer<typeof kycNoteSchema>;
 export type KycQueueQueryDto = z.infer<typeof kycQueueQuerySchema>;

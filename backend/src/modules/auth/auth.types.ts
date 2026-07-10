@@ -155,3 +155,55 @@ export interface OtpRequestResult {
 export interface OtpVerifyResult extends AuthResult {
   isNewUser: boolean;
 }
+
+// ------------------------------------------------------------------
+// Federated identity (Google/Apple via Firebase Authentication, Stage 12)
+// ------------------------------------------------------------------
+
+export type FederatedProviderName = 'GOOGLE' | 'APPLE';
+
+export interface FederatedLoginInput {
+  idToken: string;
+  provider: FederatedProviderName;
+  ip?: string;
+  userAgent?: string;
+  requestId?: string;
+  location?: LoginLocation;
+}
+
+/**
+ * Central federated-auth response contract (Phase 21). The frontend/mobile
+ * clients discriminate on `status` — never on ad-hoc error strings. When
+ * `status === 'AUTHENTICATED'`, `result` is the SAME `LoginResult` shape a
+ * normal password login returns (so existing 2FA-challenge handling is
+ * reused unchanged). LOCATION_REQUIRED is NOT part of this union — like
+ * every other login path, it is a thrown AppError (`LOCATION_REQUIRED` code)
+ * before any challenge/session is issued.
+ */
+export type FederatedLoginOutcome =
+  | { status: 'AUTHENTICATED'; result: LoginResult }
+  | { status: 'ACCOUNT_LINK_REQUIRED'; challengeToken: string; maskedEmail: string }
+  | { status: 'FEDERATED_REGISTRATION_REQUIRED'; challengeToken: string; email: string };
+
+export interface FederatedLinkConfirmInput {
+  challengeToken: string;
+  otp: string;
+  ip?: string;
+  userAgent?: string;
+  requestId?: string;
+  location?: LoginLocation;
+}
+
+export interface FederatedRegisterCompleteInput {
+  challengeToken: string;
+  phone: string;
+  acceptedPolicies: {
+    termsOfService: true;
+    privacyPolicy: true;
+    riskDisclosure: true;
+  };
+  ip?: string;
+  userAgent?: string;
+  requestId?: string;
+  location?: LoginLocation;
+}

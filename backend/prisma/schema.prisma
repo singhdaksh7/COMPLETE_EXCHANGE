@@ -388,6 +388,7 @@ model User {
 
   sessions          AuthSession[]
   oauthAccounts     OAuthAccount[]
+  federatedIdentities UserFederatedIdentity[]
   loginAttempts     LoginAttempt[]
   roles             UserRole[]
   kycProfile        KycProfile?
@@ -628,6 +629,39 @@ model OAuthAccount {
   @@map("oauth_accounts")
 }
 
+/// Federated identity provider verified via Firebase Authentication
+/// (Stage 12). GOOGLE and APPLE sign-in on web/Android/iOS all funnel through
+/// Firebase; the backend verifies the Firebase ID token server-side and this
+/// table records the resulting link. Distinct from the legacy `OAuthAccount`
+/// (direct server-side Google OAuth, web-only) — both models are kept: legacy
+/// rows continue to resolve on login (backward compatibility), new logins are
+/// recorded here. `firebaseUid` is the Firebase project-scoped uid;
+/// `providerSubject` is the underlying provider's stable subject claim (Google
+/// `sub` / Apple `sub`) as asserted by the verified Firebase ID token — never
+/// trusted from the client directly.
+enum FederatedIdentityProvider {
+  GOOGLE
+  APPLE
+}
+
+model UserFederatedIdentity {
+  id              String                    @id @default(uuid()) @db.Uuid
+  userId          String                    @map("user_id") @db.Uuid
+  provider        FederatedIdentityProvider
+  providerSubject String                    @map("provider_subject")
+  firebaseUid     String                    @map("firebase_uid")
+  emailAtLink     String?                   @map("email_at_link")
+  createdAt       DateTime                  @default(now()) @map("created_at")
+  updatedAt       DateTime                  @updatedAt @map("updated_at")
+  lastLoginAt     DateTime?                 @map("last_login_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerSubject])
+  @@index([userId])
+  @@map("user_federated_identities")
+}
+
 model AuthSession {
   id          String    @id @default(uuid()) @db.Uuid
   userId      String    @map("user_id") @db.Uuid
@@ -834,19 +868,36 @@ model KycWebhookEvent {
   @@map("kyc_webhook_events")
 }
 
+/// Whether the document's bytes have actually reached object storage, as
+/// distinct from `KycDocument.status` (the review/lifecycle status, which
+/// mirrors `KycStatus`). REGISTERED = metadata recorded, presigned PUT issued,
+/// upload outcome not yet confirmed. UPLOADED = client-confirmed a successful
+/// PUT. FAILED = client-confirmed the PUT did not complete (expired URL,
+/// network loss, non-2xx, etc). Added Stage 10B alongside real object storage.
+enum KycDocumentUploadStatus {
+  REGISTERED
+  UPLOADED
+  FAILED
+}
+
 model KycDocument {
-  id         String     @id @default(uuid()) @db.Uuid
-  userId     String     @map("user_id") @db.Uuid
-  docType    KycDocType @map("doc_type")
-  storageKey String     @map("storage_key")
-  sha256     String
-  status     KycStatus  @default(PENDING)
-  createdAt  DateTime   @default(now()) @map("created_at")
+  id           String                  @id @default(uuid()) @db.Uuid
+  userId       String                  @map("user_id") @db.Uuid
+  docType      KycDocType              @map("doc_type")
+  storageKey   String                  @map("storage_key")
+  sha256       String
+  status       KycStatus               @default(PENDING)
+  /// Defaults to REGISTERED for both new rows and pre-Stage-10B rows — the
+  /// conservative choice, since no real storage backend existed before this
+  /// change and no document's bytes can be assumed to have been persisted.
+  uploadStatus KycDocumentUploadStatus @default(REGISTERED) @map("upload_status")
+  createdAt    DateTime                @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id])
 
   @@index([userId])
   @@index([status])
+  @@index([uploadStatus])
   @@map("kyc_documents")
 }
 

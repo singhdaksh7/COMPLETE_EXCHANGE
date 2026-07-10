@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { tokenStore } from './tokenStore';
 import { setUnauthorizedHandler } from '@/api/client';
 import { userApi } from '@/api/userApi';
-import { isTwoFactorChallenge, type AcceptedPolicies, type PublicUser, type UserFeatureMap } from '@/types/api';
+import { isTwoFactorChallenge, type AcceptedPolicies, type ConsentStatus, type LoginData, type PublicUser, type UserFeatureMap } from '@/types/api';
 
 /**
  * Result of a password login. Either the session is established, or the account
@@ -29,10 +29,27 @@ interface AuthState {
    * flags. Null until /auth/me has resolved (treat null as "unknown", not "on").
    */
   features: UserFeatureMap | null;
+  /** Outstanding required-policy status from /legal/consent-status. Null until resolved OR when the last fetch failed — see `consentCheckFailed` to tell those apart. */
+  consentStatus: ConsentStatus | null;
+  /**
+   * True when the most recent /legal/consent-status fetch failed (network,
+   * timeout, 5xx). Distinct from `consentStatus === null` on first mount —
+   * the root navigator uses this to show a "Policy Status Unavailable" limited
+   * mode instead of either the normal app or the accept-policies gate, since a
+   * failed check must never be treated as "consent confirmed".
+   */
+  consentCheckFailed: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string, location?: { latitude: number; longitude: number; accuracy: number } | null) => Promise<LoginOutcome>;
   /** Finish a 2FA-gated login with the challenge token + TOTP/backup code. */
   complete2fa: (challengeToken: string, code: string, location?: { latitude: number; longitude: number; accuracy: number } | null) => Promise<PublicUser>;
+  /**
+   * Store an ALREADY-issued session (Stage 12 federated login/link/register —
+   * every one of those backend calls returns the exact same `{ user, tokens }`
+   * shape a password login does once resolved past any 2FA/link/registration
+   * challenge). Mirrors the tail of `login()`.
+   */
+  loginWithFederatedResult: (result: LoginData) => Promise<PublicUser>;
   register: (
     email: string,
     password: string,
@@ -41,6 +58,7 @@ interface AuthState {
   ) => Promise<{ emailVerificationRequired: boolean }>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  refreshConsentStatus: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -49,19 +67,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [bootstrapping, setBootstrapping] = useState(true);
   const [user, setUser] = useState<PublicUser | null>(null);
   const [features, setFeatures] = useState<UserFeatureMap | null>(null);
+  const [consentStatus, setConsentStatus] = useState<ConsentStatus | null>(null);
+  const [consentCheckFailed, setConsentCheckFailed] = useState(false);
+
+  const refreshConsentStatus = useCallback(async () => {
+    try {
+      const res = await userApi.consentStatus();
+      setConsentStatus(res.data);
+      setConsentCheckFailed(false);
+    } catch {
+      // Network/timeout/5xx — do NOT assume consent is accepted. The root
+      // navigator shows a distinct "Policy Status Unavailable" limited mode
+      // rather than silently unlocking the normal app (previously this failed
+      // open; Stage 10B replaces that with an explicit safe state).
+      setConsentStatus(null);
+      setConsentCheckFailed(true);
+    }
+  }, []);
 
   const refreshUser = useCallback(async () => {
     try {
       const res = await userApi.me();
       setUser(res.data.user);
       setFeatures(res.data.features ?? null);
+      await refreshConsentStatus();
     } catch {
       // Invalid/expired session — drop to logged-out state.
       await tokenStore.clear();
       setUser(null);
       setFeatures(null);
+      setConsentStatus(null);
+      setConsentCheckFailed(false);
     }
-  }, []);
+  }, [refreshConsentStatus]);
 
   // Cold-start bootstrap: load tokens, then validate the session.
   useEffect(() => {
@@ -112,6 +150,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [refreshUser],
   );
 
+  const loginWithFederatedResult = useCallback(
+    async (result: LoginData) => {
+      await tokenStore.set(result.tokens);
+      setUser(result.user);
+      await refreshUser();
+      return result.user;
+    },
+    [refreshUser],
+  );
+
   const register = useCallback(
     async (email: string, password: string, acceptedPolicies: AcceptedPolicies, phone?: string) => {
       const res = await userApi.register({
@@ -129,6 +177,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await tokenStore.clear();
     setUser(null);
     setFeatures(null);
+    setConsentStatus(null);
+    setConsentCheckFailed(false);
   }, []);
 
   const value = useMemo<AuthState>(
@@ -136,14 +186,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       bootstrapping,
       user,
       features,
+      consentStatus,
+      consentCheckFailed,
       isAuthenticated: !!user,
       login,
       complete2fa,
+      loginWithFederatedResult,
       register,
       logout,
       refreshUser,
+      refreshConsentStatus,
     }),
-    [bootstrapping, user, features, login, complete2fa, register, logout, refreshUser],
+    [
+      bootstrapping,
+      user,
+      features,
+      consentStatus,
+      consentCheckFailed,
+      login,
+      complete2fa,
+      loginWithFederatedResult,
+      register,
+      logout,
+      refreshUser,
+      refreshConsentStatus,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

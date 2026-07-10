@@ -340,6 +340,97 @@ describe('login', () => {
   });
 });
 
+// Stage 12A — federated-only accounts (Google/Apple, or legacy OAuth/OTP
+// signup) carry a REAL argon2 hash of a random 64-hex-char value in place of
+// a password (see auth.federated.service.ts completeRegistration,
+// resolveGoogleUser, authOtpService). Password login must treat these
+// EXACTLY like a normal wrong-password attempt: no crash, no enumeration,
+// same generic error.
+describe('password login against a federated-only account', () => {
+  let unusableHash: string;
+  beforeAll(async () => {
+    unusableHash = await hash(createHash('sha256').update('federated-only-random').digest('hex'));
+  });
+
+  it('an arbitrary password is rejected with the generic incorrect-credentials error (no crash)', async () => {
+    repo.findUserByEmail.mockResolvedValue(makeUser({ passwordHash: unusableHash }));
+
+    await expect(
+      authService.login({ email: 'user@example.com', password: 'Some-Guess-123' }),
+    ).rejects.toMatchObject({ errorCode: 'INVALID_CREDENTIALS', statusCode: 401 });
+    expect(repo.createSession).not.toHaveBeenCalled();
+  });
+
+  it('an empty password (bypassing HTTP-layer validation) is rejected the same way, not a crash', async () => {
+    repo.findUserByEmail.mockResolvedValue(makeUser({ passwordHash: unusableHash }));
+
+    await expect(
+      authService.login({ email: 'user@example.com', password: '' }),
+    ).rejects.toMatchObject({ errorCode: 'INVALID_CREDENTIALS' });
+  });
+
+  it('produces the identical error/message as a normal wrong-password attempt — no provider disclosure', async () => {
+    repo.findUserByEmail.mockResolvedValueOnce(makeUser({ passwordHash: pwHash })); // normal account
+    let normalError: unknown;
+    try {
+      await authService.login({ email: 'user@example.com', password: 'wrong-guess' });
+    } catch (err) {
+      normalError = err;
+    }
+
+    repo.findUserByEmail.mockResolvedValueOnce(makeUser({ passwordHash: unusableHash })); // federated-only
+    let federatedError: unknown;
+    try {
+      await authService.login({ email: 'user@example.com', password: 'wrong-guess' });
+    } catch (err) {
+      federatedError = err;
+    }
+
+    expect((federatedError as { errorCode: string }).errorCode).toBe(
+      (normalError as { errorCode: string }).errorCode,
+    );
+    expect((federatedError as { message: string }).message).toBe(
+      (normalError as { message: string }).message,
+    );
+  });
+});
+
+// Stage 12A — decided behavior: a federated-only user CAN recover access via
+// the normal email password-reset flow (Option A). forgotPassword/
+// resetPassword do not special-case account origin anywhere, so this is
+// already the de facto behavior; this test locks it in and documents the
+// choice (an account is never *unrecoverable* just because it started
+// passwordless).
+describe('password reset for a federated-only account (Option A: recoverable)', () => {
+  it('forgotPassword sends a reset token exactly as for any other account', async () => {
+    repo.findUserByEmail.mockResolvedValue(
+      makeUser({ passwordHash: 'irrelevant-unusable-hash', email: 'fed@example.com' }),
+    );
+
+    await authService.forgotPassword('fed@example.com');
+
+    expect(authSet).toHaveBeenCalledWith(
+      expect.stringMatching(/^auth:reset:/),
+      'user-1',
+      'PX',
+      expect.any(Number),
+    );
+  });
+
+  it('resetPassword establishes a real password the user can then log in with', async () => {
+    authGetDel.mockResolvedValueOnce('user-1'); // reset token → userId
+    repo.updatePassword.mockResolvedValue(makeUser());
+    repo.revokeAllSessionsForUser.mockResolvedValue({ revokedSessionIds: [] });
+
+    await authService.resetPassword('valid-reset-token', 'NewStr0ngPassword');
+
+    expect(repo.updatePassword).toHaveBeenCalledWith('user-1', expect.any(String));
+    // The account is no longer "federated-only" from a login standpoint —
+    // it now has a real, user-chosen password (verified via the standard
+    // login path in the tests above/elsewhere in this file).
+  });
+});
+
 describe('refresh rotation', () => {
   // build a real, signed refresh token whose session hash matches it
     async function setupValidRefresh() {

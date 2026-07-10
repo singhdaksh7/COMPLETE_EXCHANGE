@@ -108,6 +108,35 @@ export interface WebhookResult {
   status?: string;
 }
 
+/**
+ * Manual INR deposit transfer instructions (Stage 10A). `enabled` reflects the
+ * EFFECTIVE `canDepositInr` access (global AND per-user) — when false, no bank
+ * detail fields are included so the client can only render an honest
+ * unavailable state, never stale/disabled transfer info.
+ */
+export type InrDepositInstructionsDto =
+  | {
+      enabled: true;
+      method: 'BANK_TRANSFER';
+      bankName: string;
+      beneficiaryName: string;
+      accountNumber: string;
+      ifsc: string;
+      accountType: string;
+      upiId: string;
+      referenceRequired: true;
+      instructions: string;
+    }
+  | {
+      enabled: false;
+      // FEATURE_DISABLED: INR deposits are off for this user (global/per-user
+      // gate). UNAVAILABLE: deposits are on but the transfer destination has
+      // not been operator-confirmed yet (Stage 10B, INR_DEPOSIT_INSTRUCTIONS_
+      // VERIFIED=false) — never surfaced to the customer as "unverified", just
+      // a safe temporary-unavailability state.
+      reason: 'FEATURE_DISABLED' | 'UNAVAILABLE';
+    };
+
 export function toInrDepositDto(txn: InrTransaction): InrDepositDto {
   return {
     id: txn.id,

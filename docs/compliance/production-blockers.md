@@ -58,7 +58,7 @@ Progress: ❌ not started · 🟡 partial/mock/abstraction · ✅ done.
 | # | Item | Class | Status | Evidence / notes |
 |---|---|---|---|---|
 | 4 | Real KYC / liveness provider | BLOCKER | 🟡 | Mock providers only; real vendor + AV scan needed. |
-| 5 | Malware/AV scan + real object storage for uploads | BLOCKER | ❌ | Upload is a stub; MIME+size validation implemented. |
+| 5 | Malware/AV scan + real object storage for uploads | BLOCKER | 🟡 | Stage 10B: real private-S3 presigned upload/read code path implemented (`KYC_STORAGE_PROVIDER=s3`), CODE READY / INFRA REQUIRED — no bucket/KMS/IAM created yet, default remains the non-routable `mock` provider. MIME+size validation implemented. Malware/AV scanning of uploaded bytes is still NOT implemented in either mode. |
 | 6 | Real sanctions / PEP / adverse-media provider | BLOCKER | 🟡 | Mock screening; enable require-sanctions gate in prod. |
 | 7 | Enable compliance risk gates (default permissive in staging) | HIGH | 🟡 | `COMPLIANCE_REQUIRE_*` flags. |
 | 8 | FIU manual reporting procedure (no automation) | HIGH | 🟡 | Draft-only assembly exists; filing stays manual. |

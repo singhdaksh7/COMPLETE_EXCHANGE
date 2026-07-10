@@ -62,6 +62,13 @@ export const depositController = {
     sendSuccess(res, deposit);
   },
 
+  // GET /inr/deposits/instructions — manual transfer destination (Stage 10A).
+  async instructions(req: Request, res: Response): Promise<void> {
+    const user = requireUser(req);
+    const result = await depositService.getInstructions(user.id);
+    sendSuccess(res, result);
+  },
+
   // GET /inr/deposits — list the caller's INR deposits.
   async list(req: Request, res: Response): Promise<void> {
     const user = requireUser(req);

@@ -1,19 +1,22 @@
-import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
 import { logger } from './logger';
 import { config } from '../config';
+import { emailService } from './email/email.service';
+import type { EmailMessage } from './email/types';
 
 /**
  * Mailer port.
  *
  * Auth needs to *send* verification / reset tokens; it must not depend on a
- * concrete provider. Two providers are supported, selected via MAIL_PROVIDER:
+ * concrete provider. Transport is delegated to `emailService` (Stage 12's
+ * provider-neutral EmailProvider abstraction — log / SES / Resend, selected
+ * via MAIL_PROVIDER); this module owns only the EXORA-specific "kind" +
+ * template + test-outbox layer on top of it:
  *
- *   - 'log'  (default; dev + tests): logs the dispatch and, outside production,
- *            retains a small in-memory outbox that tests can assert against.
- *            No network, no real email.
- *   - 'ses'  (staging/prod): sends real email through AWS SES (v2). Credentials
- *            are resolved by the default AWS provider chain (ECS task role) — no
- *            secrets are read here.
+ *   - 'log'    (default; dev + tests): no network, no real email — populates
+ *              the in-memory outbox below (outside production) so tests can
+ *              assert against it.
+ *   - 'ses'    (staging/prod): real email via AWS SES (v2).
+ *   - 'resend' (Stage 12): real email via the Resend API.
  *
  * Public method signatures are stable, so callers in auth.service.ts never
  * change when the provider is swapped.
@@ -31,7 +34,7 @@ export interface SentMail {
 }
 
 /** Where a generic notification email ended up. Never carries secrets. */
-export type MailDelivery = 'ses' | 'log';
+export type MailDelivery = 'ses' | 'log' | 'resend';
 
 /** Test-visible outbox. Never populated in production. */
 export const outbox: SentMail[] = [];
@@ -121,9 +124,14 @@ function resetEmail(link: string): EmailContent {
 }
 
 /** Passwordless login/signup OTP email. The code is shown in the body (no link). */
-function otpEmail(code: string, purpose: 'LOGIN' | 'SIGNUP'): EmailContent {
+function otpEmail(code: string, purpose: 'LOGIN' | 'SIGNUP' | 'LINK_ACCOUNT'): EmailContent {
   const mins = Math.max(1, Math.round(config.otp.ttlMs / 60_000));
-  const action = purpose === 'SIGNUP' ? 'create your Exora account' : 'sign in to Exora';
+  const action =
+    purpose === 'SIGNUP'
+      ? 'create your Exora account'
+      : purpose === 'LINK_ACCOUNT'
+        ? 'connect your Google/Apple sign-in to your Exora account'
+        : 'sign in to Exora';
   return {
     subject: `Your Exora verification code: ${code}`,
     html: layout(
@@ -141,82 +149,39 @@ function otpEmail(code: string, purpose: 'LOGIN' | 'SIGNUP'): EmailContent {
 }
 
 /* ------------------------------------------------------------------ */
-/* Providers                                                          */
+/* Dispatch — delegates transport to EmailService, keeps the test-visible */
+/* outbox + "kind" logging that only makes sense at this (mailer) layer.  */
 /* ------------------------------------------------------------------ */
 
-/** 'log' provider: in-memory outbox (non-prod) + structured log. */
-function recordLog(mail: SentMail): void {
-  if (!config.isProd) {
-    outbox.push(mail);
-    if (outbox.length > 1000) outbox.shift();
-  }
-  // The raw token is never logged in production.
-  logger.info(
-    { to: mail.to, kind: mail.kind, token: config.isProd ? '[redacted]' : mail.token },
-    'mailer: dispatched',
-  );
-}
-
-// SES client is created lazily and reused. Region comes from validated config;
-// credentials come from the default AWS provider chain (e.g. ECS task role).
-let sesClient: SESv2Client | undefined;
-function getSesClient(): SESv2Client {
-  if (!sesClient) {
-    if (!config.mail.awsRegion) {
-      // Defensive: env validation already enforces this for MAIL_PROVIDER=ses.
-      throw new Error('MAIL_PROVIDER=ses requires AWS_REGION');
-    }
-    sesClient = new SESv2Client({ region: config.mail.awsRegion });
-  }
-  return sesClient;
-}
-
-async function sendViaSes(to: string, content: EmailContent): Promise<void> {
-  const client = getSesClient();
-  // Field mapping is deliberate and asymmetric:
-  //   - FromEmailAddress is ALWAYS the configured sender identity (config.mail.from,
-  //     i.e. MAIL_FROM). It must be an SES-verified identity in AWS_REGION. The
-  //     recipient address must never appear here, or SES rejects the send with
-  //     AccessDeniedException on identity/<recipient>.
-  //   - Destination.ToAddresses is the recipient (`to`).
-  //   - ReplyToAddresses is attached only when MAIL_REPLY_TO is configured.
-  await client.send(
-    new SendEmailCommand({
-      FromEmailAddress: config.mail.from,
-      Destination: { ToAddresses: [to] },
-      ...(config.mail.replyTo ? { ReplyToAddresses: [config.mail.replyTo] } : {}),
-      ...(config.mail.sesConfigurationSet
-        ? { ConfigurationSetName: config.mail.sesConfigurationSet }
-        : {}),
-      Content: {
-        Simple: {
-          Subject: { Data: content.subject, Charset: 'UTF-8' },
-          Body: {
-            Html: { Data: content.html, Charset: 'UTF-8' },
-            Text: { Data: content.text, Charset: 'UTF-8' },
-          },
-        },
-      },
-    }),
-  );
-}
-
-/** Route a message to the configured provider. Never logs the link/raw token in prod. */
+/** Route a message through EmailService. Never logs the link/raw token in prod. */
 async function dispatch(
   to: string,
   kind: MailKind,
   token: string,
   content: EmailContent,
 ): Promise<void> {
-  if (config.mail.provider === 'ses') {
-    await sendViaSes(to, content);
+  const message: EmailMessage = {
+    to,
+    subject: content.subject,
+    html: content.html,
+    text: content.text,
+  };
+  const result = await emailService.send(message);
+  if (result.provider === 'log') {
+    if (!config.isProd) {
+      outbox.push({ to, kind, token, sentAt: new Date() });
+      if (outbox.length > 1000) outbox.shift();
+    }
     logger.info(
-      { to, kind, provider: 'ses', token: config.isProd ? '[redacted]' : token },
+      { to, kind, token: config.isProd ? '[redacted]' : token },
       'mailer: dispatched',
     );
     return;
   }
-  recordLog({ to, kind, token, sentAt: new Date() });
+  logger.info(
+    { to, kind, provider: result.provider, token: config.isProd ? '[redacted]' : token },
+    'mailer: dispatched',
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -232,22 +197,26 @@ export const mailer = {
   },
   /**
    * Generic transactional/notification email. Returns where it was delivered
-   * ('ses' for a real send, 'log' for the offline stub) so the notification
-   * layer can record a coarse delivery status. Carries no token and logs no
-   * sensitive content.
+   * ('ses'/'resend' for a real send, 'log' for the offline stub) so the
+   * notification layer can record a coarse delivery status. Carries no token
+   * and logs no sensitive content.
    */
   async sendNotification(to: string, content: EmailContent): Promise<MailDelivery> {
-    if (config.mail.provider === 'ses') {
-      await sendViaSes(to, content);
-      logger.info({ to, kind: 'NOTIFICATION', provider: 'ses', subject: content.subject }, 'mailer: dispatched');
-      return 'ses';
-    }
-    if (!config.isProd) {
+    const result = await emailService.send({
+      to,
+      subject: content.subject,
+      html: content.html,
+      text: content.text,
+    });
+    if (result.provider === 'log' && !config.isProd) {
       outbox.push({ to, kind: 'NOTIFICATION', token: '', subject: content.subject, sentAt: new Date() });
       if (outbox.length > 1000) outbox.shift();
     }
-    logger.info({ to, kind: 'NOTIFICATION', provider: 'log', subject: content.subject }, 'mailer: dispatched');
-    return 'log';
+    logger.info(
+      { to, kind: 'NOTIFICATION', provider: result.provider, subject: content.subject },
+      'mailer: dispatched',
+    );
+    return result.provider;
   },
   /**
    * Send a passwordless login/signup OTP. `purpose` only tunes copy; the code
@@ -257,7 +226,7 @@ export const mailer = {
   async sendEmailOtp(
     to: string,
     code: string,
-    purpose: 'LOGIN' | 'SIGNUP',
+    purpose: 'LOGIN' | 'SIGNUP' | 'LINK_ACCOUNT',
   ): Promise<void> {
     await dispatch(to, 'EMAIL_OTP', code, otpEmail(code, purpose));
   },

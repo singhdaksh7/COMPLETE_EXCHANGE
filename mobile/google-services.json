@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "655267461198",
+    "project_id": "exora-staging-auth",
+    "storage_bucket": "exora-staging-auth.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:655267461198:android:6e626f563497da80b96b1f",
+        "android_client_info": {
+          "package_name": "com.exora.mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBkJZ8t9NjgKDQJ1y0XTowEiam-9gp7UkQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

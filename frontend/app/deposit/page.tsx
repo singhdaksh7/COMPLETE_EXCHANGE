@@ -38,6 +38,16 @@ export default function DepositPage() {
     enabled: ready,
   });
 
+  // INR deposit transfer instructions — backend source of truth (Stage 10A).
+  // Never hardcode bank/UPI details client-side; render only what the API
+  // returns, including an honest disabled state.
+  const instructions = useQuery({
+    queryKey: ['inr-deposit-instructions'],
+    queryFn: () => userApi.inrDepositInstructions(),
+    enabled: ready,
+  });
+  const depositInstructions = instructions.data?.data;
+
   // Crypto balances and networks
   const overview = useQuery({
     queryKey: ['wallet-overview'],
@@ -210,7 +220,13 @@ export default function DepositPage() {
                 </div>
 
                 {/* Main Action Content Area */}
-                {inrMethod === 'UPI' && (
+                {depositInstructions?.enabled === false && (
+                  <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-4 text-xs text-red-300">
+                    INR deposits are currently unavailable. Please check back later or contact support.
+                  </div>
+                )}
+
+                {inrMethod === 'UPI' && depositInstructions?.enabled !== false && (
                   <div className="space-y-5">
                     <p className="text-xs text-white/50">Scan the QR code using any UPI app to deposit</p>
                     
@@ -244,13 +260,15 @@ export default function DepositPage() {
                       </div>
                     </div>
 
-                    {/* Copyable UPI ID */}
+                    {/* Copyable UPI ID (backend-provided — Stage 10A) */}
                     <div className="rounded-xl border border-white/5 bg-noir-2/80 p-3 flex items-center justify-between">
                       <div className="flex flex-col">
                         <span className="text-[9px] font-bold text-white/30 uppercase tracking-widest">UPI ID</span>
-                        <span className="font-mono text-white text-xs select-all mt-0.5">exora.india@icici</span>
+                        <span className="font-mono text-white text-xs select-all mt-0.5">
+                          {depositInstructions?.enabled ? depositInstructions.upiId : instructions.isLoading ? 'Loading…' : 'Unavailable'}
+                        </span>
                       </div>
-                      <CopyButton value="exora.india@icici" />
+                      {depositInstructions?.enabled && <CopyButton value={depositInstructions.upiId} />}
                     </div>
 
                     {/* Supported Apps Tickers */}
@@ -272,7 +290,7 @@ export default function DepositPage() {
                   </div>
                 )}
 
-                {inrMethod === 'QR' && (
+                {inrMethod === 'QR' && depositInstructions?.enabled !== false && (
                   <div className="space-y-5">
                     <p className="text-xs text-white/50">Scan the QR code below using any bank scanner or UPI app to transfer funds.</p>
                     
@@ -305,9 +323,11 @@ export default function DepositPage() {
                     <div className="rounded-xl border border-white/5 bg-noir-2/80 p-3 flex items-center justify-between">
                       <div className="flex flex-col">
                         <span className="text-[9px] font-bold text-white/30 uppercase tracking-widest">Merchant UPI ID</span>
-                        <span className="font-mono text-white text-xs select-all mt-0.5">exora.india@icici</span>
+                        <span className="font-mono text-white text-xs select-all mt-0.5">
+                          {depositInstructions?.enabled ? depositInstructions.upiId : instructions.isLoading ? 'Loading…' : 'Unavailable'}
+                        </span>
                       </div>
-                      <CopyButton value="exora.india@icici" />
+                      {depositInstructions?.enabled && <CopyButton value={depositInstructions.upiId} />}
                     </div>
 
                     <div className="flex justify-between text-[10px] text-white/40 border-t border-white/5 pt-3">
@@ -317,18 +337,23 @@ export default function DepositPage() {
                   </div>
                 )}
 
-                {(inrMethod === 'IMPS' || inrMethod === 'NEFT') && (
+                {(inrMethod === 'IMPS' || inrMethod === 'NEFT') && depositInstructions?.enabled !== false && (
                   <div className="space-y-4">
                     <p className="text-xs text-white/50">Transfer funds to the bank account below using IMPS / NEFT / RTGS</p>
-                    
+
                     <div className="rounded-xl border border-white/5 bg-noir-2/80 p-4 space-y-2.5 text-xs">
-                      {[
-                        { label: 'Bank Name', val: 'HDFC Bank' },
-                        { label: 'Account Name', val: 'Exora India Private Limited' },
-                        { label: 'Account Number', val: '50200084192837' },
-                        { label: 'IFSC Code', val: 'HDFC0000240' },
-                        { label: 'Account Type', val: 'Current Account' },
-                      ].map((item) => (
+                      {(depositInstructions?.enabled
+                        ? [
+                            { label: 'Bank Name', val: depositInstructions.bankName },
+                            { label: 'Account Name', val: depositInstructions.beneficiaryName },
+                            { label: 'Account Number', val: depositInstructions.accountNumber },
+                            { label: 'IFSC Code', val: depositInstructions.ifsc },
+                            { label: 'Account Type', val: depositInstructions.accountType },
+                          ]
+                        : [
+                            { label: 'Bank Name', val: instructions.isLoading ? 'Loading…' : 'Unavailable' },
+                          ]
+                      ).map((item) => (
                         <div key={item.label} className="flex justify-between border-b border-white/5 pb-2 last:border-0 last:pb-0">
                           <span className="text-white/45">{item.label}</span>
                           <span className="font-bold text-white font-mono flex items-center gap-1.5">
