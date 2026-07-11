@@ -16,6 +16,7 @@ vi.mock('../../src/modules/auth/auth.repository', () => ({
     countSessionsForUserDevice: vi.fn().mockResolvedValue(1),
     findOtherActiveSessions: vi.fn().mockResolvedValue([]),
     revokeAllSessionsForUser: vi.fn().mockResolvedValue({ revokedSessionIds: [] }),
+    setEmailVerified: vi.fn().mockResolvedValue(1),
   },
 }));
 
@@ -171,6 +172,38 @@ describe('authFederatedService.login', () => {
     expect(result.status).toBe('AUTHENTICATED');
     expect(repo.touchFederatedIdentityLastLogin).toHaveBeenCalledWith('fed-1');
     expect(repo.findUserByEmail).not.toHaveBeenCalled();
+  });
+
+  it('marks a not-yet-verified existing user verified on a server-verified Firebase claim', async () => {
+    verifier.verifyIdToken.mockResolvedValue(IDENTITY); // emailVerified: true
+    repo.findFederatedIdentityWithUser.mockResolvedValue({
+      id: 'fed-1',
+      user: makeUser({ emailVerifiedAt: null }),
+    } as never);
+
+    await authFederatedService.login({ idToken: 't', provider: 'GOOGLE' });
+
+    expect(repo.setEmailVerified).toHaveBeenCalledWith('user-1');
+  });
+
+  it('never re-calls setEmailVerified for an already-verified user (idempotent)', async () => {
+    verifier.verifyIdToken.mockResolvedValue(IDENTITY);
+    repo.findFederatedIdentityWithUser.mockResolvedValue({
+      id: 'fed-1',
+      user: makeUser({ emailVerifiedAt: new Date() }),
+    } as never);
+
+    await authFederatedService.login({ idToken: 't', provider: 'GOOGLE' });
+
+    expect(repo.setEmailVerified).not.toHaveBeenCalled();
+  });
+
+  it('rejects login entirely for an unverified Firebase claim — never reaches (and never marks) any user', async () => {
+    verifier.verifyIdToken.mockResolvedValue({ ...IDENTITY, emailVerified: false });
+    await expect(
+      authFederatedService.login({ idToken: 't', provider: 'GOOGLE' }),
+    ).rejects.toMatchObject({ errorCode: 'FEDERATED_EMAIL_UNVERIFIED' });
+    expect(repo.setEmailVerified).not.toHaveBeenCalled();
   });
 
   it('logs in and lazily migrates a legacy OAuthAccount (Google) user', async () => {
@@ -344,6 +377,9 @@ describe('authFederatedService.confirmLink / completeRegistration', () => {
     expect(audit).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'federated.user_registered' }),
     );
+    // The challenge only exists because login()'s own !verified.emailVerified
+    // check already passed, so the brand-new account is marked verified too.
+    expect(repo.setEmailVerified).toHaveBeenCalledWith('user-2');
   });
 
   it('duplicate registration completion is prevented (single-use challenge / replay rejected)', async () => {

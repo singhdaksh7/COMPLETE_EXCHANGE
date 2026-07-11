@@ -113,7 +113,7 @@ describe('requestOtp', () => {
 
     const res = await authOtpService.requestOtp(EMAIL, { ip: '1.1.1.1' });
 
-    expect(otpRepo.invalidateActiveForEmail).toHaveBeenCalledWith(EMAIL);
+    expect(otpRepo.invalidateActiveForEmail).toHaveBeenCalledWith(EMAIL, 'SIGNUP');
     expect(otpRepo.create).toHaveBeenCalledOnce();
     expect(mailerMock.sendEmailOtp).toHaveBeenCalledOnce();
     expect(res.sent).toBe(true);

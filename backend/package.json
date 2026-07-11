@@ -30,6 +30,7 @@
     "kyc:approve-staging": "node dist/scripts/approve-staging-kyc.js",
     "rbac:ensure-staging": "node dist/scripts/ensure-admin-rbac.js",
     "market:seed-staging": "node dist/scripts/seed-demo-market.js",
+    "email-verified:backfill-staging": "node dist/scripts/backfill-email-verified.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "smoke:stage9": "tsx scripts/stage9-smoke.ts"

@@ -22,6 +22,10 @@ import {
   resendEmailOtpSchema,
   verifyEmailOtpSchema,
 } from './auth.otp.validators';
+import {
+  requestEmailVerificationSchema,
+  confirmEmailVerificationSchema,
+} from './auth.email-verification.validators';
 import { authFederatedController } from './auth.federated.controller';
 import {
   federatedLinkConfirmSchema,
@@ -59,6 +63,22 @@ authRouter.post(
   authRateLimiter,
   validate({ body: resendVerificationSchema }),
   asyncHandler(authController.resendVerification),
+);
+
+// ---- OTP-code email verification (mobile-friendly counterpart to the
+// token-link flow above; same account, same `emailVerifiedAt` field) ----
+authRouter.post(
+  '/email-verification/request',
+  authRateLimiter,
+  validate({ body: requestEmailVerificationSchema }),
+  asyncHandler(authController.requestEmailVerification),
+);
+
+authRouter.post(
+  '/email-verification/confirm',
+  authRateLimiter,
+  validate({ body: confirmEmailVerificationSchema }),
+  asyncHandler(authController.confirmEmailVerification),
 );
 
 authRouter.post(

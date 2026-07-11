@@ -15,6 +15,8 @@ import type {
   MasterCryptoDepositPage,
   SubmitCryptoDepositInput,
   DepositAddress,
+  EmailVerificationConfirmData,
+  EmailVerificationRequestData,
   FederatedLoginOutcome,
   FederatedProvider,
   InrDeposit,
@@ -186,6 +188,20 @@ export const userApi = {
 
   resendVerification: (body: { email: string }) =>
     apiFetch<void>(USER_API_URL, '/auth/resend-verification', { method: 'POST', body }),
+
+  // ---- OTP-code email verification (mobile-friendly counterpart to the
+  // token-link flow above; same account, same verified state) ----
+  requestEmailVerification: (email: string) =>
+    apiFetch<EmailVerificationRequestData>(USER_API_URL, '/auth/email-verification/request', {
+      method: 'POST',
+      body: { email },
+    }),
+
+  confirmEmailVerification: (email: string, otp: string) =>
+    apiFetch<EmailVerificationConfirmData>(USER_API_URL, '/auth/email-verification/confirm', {
+      method: 'POST',
+      body: { email, otp },
+    }),
 
   // ---- passwordless email OTP (Stage 3B) ----
   requestEmailOtp: (email: string, purpose?: 'LOGIN' | 'SIGNUP') =>

@@ -226,6 +226,21 @@ export interface OtpVerifyData extends LoginData {
   isNewUser: boolean;
 }
 
+/** Enumeration-safe result of requesting an email-verification code. */
+export interface EmailVerificationRequestData {
+  sent: true;
+  alreadyVerified: boolean;
+  expiresInSeconds: number;
+  resendCooldownSeconds: number;
+}
+
+/** Result of confirming an email-verification code — no session is issued;
+ * the caller resumes login with the same credentials it already has. */
+export interface EmailVerificationConfirmData {
+  verified: true;
+  alreadyVerified: boolean;
+}
+
 export interface KycProfile {
   status: string;
   tier: number;

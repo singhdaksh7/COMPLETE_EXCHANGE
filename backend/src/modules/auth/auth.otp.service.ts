@@ -48,8 +48,16 @@ export const authOtpService = {
   ): Promise<OtpRequestResult> {
     const normalized = email.toLowerCase().trim();
 
+    // Authoritative purpose: derived from existence, never from the client hint.
+    // Determined up front so cooldown/cap/invalidate are scoped to the SAME
+    // purpose a LOGIN vs EMAIL_VERIFICATION request would use for this email
+    // (both apply to an existing user) — otherwise one purpose's traffic would
+    // throttle or invalidate the other's code.
+    const user = await authRepository.findUserByEmail(normalized);
+    const purpose: EmailOtpPurpose = user ? 'LOGIN' : 'SIGNUP';
+
     // Resend cooldown: reject if the most recent code was sent too recently.
-    const latest = await emailOtpRepository.findLatestByEmail(normalized);
+    const latest = await emailOtpRepository.findLatestByEmail(normalized, purpose);
     if (latest) {
       const sinceLastMs = Date.now() - latest.lastSentAt.getTime();
       if (sinceLastMs < config.otp.resendCooldownMs) {
@@ -64,6 +72,7 @@ export const authOtpService = {
     const hourAgo = new Date(Date.now() - 3_600_000);
     const sentLastHour = await emailOtpRepository.countSentSince(
       normalized,
+      purpose,
       hourAgo,
     );
     if (sentLastHour >= config.otp.maxPerHour) {
@@ -73,12 +82,8 @@ export const authOtpService = {
       );
     }
 
-    // Authoritative purpose: derived from existence, never from the client hint.
-    const user = await authRepository.findUserByEmail(normalized);
-    const purpose: EmailOtpPurpose = user ? 'LOGIN' : 'SIGNUP';
-
-    // Only one active code at a time — issuing a new one retires the rest.
-    await emailOtpRepository.invalidateActiveForEmail(normalized);
+    // Only one active code at a time (per purpose) — issuing a new one retires the rest.
+    await emailOtpRepository.invalidateActiveForEmail(normalized, purpose);
 
     const code = generateOtpCode();
     const otpHash = hashOtp(normalized, code);
@@ -134,7 +139,12 @@ export const authOtpService = {
     // Stage 7B: enforce the login-location requirement up front so a missing
     // location fails BEFORE the single-use OTP code is consumed.
     const loginLocation = authService.enforceAndCaptureLoginLocation(ctx.location);
-    const otp = await emailOtpRepository.findLatestActiveByEmail(normalized);
+    // Same purpose derivation as requestOtp — this call site is LOGIN/SIGNUP
+    // only (email verification has its own confirm method in
+    // auth.email-verification.service.ts). Looked up once and reused below.
+    const existing = await authRepository.findUserByEmail(normalized);
+    const purpose: EmailOtpPurpose = existing ? 'LOGIN' : 'SIGNUP';
+    const otp = await emailOtpRepository.findLatestActiveByEmail(normalized, purpose);
 
     if (!otp) {
       await this.auditFail(normalized, ctx, 'no_active_code');
@@ -178,7 +188,6 @@ export const authOtpService = {
     // Correct code — consume it (single use) before issuing anything.
     await emailOtpRepository.markUsed(otp.id);
 
-    const existing = await authRepository.findUserByEmail(normalized);
     let user: User;
     let isNewUser: boolean;
 

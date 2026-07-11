@@ -60,6 +60,21 @@ export interface TwoFactorChallengeData {
 
 export type LoginResult = LoginData | TwoFactorChallengeData;
 
+/** Enumeration-safe result of requesting an email-verification code. */
+export interface EmailVerificationRequestData {
+  sent: true;
+  alreadyVerified: boolean;
+  expiresInSeconds: number;
+  resendCooldownSeconds: number;
+}
+
+/** Result of confirming an email-verification code — no session is issued;
+ * the caller resumes login with the same credentials it already has. */
+export interface EmailVerificationConfirmData {
+  verified: true;
+  alreadyVerified: boolean;
+}
+
 /** Narrow a login result to the 2FA-challenge branch. */
 export function isTwoFactorChallenge(v: LoginResult): v is TwoFactorChallengeData {
   return (v as TwoFactorChallengeData).twoFactorRequired === true;

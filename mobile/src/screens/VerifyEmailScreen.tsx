@@ -1,12 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, TextInput, Pressable, View } from 'react-native';
-import { Link } from 'expo-router';
+import { Link, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen } from '@/components/ui';
-import { GoldButton, PremiumInput } from '@/components/premium';
+import { GoldButton } from '@/components/premium';
 import { userApi } from '@/api/userApi';
 import { errorMessage } from '@/api/client';
 import { colors, font, spacing, radius } from '@/theme';
+
+/**
+ * Mandatory email verification — mobile's primary path is a 6-digit OTP code
+ * (not the web token-link flow: a clickable email link can't drive this
+ * native app without deep-linking infrastructure this project doesn't have).
+ * Both paths mark the same `User.emailVerifiedAt`, so either completes
+ * verification. Confirming does NOT log the user in — it only proves inbox
+ * control; the caller returns to sign-in with the same credentials, which now
+ * pass the verification gate and complete the normal login state machine
+ * (status → location → 2FA → session), unchanged.
+ */
 
 function VerifyShieldGraphic() {
   return (
@@ -25,133 +36,116 @@ function VerifyShieldGraphic() {
 }
 
 export default function VerifyEmailScreen() {
-  const [email] = useState('');
-  const [token, setToken] = useState('');
+  const router = useRouter();
+  const { email: emailParam } = useLocalSearchParams<{ email?: string }>();
+  const email = (emailParam ?? '').trim();
+
+  const [otp, setOtp] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  
-  // Toggle between 6-digit OTP layout and pasting a long token
-  const [useLongToken, setUseLongToken] = useState(false);
-  
-  // Real Countdown Timer (165 seconds = 2 mins 45 secs)
-  const [timer, setTimer] = useState(165);
+  const [verified, setVerified] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+  const [requested, setRequested] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setTimer((t) => (t > 0 ? t - 1 : 0));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
+    if (cooldown <= 0) return;
+    timerRef.current = setInterval(() => setCooldown((c) => (c <= 1 ? 0 : c - 1)), 1000);
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [cooldown]);
 
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
+  // Auto-request a code once we know which email to verify.
+  useEffect(() => {
+    if (email && !requested) void requestCode();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [email]);
 
-  const resend = async () => {
+  async function requestCode() {
+    if (!email) {
+      setErr('Missing email address — go back and try again.');
+      return;
+    }
     setMsg(null);
     setErr(null);
     setBusy(true);
     try {
-      await userApi.resendVerification({ email: email.trim() || 'unverified@exora.in' });
-      setMsg('Verification link or code resent successfully.');
-      setTimer(165); // reset timer
+      const res = await userApi.requestEmailVerification(email);
+      setRequested(true);
+      setCooldown(res.data.resendCooldownSeconds);
+      if (res.data.alreadyVerified) {
+        setVerified(true);
+        setMsg('Email already verified. You can sign in now.');
+      }
     } catch (e) {
       setErr(errorMessage(e));
     } finally {
       setBusy(false);
     }
-  };
+  }
 
-  const verify = async () => {
+  async function confirm() {
+    if (!/^\d{6}$/.test(otp.trim())) return;
     setMsg(null);
     setErr(null);
     setBusy(true);
     try {
-      await userApi.verifyEmail({ token: token.trim() });
-      setMsg('Email verified! You can sign in now.');
+      const res = await userApi.confirmEmailVerification(email, otp.trim());
+      setVerified(true);
+      setMsg(res.data.alreadyVerified ? 'Email already verified.' : 'Email verified! You can sign in now.');
     } catch (e) {
       setErr(errorMessage(e));
     } finally {
       setBusy(false);
     }
-  };
+  }
 
   return (
     <Screen contentStyle={styles.screenContent}>
-      {/* Shield Graphic */}
       <VerifyShieldGraphic />
 
-      {/* Texts */}
       <View style={styles.header}>
-        <Text style={styles.title}>Verify Your Identity</Text>
+        <Text style={styles.title}>Verify Your Email</Text>
         <Text style={styles.subtitle}>
-          Enter the 6-digit verification code sent to your email or phone.
+          {email
+            ? `Enter the 6-digit code we sent to ${email}.`
+            : 'Enter the 6-digit code sent to your email.'}
         </Text>
       </View>
 
-      {/* Input container */}
       <View style={styles.inputArea}>
-        {useLongToken ? (
-          <View style={{ gap: spacing.md }}>
-            <PremiumInput
-              placeholder="Paste token from email"
-              leftIcon="key-outline"
-              value={token}
-              onChangeText={setToken}
-            />
-            <Pressable onPress={() => setUseLongToken(false)} style={styles.toggleLink}>
-              <Text style={styles.toggleLinkText}>Use 6-digit OTP instead</Text>
-            </Pressable>
-          </View>
+        {!verified ? (
+          <>
+            <OTPInput value={otp} onChange={setOtp} />
+
+            <View style={styles.resendRow}>
+              <Text style={styles.muted}>Didn&rsquo;t get the code?</Text>
+              <Pressable
+                onPress={requestCode}
+                style={styles.resendBtn}
+                disabled={busy || cooldown > 0}
+              >
+                <Text style={[styles.resendLinkText, cooldown > 0 && { opacity: 0.5 }]}>
+                  {cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend code'}
+                </Text>
+                <Ionicons name="refresh-sharp" size={12} color={colors.brand} />
+              </Pressable>
+            </View>
+
+            {msg ? <Text style={styles.ok}>{msg}</Text> : null}
+            {err ? <Text style={styles.err}>{err}</Text> : null}
+
+            <GoldButton title="Verify" onPress={confirm} loading={busy} disabled={!/^\d{6}$/.test(otp.trim())} />
+          </>
         ) : (
-          <View style={{ gap: spacing.lg }}>
-            {/* OTP Input Grid */}
-            <OTPInput value={token} onChange={setToken} />
-            <Pressable onPress={() => setUseLongToken(true)} style={styles.toggleLink}>
-              <Text style={styles.toggleLinkText}>Paste long verification token</Text>
-            </Pressable>
-          </View>
+          <>
+            {msg ? <Text style={styles.ok}>{msg}</Text> : null}
+            <GoldButton title="Go to sign in" onPress={() => router.replace('/(auth)/login')} />
+          </>
         )}
-
-        {/* Timer Box */}
-        <View style={styles.timerPill}>
-          <Ionicons name="time-outline" size={14} color={colors.brand} />
-          <Text style={styles.timerText}>
-            Code expires in <Text style={{ color: colors.brand, fontWeight: '700' }}>{formatTime(timer)}</Text>
-          </Text>
-        </View>
-
-        {/* Resend Link row */}
-        <View style={styles.resendRow}>
-          <Text style={styles.muted}>Didn&rsquo;t get the code?</Text>
-          <Pressable onPress={resend} style={styles.resendBtn} disabled={busy}>
-            <Text style={styles.resendLinkText}>Resend OTP</Text>
-            <Ionicons name="refresh-sharp" size={12} color={colors.brand} />
-          </Pressable>
-        </View>
-
-        {/* Action feedback */}
-        {msg ? <Text style={styles.ok}>{msg}</Text> : null}
-        {err ? <Text style={styles.err}>{err}</Text> : null}
-
-        {/* Verify CTA */}
-        <GoldButton title="Verify" onPress={verify} loading={busy} disabled={!token} />
       </View>
-
-      {/* Support Card */}
-      <Pressable style={styles.supportCard}>
-        <View style={styles.supportIcon}>
-          <Ionicons name="headset-outline" size={18} color={colors.brand} />
-        </View>
-        <View style={{ flex: 1, gap: 1 }}>
-          <Text style={styles.supportTitle}>Didn&rsquo;t receive the code?</Text>
-          <Text style={styles.supportSubtitle}>Contact our support team for assistance.</Text>
-        </View>
-        <Ionicons name="chevron-forward-sharp" size={14} color={colors.muted2} />
-      </Pressable>
 
       <View style={{ alignItems: 'center', marginTop: spacing.sm }}>
         <Link href="/(auth)/login" style={styles.linkGold}>
@@ -162,7 +156,7 @@ export default function VerifyEmailScreen() {
   );
 }
 
-// 6-digit OTP input boxes component
+/** 6-digit OTP input boxes — hidden real input drives the visual boxes. */
 function OTPInput({ value, onChange }: { value: string; onChange: (val: string) => void }) {
   const inputRef = React.useRef<TextInput>(null);
   const [focused, setFocused] = useState(false);
@@ -172,8 +166,9 @@ function OTPInput({ value, onChange }: { value: string; onChange: (val: string) 
       <TextInput
         ref={inputRef}
         value={value}
-        onChangeText={(text) => onChange(text.slice(0, 6))}
-        keyboardType="default"
+        onChangeText={(text) => onChange(text.replace(/\D/g, '').slice(0, 6))}
+        keyboardType="number-pad"
+        autoComplete="one-time-code"
         maxLength={6}
         style={styles.hiddenInput}
         onFocus={() => setFocused(true)}
@@ -202,8 +197,7 @@ const styles = StyleSheet.create({
   title: { color: colors.ink, fontSize: font.xl, fontWeight: '900', textAlign: 'center' },
   subtitle: { color: colors.muted, fontSize: font.sm, textAlign: 'center', paddingHorizontal: spacing.lg },
   inputArea: { gap: spacing.md },
-  
-  // Custom 6-digit OTP layout
+
   otpGrid: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: spacing.sm, marginVertical: spacing.sm },
   hiddenInput: { position: 'absolute', width: 1, height: 1, opacity: 0 },
   otpBox: {
@@ -226,26 +220,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  toggleLink: { alignSelf: 'center', paddingVertical: spacing.xs },
-  toggleLinkText: { color: colors.muted, fontSize: font.xs, fontWeight: '600', textDecorationLine: 'underline' },
-
-  // Timer pill container
-  timerPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.panel2,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: radius.pill,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.xl,
-    alignSelf: 'center',
-  },
-  timerText: { color: colors.muted, fontSize: font.sm, fontWeight: '500' },
-
-  // Resend row
   resendRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, marginVertical: spacing.xs },
   resendBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   resendLinkText: { color: colors.brand, fontWeight: '700', fontSize: font.sm },
@@ -255,7 +229,6 @@ const styles = StyleSheet.create({
   linkGold: { color: colors.brand, fontWeight: '700', fontSize: font.sm },
   muted: { color: colors.muted, fontSize: font.sm },
 
-  // 3D-perspective gold shield top graphic
   shieldWrapper: { alignItems: 'center', justifyContent: 'center', marginVertical: spacing.lg },
   shieldBase: { width: 110, height: 110, alignItems: 'center', justifyContent: 'center', position: 'relative' },
   shieldInnerIcon: { position: 'absolute', top: 32 },
@@ -274,29 +247,4 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-
-  // Support Card bottom layout
-  supportCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    backgroundColor: colors.glass,
-    borderWidth: 1,
-    borderColor: colors.glassBorder,
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    marginTop: spacing.md,
-  },
-  supportIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: colors.brandSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.glassBorderGold,
-  },
-  supportTitle: { color: colors.ink, fontSize: font.sm, fontWeight: '700' },
-  supportSubtitle: { color: colors.muted2, fontSize: 10, fontWeight: '600' },
 });

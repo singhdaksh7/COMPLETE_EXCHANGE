@@ -6,6 +6,8 @@ import type {
   CreateManualDepositInput,
   CryptoWithdrawal,
   DepositAddress,
+  EmailVerificationConfirmData,
+  EmailVerificationRequestData,
   FederatedLoginOutcome,
   FederatedProvider,
   InrDeposit,
@@ -133,6 +135,21 @@ export const userApi = {
 
   resendVerification: (body: { email: string }) =>
     apiFetch<void>('/auth/resend-verification', { method: 'POST', body }),
+
+  // ---- OTP-code email verification — mobile's primary verification path
+  // (a clickable email link can't drive this native app without deep-linking
+  // infrastructure this project doesn't have; same verified account state). ----
+  requestEmailVerification: (email: string) =>
+    apiFetch<EmailVerificationRequestData>('/auth/email-verification/request', {
+      method: 'POST',
+      body: { email },
+    }),
+
+  confirmEmailVerification: (email: string, otp: string) =>
+    apiFetch<EmailVerificationConfirmData>('/auth/email-verification/confirm', {
+      method: 'POST',
+      body: { email, otp },
+    }),
 
   me: () => authedFetch<MeData>('/auth/me'),
 

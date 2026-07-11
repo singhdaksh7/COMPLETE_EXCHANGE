@@ -4,6 +4,7 @@ import { authService } from './auth.service';
 import { AppError, UnauthorizedError } from '../../lib/errors';
 import { config } from '../../config';
 import { authOtpService } from './auth.otp.service';
+import { authEmailVerificationService } from './auth.email-verification.service';
 import type { AuthContext } from './auth.types';
 
 /** Pull request-scoped forensic context for audit logging. */
@@ -34,6 +35,32 @@ export const authController = {
     await authService.resendVerification(req.body.email, ctx(req));
     // Generic response — never reveals whether the account exists.
     sendSuccess(res, { sent: true });
+  },
+
+  /**
+   * OTP-code counterpart to the token-link flow above (mobile-friendly; also
+   * usable from web as an "enter code instead" alternative). Enumeration-safe:
+   * response shape never reveals whether the account exists.
+   */
+  async requestEmailVerification(req: Request, res: Response): Promise<void> {
+    const result = await authEmailVerificationService.requestVerification(req.body.email, ctx(req));
+    sendSuccess(res, result);
+  },
+
+  /**
+   * Marks the account verified only — it does NOT issue a session. The client
+   * resumes the normal auth state machine by re-submitting the same login it
+   * already has in hand (password login, or the federated/OTP flow it came
+   * from), which now passes the verification gate and proceeds through
+   * status → location → 2FA → single-session → tokens unchanged.
+   */
+  async confirmEmailVerification(req: Request, res: Response): Promise<void> {
+    const result = await authEmailVerificationService.confirmVerification(
+      req.body.email,
+      req.body.otp,
+      ctx(req),
+    );
+    sendSuccess(res, { verified: true, alreadyVerified: result.alreadyVerified });
   },
 
   async login(req: Request, res: Response): Promise<void> {

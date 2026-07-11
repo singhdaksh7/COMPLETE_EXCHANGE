@@ -30,25 +30,30 @@ export const emailOtpRepository = {
     });
   },
 
-  /** Most recent UNUSED code for an email (the one a verify should match). */
-  findLatestActiveByEmail(email: string): Promise<EmailOtp | null> {
+  /**
+   * Most recent UNUSED code for an email+purpose (the one a verify should
+   * match). Purpose-scoped: LOGIN and EMAIL_VERIFICATION both apply to an
+   * EXISTING user's email, so an unscoped lookup would let one purpose's
+   * code satisfy a verify for the other — this filter is the fix.
+   */
+  findLatestActiveByEmail(email: string, purpose: EmailOtpPurpose): Promise<EmailOtp | null> {
     return prisma.emailOtp.findFirst({
-      where: { email, usedAt: null },
+      where: { email, purpose, usedAt: null },
       orderBy: { createdAt: 'desc' },
     });
   },
 
-  /** Most recent code of any state — used for resend-cooldown calculation. */
-  findLatestByEmail(email: string): Promise<EmailOtp | null> {
+  /** Most recent code of any state for an email+purpose — resend-cooldown calculation. */
+  findLatestByEmail(email: string, purpose: EmailOtpPurpose): Promise<EmailOtp | null> {
     return prisma.emailOtp.findFirst({
-      where: { email },
+      where: { email, purpose },
       orderBy: { createdAt: 'desc' },
     });
   },
 
-  countSentSince(email: string, since: Date): Promise<number> {
+  countSentSince(email: string, purpose: EmailOtpPurpose, since: Date): Promise<number> {
     return prisma.emailOtp.count({
-      where: { email, createdAt: { gte: since } },
+      where: { email, purpose, createdAt: { gte: since } },
     });
   },
 
@@ -71,10 +76,10 @@ export const emailOtpRepository = {
     });
   },
 
-  /** Invalidate all still-active codes for an email (called when issuing a new one). */
-  async invalidateActiveForEmail(email: string): Promise<number> {
+  /** Invalidate still-active codes for an email+purpose (called when issuing a new one). */
+  async invalidateActiveForEmail(email: string, purpose: EmailOtpPurpose): Promise<number> {
     const result = await prisma.emailOtp.updateMany({
-      where: { email, usedAt: null },
+      where: { email, purpose, usedAt: null },
       data: { usedAt: new Date() },
     });
     return result.count;

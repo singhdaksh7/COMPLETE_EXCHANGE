@@ -26,6 +26,38 @@ function VerifyEmailContent() {
   const [resendSuccess, setResendSuccess] = useState(false);
   const [resendError, setResendError] = useState<string | null>(null);
 
+  // OTP-code alternative (mobile-friendly counterpart to the link above) —
+  // lets a user type a code instead of clicking through to the email link.
+  const [showOtpForm, setShowOtpForm] = useState(false);
+  const [otp, setOtp] = useState('');
+  const [otpCooldown, setOtpCooldown] = useState(0);
+  const otpTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (otpCooldown <= 0) return;
+    otpTimerRef.current = setInterval(() => {
+      setOtpCooldown((c) => (c <= 1 ? 0 : c - 1));
+    }, 1000);
+    return () => {
+      if (otpTimerRef.current) clearInterval(otpTimerRef.current);
+    };
+  }, [otpCooldown]);
+
+  const requestOtpM = useMutation({
+    mutationFn: () => userApi.requestEmailVerification(email),
+    onSuccess: (res) => {
+      setShowOtpForm(true);
+      setOtpCooldown(res.data.resendCooldownSeconds);
+    },
+  });
+
+  const confirmOtpM = useMutation({
+    mutationFn: () => userApi.confirmEmailVerification(email, otp.trim()),
+    onSuccess: () => {
+      setTimeout(() => router.replace('/login?verified=true'), 1200);
+    },
+  });
+
   // Token verification (only when arriving from an email link).
   const verifyM = useMutation({
     mutationFn: () => userApi.verifyEmail({ token: token ?? '' }),
@@ -170,6 +202,72 @@ function VerifyEmailContent() {
                     <RefreshIcon className={`h-4.5 w-4.5 ${m.isPending ? 'animate-spin' : ''}`} />
                     <span>{m.isPending ? 'Resending...' : 'Resend Verification Link'}</span>
                   </button>
+                </div>
+
+                {/* OTP-code alternative — same verified state, no link needed */}
+                <div className="mt-6 w-full">
+                  <div className="flex items-center gap-3 text-[10px] font-bold tracking-wider text-white/30 select-none">
+                    <span className="h-px flex-1 bg-white/10" />
+                    <span>OR ENTER A CODE</span>
+                    <span className="h-px flex-1 bg-white/10" />
+                  </div>
+
+                  {!showOtpForm ? (
+                    <button
+                      onClick={() => requestOtpM.mutate()}
+                      disabled={requestOtpM.isPending}
+                      className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-white/[0.12] bg-white/[0.03] px-4 py-3 text-sm font-bold text-white/80 transition hover:border-gold/40 hover:bg-white/[0.06] active:scale-[0.99] disabled:opacity-50"
+                    >
+                      {requestOtpM.isPending ? 'Sending code…' : 'Send me a 6-digit code'}
+                    </button>
+                  ) : (
+                    <div className="mt-4 space-y-3">
+                      {confirmOtpM.isError && (
+                        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3.5 py-2.5 text-xs text-red-300">
+                          {errorMessage(confirmOtpM.error)}
+                        </div>
+                      )}
+                      {confirmOtpM.isSuccess && (
+                        <div className="rounded-lg border border-up/30 bg-up/10 px-3.5 py-2.5 text-xs text-up">
+                          {confirmOtpM.data.data.alreadyVerified
+                            ? 'Email already verified. Redirecting to sign in…'
+                            : 'Email verified successfully! Redirecting to sign in…'}
+                        </div>
+                      )}
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          if (/^\d{6}$/.test(otp.trim())) confirmOtpM.mutate();
+                        }}
+                        className="flex gap-2"
+                      >
+                        <input
+                          inputMode="numeric"
+                          autoComplete="one-time-code"
+                          maxLength={6}
+                          placeholder="123456"
+                          value={otp}
+                          onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                          className="min-w-0 flex-1 rounded-lg border border-white/10 bg-noir px-4 py-3 text-center font-mono text-sm tracking-[0.3em] text-white focus:border-gold/60 focus:outline-none"
+                        />
+                        <button
+                          type="submit"
+                          disabled={confirmOtpM.isPending || !/^\d{6}$/.test(otp.trim())}
+                          className="shrink-0 rounded-lg bg-gradient-to-r from-gold to-gold-glow px-5 py-3 text-sm font-bold text-noir shadow-gold-glow transition hover:brightness-105 active:scale-[0.99] disabled:opacity-50"
+                        >
+                          {confirmOtpM.isPending ? 'Verifying…' : 'Verify'}
+                        </button>
+                      </form>
+                      <button
+                        type="button"
+                        disabled={otpCooldown > 0 || requestOtpM.isPending}
+                        onClick={() => requestOtpM.mutate()}
+                        className="text-xs text-white/40 underline disabled:no-underline disabled:opacity-50"
+                      >
+                        {otpCooldown > 0 ? `Resend code in ${otpCooldown}s` : 'Resend code'}
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <p className="mt-6 text-xs text-white/40">

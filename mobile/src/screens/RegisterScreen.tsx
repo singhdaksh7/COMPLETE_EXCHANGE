@@ -167,10 +167,16 @@ export default function RegisterScreen() {
           </View>
           <Text style={styles.title}>Check your email</Text>
           <Text style={styles.subtitle}>
-            We sent a verification link to {email}. Verify your email, then sign in.
+            We sent a verification link to {email}. You can also enter a 6-digit code instead.
           </Text>
         </View>
-        <GoldButton title="Go to sign in" onPress={() => router.replace('/(auth)/login')} />
+        <GoldButton
+          title="Enter verification code"
+          onPress={() => router.replace(`/(auth)/verify-email?email=${encodeURIComponent(email.trim())}`)}
+        />
+        <Pressable onPress={() => router.replace('/(auth)/login')} style={{ alignSelf: 'center', marginTop: spacing.sm }}>
+          <Text style={styles.link}>Go to sign in instead</Text>
+        </Pressable>
       </Screen>
     );
   }
@@ -328,6 +334,7 @@ export default function RegisterScreen() {
 const styles = StyleSheet.create({
   screenContent: { gap: spacing.lg, paddingBottom: spacing.xxl },
   header: { alignItems: 'center', gap: spacing.xs, marginTop: spacing.md },
+  link: { color: colors.brand, fontWeight: '700', fontSize: font.sm },
   title: { color: colors.ink, fontSize: font.xxl - 2, fontWeight: '900', marginTop: spacing.sm, textAlign: 'center' },
   subtitle: { color: colors.muted, fontSize: font.sm, textAlign: 'center' },
   checkOrb: { width: 70, height: 70, borderRadius: 35, backgroundColor: colors.brandSoft, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.glassBorderGold },

@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
 import { userApi } from '@/lib/user-api';
 import { tokenStore } from '@/lib/auth';
-import { errorMessage } from '@/lib/api';
+import { errorMessage, ApiError } from '@/lib/api';
 import { REQUIRE_LOGIN_LOCATION } from '@/lib/config';
 import {
   getCurrentLocation,
@@ -109,6 +109,14 @@ function LoginPageContent() {
       const { accessToken, refreshToken } = res.data.tokens;
       tokenStore.setUser(accessToken, refreshToken);
       router.replace('/dashboard');
+    },
+    onError: (err) => {
+      // Clear, dedicated state rather than a generic error banner — send the
+      // user straight to the same verification screen registration uses, with
+      // their email prefilled so they can request/enter a code immediately.
+      if (err instanceof ApiError && err.code === 'EMAIL_NOT_VERIFIED') {
+        router.push(`/verify-email?email=${encodeURIComponent(email.trim())}`);
+      }
     },
   });
 

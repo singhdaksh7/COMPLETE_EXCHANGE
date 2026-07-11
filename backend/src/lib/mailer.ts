@@ -123,19 +123,28 @@ function resetEmail(link: string): EmailContent {
   };
 }
 
-/** Passwordless login/signup OTP email. The code is shown in the body (no link). */
-function otpEmail(code: string, purpose: 'LOGIN' | 'SIGNUP' | 'LINK_ACCOUNT'): EmailContent {
+/** Passwordless login/signup/email-verification OTP email. The code is shown in the body (no link). */
+function otpEmail(
+  code: string,
+  purpose: 'LOGIN' | 'SIGNUP' | 'LINK_ACCOUNT' | 'EMAIL_VERIFICATION',
+): EmailContent {
   const mins = Math.max(1, Math.round(config.otp.ttlMs / 60_000));
   const action =
     purpose === 'SIGNUP'
       ? 'create your Exora account'
       : purpose === 'LINK_ACCOUNT'
         ? 'connect your Google/Apple sign-in to your Exora account'
-        : 'sign in to Exora';
+        : purpose === 'EMAIL_VERIFICATION'
+          ? 'verify your Exora email address'
+          : 'sign in to Exora';
+  const subject =
+    purpose === 'EMAIL_VERIFICATION'
+      ? `Your Exora email verification code: ${code}`
+      : `Your Exora verification code: ${code}`;
   return {
-    subject: `Your Exora verification code: ${code}`,
+    subject,
     html: layout(
-      'Your verification code',
+      purpose === 'EMAIL_VERIFICATION' ? 'Verify your email' : 'Your verification code',
       `Use this code to ${action}: ` +
         `<strong style="color:#ffffff;font-size:20px;letter-spacing:2px;">${code}</strong>. ` +
         `It expires in ${mins} minute${mins === 1 ? '' : 's'}.`,
@@ -226,7 +235,7 @@ export const mailer = {
   async sendEmailOtp(
     to: string,
     code: string,
-    purpose: 'LOGIN' | 'SIGNUP' | 'LINK_ACCOUNT',
+    purpose: 'LOGIN' | 'SIGNUP' | 'LINK_ACCOUNT' | 'EMAIL_VERIFICATION',
   ): Promise<void> {
     await dispatch(to, 'EMAIL_OTP', code, otpEmail(code, purpose));
   },

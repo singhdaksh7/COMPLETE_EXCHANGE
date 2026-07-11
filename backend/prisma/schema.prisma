@@ -722,6 +722,12 @@ model LoginAttempt {
 enum EmailOtpPurpose {
   LOGIN
   SIGNUP
+  // Mandatory email verification for password accounts. Kept in the SAME
+  // table/purpose-column as LOGIN/SIGNUP (not a new mechanism) — repository
+  // lookups below are purpose-scoped so an EMAIL_VERIFICATION code issued for
+  // an (existing, unverified) email can never collide with a LOGIN code for
+  // that same email, even though both apply to an existing-user email.
+  EMAIL_VERIFICATION
 }
 
 model EmailOtp {

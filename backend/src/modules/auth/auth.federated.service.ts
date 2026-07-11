@@ -386,6 +386,10 @@ export const authFederatedService = {
       providerSubject: payload.providerSubject,
       firebaseUid: payload.firebaseUid,
     });
+    // The challenge was only issued after `login()`'s `!verified.emailVerified`
+    // check already passed, so this new account's email is already
+    // server-proven verified — never re-derived from client input.
+    await authRepository.setEmailVerified(user.id);
 
     const ctx: AuthContext = {
       ip: input.ip,
@@ -451,6 +455,15 @@ export const authFederatedService = {
     }
     if (user.status !== 'ACTIVE') {
       throw new ForbiddenError('Account is not active', 'ACCOUNT_NOT_ACTIVE');
+    }
+
+    // Every caller of this method is downstream of `login()`'s own
+    // `!verified.emailVerified` rejection (thrown before a LINK_EXISTING
+    // challenge is ever issued or a linked identity is looked up), so a
+    // server-verified Firebase email claim is already guaranteed here — never
+    // trust a client-supplied boolean, only this already-proven fact.
+    if (!user.emailVerifiedAt) {
+      await authRepository.setEmailVerified(user.id);
     }
 
     const loginLocation = authService.enforceAndCaptureLoginLocation(ctx.location);

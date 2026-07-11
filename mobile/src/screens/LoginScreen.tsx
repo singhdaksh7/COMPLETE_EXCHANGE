@@ -88,6 +88,13 @@ export default function LoginScreen() {
         }
       }
     } catch (err) {
+      // Clear, dedicated state rather than a generic error banner — send the
+      // user straight to the same OTP verification screen registration uses,
+      // with their email prefilled so they can request/enter a code immediately.
+      if (err instanceof ApiError && err.code === 'EMAIL_NOT_VERIFIED') {
+        router.replace(`/(auth)/verify-email?email=${encodeURIComponent(email.trim())}`);
+        return;
+      }
       setError(actionErrorMessage(err));
     } finally {
       setBusy(false);
