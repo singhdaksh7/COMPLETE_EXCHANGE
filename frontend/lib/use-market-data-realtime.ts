@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Envelope } from './api';
 import { getSocket } from './socket';
@@ -14,6 +15,13 @@ import type { MarketDataCandle, MarketDataTicker, MarketDataTickerLookup } from 
  *
  * Falls back to REST polling (handled by the caller's `refetchInterval`)
  * whenever the socket is disconnected — this hook only reports `connected`.
+ *
+ * Intended to be mounted exactly ONCE, by `MarketDataProvider` (see
+ * `market-data-context.tsx`) — subscribing from more than one place at a time
+ * causes one consumer's unmount to `md:unsubscribe` symbols another consumer
+ * still needs. `pathname` is re-read on every navigation (login redirects via
+ * `router.replace`, which does not remount the root providers) so a token
+ * that appears after login is picked up without a page reload.
  */
 
 interface TickerSocketPayload {
@@ -33,6 +41,7 @@ export function useMarketDataRealtime(symbols: string[]): { connected: boolean }
   const qc = useQueryClient();
   const [connected, setConnected] = useState(false);
   const key = symbols.join(',');
+  const pathname = usePathname();
 
   useEffect(() => {
     const token = tokenStore.getUserAccess();
@@ -90,7 +99,7 @@ export function useMarketDataRealtime(symbols: string[]): { connected: boolean }
       socket.off('candle', onCandle);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, qc]);
+  }, [key, qc, pathname]);
 
   return { connected };
 }

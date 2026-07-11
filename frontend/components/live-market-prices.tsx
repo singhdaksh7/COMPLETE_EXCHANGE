@@ -1,14 +1,16 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { userApi } from '@/lib/user-api';
-import { useMarketDataRealtime } from '@/lib/use-market-data-realtime';
+import { useMarketData } from '@/lib/market-data-context';
 import type { MarketDataTickerLookup } from '@/lib/types';
 
 /**
  * Live reference prices for BTC/USDT, ETH/USDT, BNB/USDT and USDT/INR
- * (Goal 11) — sourced from EXORA's own `/market-data` API/stream (Binance +
- * CoinGecko upstream), never called directly from the browser.
+ * (Goal 11) — reads the shared `MarketDataProvider` (one REST snapshot query
+ * + one Socket.IO subscription for the whole app, see
+ * `lib/market-data-context.tsx`) rather than polling/subscribing itself, so
+ * this panel never competes with the global header ticker for the same
+ * `md:{SYMBOL}` room. Sourced from EXORA's own `/market-data` API/stream
+ * (Binance + CoinGecko upstream), never called directly from the browser.
  *
  * These assets are NOT tradable on EXORA today (crypto execution stays off
  * — see `CRYPTO_*_GLOBAL_ENABLED`), so this panel is informational only and
@@ -70,17 +72,7 @@ function Row({ row }: { row: MarketDataTickerLookup }) {
 }
 
 export function LiveMarketPrices() {
-  const q = useQuery({
-    queryKey: ['market-data-tickers'],
-    queryFn: () => userApi.marketDataTickers(),
-    // REST fallback cadence — the socket subscription (below) supersedes this
-    // whenever connected, per Goal 11 "live updates" + "reconnect handling".
-    refetchInterval: 15_000,
-  });
-
-  const { connected } = useMarketDataRealtime(DISPLAY_SYMBOLS);
-
-  const rows = q.data?.data.items ?? [];
+  const { tickers, connected, isLoading, isError } = useMarketData();
 
   return (
     <div className="relative rounded-2xl border border-white/5 bg-white/[0.01] p-5 space-y-3 overflow-hidden">
@@ -96,7 +88,7 @@ export function LiveMarketPrices() {
         External reference prices only — not tradable on EXORA yet.
       </p>
 
-      {q.isLoading && (
+      {isLoading && (
         <div className="relative z-10 space-y-2">
           {DISPLAY_SYMBOLS.map((s) => (
             <div key={s} className="h-11 animate-pulse rounded-lg bg-white/5" />
@@ -104,15 +96,15 @@ export function LiveMarketPrices() {
         </div>
       )}
 
-      {q.isError && (
+      {isError && (
         <div className="relative z-10 rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-[10px] text-red-300">
           Live prices are temporarily unavailable.
         </div>
       )}
 
-      {!q.isLoading && !q.isError && (
+      {!isLoading && !isError && (
         <div className="relative z-10 space-y-2">
-          {rows.map((row) => (
+          {tickers.map((row) => (
             <Row key={row.available ? row.ticker.symbol : row.symbol} row={row} />
           ))}
         </div>

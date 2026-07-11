@@ -9,6 +9,8 @@ import { disconnectSocket } from '@/lib/socket';
 import { userApi } from '@/lib/user-api';
 import { adminApi } from '@/lib/admin-api';
 import { API_MANAGEMENT_ENABLED, REFERRALS_ENABLED } from '@/lib/config';
+import { useMarketData } from '@/lib/market-data-context';
+import type { MarketDataTickerLookup } from '@/lib/types';
 
 // SVG Icons
 function DashboardIcon() {
@@ -130,6 +132,86 @@ function LogoutIcon() {
     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
       <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
     </svg>
+  );
+}
+
+const HEADER_TICKER_SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'USDTINR'];
+
+function formatHeaderPrice(price: string, quoteAsset: string): string {
+  const n = Number(price);
+  if (!Number.isFinite(n)) return '—';
+  return n.toLocaleString('en-IN', { maximumFractionDigits: quoteAsset === 'INR' ? 4 : 2 });
+}
+
+/**
+ * Global header market ticker — reads the shared `MarketDataProvider` (one
+ * socket subscription + one polling loop for the whole app, see
+ * `lib/market-data-context.tsx`) rather than fetching/subscribing itself, so
+ * it never competes with the Markets page's live-price cards for the same
+ * `md:{SYMBOL}` room.
+ */
+function HeaderTicker() {
+  const { bySymbol, isLoading, isError } = useMarketData();
+
+  if (isLoading) {
+    return (
+      <div className="hidden md:flex items-center gap-5">
+        {HEADER_TICKER_SYMBOLS.map((s) => (
+          <div key={s} className="h-3 w-20 rounded bg-white/5 animate-pulse" />
+        ))}
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="hidden md:flex items-center text-[10px] font-bold text-white/30">
+        Live prices unavailable
+      </div>
+    );
+  }
+
+  return (
+    <div className="hidden md:flex items-center gap-5 text-[10px] font-bold">
+      {HEADER_TICKER_SYMBOLS.map((symbol, idx) => {
+        const row: MarketDataTickerLookup | undefined = bySymbol[symbol];
+        const displaySymbol = symbol.replace(/(USDT|INR)$/, '/$1');
+        const isLast = idx === HEADER_TICKER_SYMBOLS.length - 1;
+
+        if (!row || !row.available) {
+          return (
+            <div key={symbol} className={`flex items-center gap-1.5 ${!isLast ? 'border-r border-white/5 pr-4' : ''}`}>
+              <span className="text-white/45">{displaySymbol}</span>
+              <span className="text-white/25 font-mono">Unavailable</span>
+            </div>
+          );
+        }
+
+        const { ticker } = row;
+        const changePct = ticker.change24hPercent ? Number(ticker.change24hPercent) : null;
+        const up = changePct !== null && changePct >= 0;
+
+        return (
+          <div key={symbol} className={`flex items-center gap-1.5 ${!isLast ? 'border-r border-white/5 pr-4' : ''}`}>
+            <span className="text-white/45">{displaySymbol}</span>
+            <span className="text-white font-mono">{formatHeaderPrice(ticker.price, ticker.quoteAsset)}</span>
+            {ticker.stale ? (
+              <span
+                title="No fresh update recently — showing last known price"
+                className="text-amber-300 font-mono text-[9px]"
+              >
+                stale
+              </span>
+            ) : changePct !== null ? (
+              <span className={`font-mono ${up ? 'text-up' : 'text-down'}`}>
+                {up ? '+' : ''}
+                {changePct.toFixed(2)}%
+              </span>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -297,29 +379,8 @@ export function UserNav() {
             ☰
           </button>
 
-          {/* Market Tickers */}
-          <div className="hidden md:flex items-center gap-5 text-[10px] font-bold">
-            <div className="flex items-center gap-1.5 border-r border-white/5 pr-4">
-              <span className="text-white/45">BTC/USDT</span>
-              <span className="text-white font-mono">67,452.21</span>
-              <span className="text-up font-mono">+2.35%</span>
-            </div>
-            <div className="flex items-center gap-1.5 border-r border-white/5 pr-4">
-              <span className="text-white/45">ETH/USDT</span>
-              <span className="text-white font-mono">3,512.45</span>
-              <span className="text-up font-mono">+1.45%</span>
-            </div>
-            <div className="flex items-center gap-1.5 border-r border-white/5 pr-4">
-              <span className="text-white/45">USDT/INR</span>
-              <span className="text-white font-mono">83.20</span>
-              <span className="text-up font-mono">+0.12%</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-white/45">BNB/USDT</span>
-              <span className="text-white font-mono">596.42</span>
-              <span className="text-up font-mono">+0.85%</span>
-            </div>
-          </div>
+          {/* Market Tickers — live via the shared MarketDataProvider */}
+          <HeaderTicker />
         </div>
 
         {/* Toolbar Icons & Profile Dropdown */}
