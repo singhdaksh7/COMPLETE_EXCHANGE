@@ -8,6 +8,7 @@ import { errorMessage } from '@/lib/api';
 import { useGuard } from '@/components/guards';
 import { UserShell } from '@/components/user-shell';
 import { StatusBadge } from '@/components/ui';
+import { LiveMarketPrices } from '@/components/live-market-prices';
 import type { Market } from '@/lib/types';
 
 export default function MarketsPage() {
@@ -224,8 +225,9 @@ export default function MarketsPage() {
 
           </div>
 
-          {/* Right Side (3 cols): Leaderboards Coming Soon */}
+          {/* Right Side (3 cols): Live reference prices + Leaderboards */}
           <div className="lg:col-span-3 space-y-6">
+            <LiveMarketPrices />
             <div className="relative rounded-2xl border border-white/5 bg-white/[0.01] p-6 text-center space-y-4 overflow-hidden">
               <div className="pointer-events-none absolute -inset-px rounded-2xl bg-gradient-to-b from-gold/5 to-transparent opacity-30" />
               <div className="relative z-10 py-12">

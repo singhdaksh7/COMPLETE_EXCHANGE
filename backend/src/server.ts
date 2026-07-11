@@ -7,6 +7,7 @@ import { connectRedis, disconnectRedis } from './lib/redis';
 import { createSocketServer } from './realtime/socket-server';
 import { onShutdown, setupProcessGuards } from './lib/lifecycle';
 import { cryptoDepositService } from './modules/crypto-deposit/crypto-deposit.service';
+import { configureStaleThresholds, marketDataService } from './modules/market-data/market-data.service';
 
 /**
  * Public API entrypoint.
@@ -30,6 +31,16 @@ async function bootstrap(): Promise<void> {
     logger.warn({ err }, 'crypto-deposit: network config seed skipped');
   });
 
+  // Live market-data foundation (BTC/ETH/BNB via Binance, USDT/INR reference
+  // via CoinGecko) — MARKET DATA ONLY, no crypto execution capability.
+  configureStaleThresholds({
+    binanceMs: config.marketData.binance.tickerStaleMs,
+    coingeckoMs: config.marketData.coingecko.staleMs,
+  });
+  await marketDataService.start().catch((err) => {
+    logger.error({ err }, 'market-data: failed to start providers');
+  });
+
   const app = createApp();
   // Create the HTTP server explicitly so Socket.IO can share the same port as
   // the REST API (the WebSocket upgrade lives at /socket.io; all REST routes are
@@ -48,6 +59,7 @@ async function bootstrap(): Promise<void> {
     // io.close() stops accepting upgrades, drops live sockets, and closes the
     // underlying HTTP server — so we must NOT also call closeHttpServer here.
     await new Promise<void>((resolve) => io.close(() => resolve()));
+    await marketDataService.stop();
     await disconnectRedis();
     await disconnectDatabase();
   });

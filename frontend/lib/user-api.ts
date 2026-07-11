@@ -35,6 +35,11 @@ import type {
   TwoFaSetupData,
   TwoFaStatusData,
   Market,
+  MarketDataCandlesLookup,
+  MarketDataProviderHealth,
+  MarketDataResolution,
+  MarketDataSymbolMeta,
+  MarketDataTickerLookup,
   MeData,
   NotificationList,
   SupportTicketSummaryPage,
@@ -439,6 +444,31 @@ export const userApi = {
       USER_API_URL,
       `/markets/${encodeURIComponent(symbol)}/trades?limit=${limit}`,
     ),
+
+  // ---- live market data (BTC/USDT, ETH/USDT, BNB/USDT, USDT/INR reference) ----
+  // Distinct resource from /markets above (the internal sandbox market) — see
+  // backend/src/modules/market-data. No direct Binance/CoinGecko calls here;
+  // this always goes through EXORA's own normalized API.
+  marketDataSymbols: () =>
+    apiFetch<{ items: MarketDataSymbolMeta[] }>(USER_API_URL, '/market-data'),
+
+  marketDataTickers: () =>
+    apiFetch<{ items: MarketDataTickerLookup[] }>(USER_API_URL, '/market-data/tickers'),
+
+  marketDataTicker: (symbol: string) =>
+    apiFetch<MarketDataTickerLookup>(
+      USER_API_URL,
+      `/market-data/${encodeURIComponent(symbol)}/ticker`,
+    ),
+
+  marketDataCandles: (symbol: string, resolution: MarketDataResolution, limit = 300) =>
+    apiFetch<MarketDataCandlesLookup>(
+      USER_API_URL,
+      `/market-data/${encodeURIComponent(symbol)}/candles?resolution=${resolution}&limit=${limit}`,
+    ),
+
+  marketDataHealth: () =>
+    apiFetch<{ items: MarketDataProviderHealth[] }>(USER_API_URL, '/market-data/health'),
 
   // Order placement carries an Idempotency-Key so retries dedupe server-side.
   placeOrder: (body: PlaceOrderInput) =>

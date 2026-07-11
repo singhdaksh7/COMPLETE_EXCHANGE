@@ -1299,6 +1299,75 @@ export interface Ticker {
   tradeCount24h: number;
 }
 
+// ---- Live market-data foundation (BTC/USDT, ETH/USDT, BNB/USDT, USDT/INR) ----
+// Distinct from the internal `Market`/`Ticker`/`Candle` types above, which
+// describe the sandbox USDT-INR spot-trading market. These mirror the
+// backend's normalized `/market-data` API — never a raw Binance/CoinGecko
+// payload. Symbols here are the no-dash canonical form (e.g. `BTCUSDT`).
+export type MarketDataSourceName = 'BINANCE' | 'COINGECKO';
+
+export interface MarketDataSymbolMeta {
+  symbol: string;
+  displaySymbol: string;
+  baseAsset: string;
+  quoteAsset: string;
+  pricePrecision: number;
+  quantityPrecision: number;
+  status: 'ACTIVE';
+  marketDataSource: MarketDataSourceName;
+  marketDataType: 'TRADABLE_REFERENCE' | 'REFERENCE';
+}
+
+export interface MarketDataTicker {
+  symbol: string;
+  baseAsset: string;
+  quoteAsset: string;
+  price: string;
+  bid?: string;
+  ask?: string;
+  high24h?: string;
+  low24h?: string;
+  volume24h?: string;
+  change24hPercent?: string;
+  source: string;
+  sourceTimestamp: number;
+  receivedAt: number;
+  stale: boolean;
+}
+
+export type MarketDataTickerLookup =
+  | { available: true; ticker: MarketDataTicker }
+  | { available: false; symbol: string; reason: string };
+
+export const MARKET_DATA_RESOLUTIONS = ['1', '5', '15', '30', '60', '240', '1D'] as const;
+export type MarketDataResolution = (typeof MARKET_DATA_RESOLUTIONS)[number];
+
+export interface MarketDataCandle {
+  symbol: string;
+  resolution: MarketDataResolution;
+  time: number;
+  open: string;
+  high: string;
+  low: string;
+  close: string;
+  volume: string;
+  source: string;
+  stale: boolean;
+}
+
+export type MarketDataCandlesLookup =
+  | { available: true; symbol: string; resolution: MarketDataResolution; candles: MarketDataCandle[] }
+  | { available: false; symbol: string; reason: string };
+
+export interface MarketDataProviderHealth {
+  provider: MarketDataSourceName;
+  mode: 'live' | 'unavailable';
+  connected: boolean;
+  lastMessageAt: number | null;
+  stale: boolean;
+  detail?: string;
+}
+
 /** Body for POST /orders. Fields are conditional on side/type (see backend). */
 export interface PlaceOrderInput {
   symbol: string;

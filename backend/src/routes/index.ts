@@ -19,6 +19,7 @@ import {
   orderRouter,
   tradeRouter,
 } from '../modules/trading/trading.routes';
+import { marketDataRouter } from '../modules/market-data/market-data.routes';
 import { notificationRouter } from '../modules/notification/notification.routes';
 import { legalRouter } from '../modules/legal/legal.routes';
 import { taxRouter } from '../modules/tax/tax.routes';
@@ -64,6 +65,9 @@ apiRouter.use('/withdrawals', withdrawalRouter);
 apiRouter.use('/markets', marketRouter);
 apiRouter.use('/orders', orderRouter);
 apiRouter.use('/trades', tradeRouter);
+// Live external market data (BTC/ETH/BNB via Binance, USDT/INR reference via
+// CoinGecko) — read-only, MARKET DATA ONLY. Distinct from /markets above.
+apiRouter.use('/market-data', marketDataRouter);
 apiRouter.use('/notifications', notificationRouter);
 // Legal acceptance + tax/TDS calculation-only foundation (Stage 5.5).
 apiRouter.use('/legal', legalRouter);

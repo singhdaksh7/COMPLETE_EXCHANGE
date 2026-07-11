@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { logger } from '../lib/logger';
 import type { OrderDto } from '../modules/trading/trading.types';
+import type { MarketCandleDto, MarketTickerDto } from '../modules/market-data/market-data.types';
 
 /**
  * In-process realtime event bus.
@@ -44,11 +45,23 @@ export interface BalanceChangedEvent {
   userId: string;
 }
 
+/** External live market-data push (Goal 9) — entirely separate from the
+ * internal trading tape events above; never touches orders/balances/ledger. */
+export interface MarketTickerEvent {
+  ticker: MarketTickerDto;
+}
+
+export interface MarketCandleEvent {
+  candle: MarketCandleDto;
+}
+
 export const REALTIME_EVENT = {
   ORDERBOOK_CHANGED: 'orderbook.changed',
   TRADE_EXECUTED: 'trade.executed',
   ORDER_UPDATED: 'order.updated',
   BALANCE_CHANGED: 'balance.changed',
+  MARKET_TICKER: 'market-data.ticker',
+  MARKET_CANDLE: 'market-data.candle',
 } as const;
 
 /** Unbounded fan-out is fine here; one listener (the socket layer) per process. */
@@ -82,4 +95,12 @@ export function publishOrderUpdated(userId: string, order: OrderDto): void {
 
 export function publishBalanceChanged(userId: string): void {
   safeEmit(REALTIME_EVENT.BALANCE_CHANGED, { userId } satisfies BalanceChangedEvent);
+}
+
+export function publishMarketTicker(ticker: MarketTickerDto): void {
+  safeEmit(REALTIME_EVENT.MARKET_TICKER, { ticker } satisfies MarketTickerEvent);
+}
+
+export function publishMarketCandle(candle: MarketCandleDto): void {
+  safeEmit(REALTIME_EVENT.MARKET_CANDLE, { candle } satisfies MarketCandleEvent);
 }

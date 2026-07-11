@@ -692,6 +692,36 @@ export const envSchema = z
     .string()
     .default('false')
     .transform((v) => v === 'true'),
+
+  // ---- MARKET DATA FOUNDATION (BTC/ETH/BNB/USDT-INR reference) ----
+  // MARKET DATA ONLY — this feeds tickers/candles for display. It grants no
+  // execution capability; crypto order placement remains governed entirely by
+  // the CRYPTO_*_GLOBAL_ENABLED flags above, which this stage does not touch.
+  //
+  // Binance public market-data-only endpoints. No API key — see
+  // providers/binance.provider.ts. Configurable so staging can point at a
+  // different mirror without a code change; defaults are Binance's own
+  // public, key-free market-data hosts.
+  BINANCE_MARKET_DATA_REST_BASE: z
+    .string()
+    .url()
+    .default('https://data-api.binance.vision'),
+  BINANCE_MARKET_DATA_WS_BASE: z
+    .string()
+    .default('wss://data-stream.binance.vision'),
+  // Ticker considered stale if no WS message for this many ms (Binance pushes
+  // ~every 1s per symbol on the @ticker stream).
+  BINANCE_TICKER_STALE_MS: z.coerce.number().int().positive().default(15_000),
+
+  // CoinGecko Demo API — USDT/INR REFERENCE price only (Goal 4). Backend-only;
+  // never sent to frontend/mobile. Absent key = provider stays in
+  // 'unavailable' mode and USDTINR reports unavailable rather than a
+  // fabricated price (fail closed).
+  COINGECKO_API_BASE: z.string().url().default('https://api.coingecko.com/api/v3'),
+  COINGECKO_DEMO_API_KEY: optionalNonEmptyString,
+  COINGECKO_POLL_MS: z.coerce.number().int().positive().default(300_000),
+  // Retain last-known-good beyond ~3 missed polls before flagging stale.
+  COINGECKO_STALE_MS: z.coerce.number().int().positive().default(900_000),
   })
   // Fail fast: 'ses' mode is useless (and silently drops mail) without a region.
   .superRefine((val, ctx) => {

@@ -21,6 +21,8 @@ import type {
   LoginData,
   LoginResult,
   Market,
+  MarketDataSymbolMeta,
+  MarketDataTickerLookup,
   MeData,
   NotificationList,
   Order,
@@ -221,6 +223,12 @@ export const userApi = {
     apiFetch<OrderBook>(`/markets/${encodeURIComponent(symbol)}/orderbook?depth=${depth}`),
   ticker: (symbol: string) =>
     apiFetch<Ticker>(`/markets/${encodeURIComponent(symbol)}/ticker`),
+
+  // ---- live market data (BTC/USDT, ETH/USDT, BNB/USDT, USDT/INR reference) ----
+  // Distinct resource from /markets above. No direct Binance/CoinGecko calls
+  // from mobile — always through EXORA's own normalized API.
+  marketDataSymbols: () => apiFetch<{ items: MarketDataSymbolMeta[] }>('/market-data'),
+  marketDataTickers: () => apiFetch<{ items: MarketDataTickerLookup[] }>('/market-data/tickers'),
 
   // ---- orders / trades ----
   placeOrder: (body: PlaceOrderInput) =>

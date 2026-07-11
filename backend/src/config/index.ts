@@ -319,6 +319,24 @@ export const config = {
     quoteTtlMs: env.CONVERSION_QUOTE_TTL_MS,
   },
 
+  // Live market-data foundation (BTC/ETH/BNB via Binance public market-data-
+  // only endpoints; USDT/INR reference via CoinGecko Demo API). MARKET DATA
+  // ONLY — see modules/market-data. Does not grant crypto execution.
+  marketData: {
+    binance: {
+      restBase: env.BINANCE_MARKET_DATA_REST_BASE,
+      wsBase: env.BINANCE_MARKET_DATA_WS_BASE,
+      tickerStaleMs: env.BINANCE_TICKER_STALE_MS,
+    },
+    coingecko: {
+      apiBase: env.COINGECKO_API_BASE,
+      // SERVER-ONLY. Never send to frontend/mobile.
+      demoApiKey: env.COINGECKO_DEMO_API_KEY ?? null,
+      pollMs: env.COINGECKO_POLL_MS,
+      staleMs: env.COINGECKO_STALE_MS,
+    },
+  },
+
   // Backup / restore status surface (Stage 9B). Status/documentation only — no
   // backup is ever taken or restored by this app. Values are operator-published
   // metadata, never secrets.

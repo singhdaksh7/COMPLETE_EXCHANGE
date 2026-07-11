@@ -15,7 +15,11 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.exora.mobile",
-      "buildNumber": "1"
+      "buildNumber": "1",
+      "googleServicesFile": "./GoogleService-Info.plist",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.exora.mobile",
@@ -24,7 +28,13 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0B0E11"
-      }
+      },
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -37,7 +47,14 @@
         "expo-image-picker",
         {
           "photosPermission": "EXORA needs access to your photo library to attach identity documents for KYC verification.",
-          "cameraPermission": "EXORA needs camera access to capture identity documents and a selfie for KYC verification."
+          "cameraPermission": "EXORA needs camera access to capture identity documents and a selfie for KYC verification.",
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "EXORA uses your location at login to help protect your account from unauthorized access. Location is never used for any other purpose."
         }
       ],
       [
@@ -59,6 +76,12 @@
       "eas": {
         "projectId": "b073e686-38df-4a2f-a2a1-4b7cde726c92"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/b073e686-38df-4a2f-a2a1-4b7cde726c92"
     }
   }
 }

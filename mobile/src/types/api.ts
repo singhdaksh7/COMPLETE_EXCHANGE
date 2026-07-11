@@ -350,6 +350,45 @@ export interface Ticker {
   tradeCount24h: number;
 }
 
+// ---- Live market-data foundation (BTC/USDT, ETH/USDT, BNB/USDT, USDT/INR) ----
+// Distinct from `Market`/`Ticker` above (the internal sandbox market). Mirrors
+// backend's normalized `/market-data` API. No-dash canonical symbols (e.g.
+// `BTCUSDT`).
+export type MarketDataSourceName = 'BINANCE' | 'COINGECKO';
+
+export interface MarketDataSymbolMeta {
+  symbol: string;
+  displaySymbol: string;
+  baseAsset: string;
+  quoteAsset: string;
+  pricePrecision: number;
+  quantityPrecision: number;
+  status: 'ACTIVE';
+  marketDataSource: MarketDataSourceName;
+  marketDataType: 'TRADABLE_REFERENCE' | 'REFERENCE';
+}
+
+export interface MarketDataTicker {
+  symbol: string;
+  baseAsset: string;
+  quoteAsset: string;
+  price: string;
+  bid?: string;
+  ask?: string;
+  high24h?: string;
+  low24h?: string;
+  volume24h?: string;
+  change24hPercent?: string;
+  source: string;
+  sourceTimestamp: number;
+  receivedAt: number;
+  stale: boolean;
+}
+
+export type MarketDataTickerLookup =
+  | { available: true; ticker: MarketDataTicker }
+  | { available: false; symbol: string; reason: string };
+
 export interface OrderFill {
   tradeId: string;
   price: string;

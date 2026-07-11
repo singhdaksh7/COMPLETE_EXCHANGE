@@ -5,10 +5,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { AsyncBoundary, Card, Muted, Screen, Skeleton } from '@/components/ui';
 import { BrandMark, GlassCard } from '@/components/premium';
 import { useApi } from '@/hooks/useApi';
+import { useLiveMarketPrices } from '@/hooks/useLiveMarketPrices';
 import { userApi } from '@/api/userApi';
 import { colors, font, spacing, radius } from '@/theme';
 import { fmtAmount } from '@/utils/format';
-import type { Market, Ticker } from '@/types/api';
+import type { Market, MarketDataTickerLookup, Ticker } from '@/types/api';
 
 async function loadMarkets(): Promise<{ market: Market; ticker: Ticker | null }[]> {
   const res = await userApi.listMarkets();
@@ -55,6 +56,72 @@ function CoinLogo({ symbol }: { symbol: string }) {
     <View style={[styles.coinLogo, { backgroundColor: bg }]}>
       <Text style={[styles.coinLogoText, { color }]}>{char}</Text>
     </View>
+  );
+}
+
+function formatLivePrice(price: string, quoteAsset: string): string {
+  const n = Number(price);
+  if (!Number.isFinite(n)) return '—';
+  const prefix = quoteAsset === 'INR' ? '₹' : quoteAsset === 'USDT' ? '$' : '';
+  return `${prefix}${n.toLocaleString('en-IN', { maximumFractionDigits: quoteAsset === 'INR' ? 4 : 2 })}`;
+}
+
+function LiveMarketPriceRow({ row }: { row: MarketDataTickerLookup }) {
+  const symbol = row.available ? row.ticker.symbol : row.symbol;
+  const displaySymbol = symbol.replace(/(USDT|INR)$/, '/$1');
+
+  if (!row.available) {
+    return (
+      <View style={liveStyles.row}>
+        <Text style={liveStyles.symbol}>{displaySymbol}</Text>
+        <Text style={liveStyles.unavailable}>Unavailable</Text>
+      </View>
+    );
+  }
+
+  const { ticker } = row;
+  const changePct = ticker.change24hPercent ? Number(ticker.change24hPercent) : null;
+  const up = changePct !== null && changePct >= 0;
+
+  return (
+    <View style={liveStyles.row}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+        <Text style={liveStyles.symbol}>{displaySymbol}</Text>
+        {ticker.stale && <Text style={liveStyles.staleBadge}>Stale</Text>}
+      </View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Text style={liveStyles.price}>{formatLivePrice(ticker.price, ticker.quoteAsset)}</Text>
+        {changePct !== null && (
+          <Text style={[liveStyles.change, { color: up ? colors.up : colors.down }]}>
+            {up ? '+' : ''}
+            {changePct.toFixed(2)}%
+          </Text>
+        )}
+      </View>
+    </View>
+  );
+}
+
+/**
+ * BTC/USDT, ETH/USDT, BNB/USDT, USDT/INR — external reference prices only,
+ * NOT tradable on EXORA today (crypto execution stays off), so unlike the
+ * "Live Markets" list below there is no tap-through to a trade screen.
+ */
+function LiveMarketPricesCard() {
+  const { items, loading, error } = useLiveMarketPrices();
+
+  return (
+    <GlassCard padded style={{ gap: spacing.xs }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Text style={styles.sectionTitle}>Live Reference Prices</Text>
+      </View>
+      <Text style={liveStyles.subtitle}>External reference prices — not tradable on EXORA yet.</Text>
+      {loading && <Skeleton height={40} width="100%" />}
+      {!loading && error && <Muted style={{ paddingVertical: spacing.sm }}>Live prices are temporarily unavailable.</Muted>}
+      {!loading && !error && items.map((row) => (
+        <LiveMarketPriceRow key={row.available ? row.ticker.symbol : row.symbol} row={row} />
+      ))}
+    </GlassCard>
   );
 }
 
@@ -188,6 +255,9 @@ export default function MarketsScreen() {
         </View>
       </ScrollView>
 
+      {/* Live Reference Prices — BTC/USDT, ETH/USDT, BNB/USDT, USDT/INR */}
+      <LiveMarketPricesCard />
+
       {/* Live Markets Section Header */}
       <View style={styles.sectionHeader}>
         <View style={styles.sectionTitleRow}>
@@ -307,6 +377,32 @@ export default function MarketsScreen() {
     </Screen>
   );
 }
+
+const liveStyles = StyleSheet.create({
+  subtitle: { color: colors.muted2, fontSize: 9 },
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.03)',
+  },
+  symbol: { color: '#fff', fontSize: font.sm - 1, fontWeight: '800', fontFamily: 'monospace' },
+  price: { color: '#fff', fontSize: font.sm - 1, fontWeight: '800', fontFamily: 'monospace' },
+  change: { fontSize: 10, fontWeight: '800', fontFamily: 'monospace' },
+  unavailable: { color: colors.muted2, fontSize: 9, fontWeight: '700', textTransform: 'uppercase' },
+  staleBadge: {
+    color: '#F5C242',
+    backgroundColor: 'rgba(245,194,66,0.15)',
+    fontSize: 8,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    borderRadius: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+  },
+});
 
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: spacing.sm },

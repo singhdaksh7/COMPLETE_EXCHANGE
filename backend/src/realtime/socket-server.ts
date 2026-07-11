@@ -7,6 +7,7 @@ import { authRedisGet } from '../lib/redis';
 import { authService } from '../modules/auth/auth.service';
 import { tradingService } from '../modules/trading/trading.service';
 import { ledgerService } from '../modules/ledger/ledger.service';
+import { isSupportedSymbol } from '../modules/market-data/symbol-registry';
 import {
   realtimeBus,
   REALTIME_EVENT,
@@ -14,6 +15,8 @@ import {
   type OrderUpdatedEvent,
   type OrderbookChangedEvent,
   type TradeExecutedEvent,
+  type MarketCandleEvent,
+  type MarketTickerEvent,
 } from './events';
 
 /**
@@ -58,6 +61,15 @@ function userRoom(userId: string): string {
 
 function symbolFromRoom(room: string): string {
   return room.slice('market:'.length);
+}
+
+// External live market-data rooms (Goal 9) — entirely separate namespace
+// from the internal `market:{SYMBOL}` trading rooms above (no dash, e.g.
+// `md:BTCUSDT`), so a client can never confuse the two feeds.
+const MARKET_DATA_SUB_LIMIT = 20; // generous — the registry only has 4 symbols today.
+
+function marketDataRoom(symbol: string): string {
+  return `md:${symbol}`;
 }
 
 export function createSocketServer(httpServer: HttpServer): IOServer {
@@ -108,6 +120,28 @@ export function createSocketServer(httpServer: HttpServer): IOServer {
     socket.on('unsubscribe', (room: unknown) => {
       if (typeof room === 'string') void socket.leave(room);
     });
+
+    // Explicit market-data symbol subscriptions, server-side allowlisted
+    // against the symbol registry (Goal 9) — never joins an arbitrary room.
+    const mdSubscriptions = new Set<string>();
+    socket.on('md:subscribe', (symbol: unknown) => {
+      if (typeof symbol !== 'string' || !isSupportedSymbol(symbol)) return;
+      if (mdSubscriptions.has(symbol)) return;
+      if (mdSubscriptions.size >= MARKET_DATA_SUB_LIMIT) return;
+      mdSubscriptions.add(symbol);
+      void socket.join(marketDataRoom(symbol));
+      socket.emit('md:subscribed', { symbol });
+    });
+
+    socket.on('md:unsubscribe', (symbol: unknown) => {
+      if (typeof symbol !== 'string') return;
+      mdSubscriptions.delete(symbol);
+      void socket.leave(marketDataRoom(symbol));
+    });
+
+    socket.on('disconnect', () => {
+      mdSubscriptions.clear();
+    });
   });
 
   wireBus(io);
@@ -143,6 +177,45 @@ function wireBus(io: IOServer): void {
 
   realtimeBus.on(REALTIME_EVENT.BALANCE_CHANGED, (e: BalanceChangedEvent) => {
     void emitBalance(io, e.userId);
+  });
+
+  realtimeBus.on(REALTIME_EVENT.MARKET_TICKER, (e: MarketTickerEvent) => {
+    safe('market-data.ticker', () => {
+      io.to(marketDataRoom(e.ticker.symbol)).emit('ticker', {
+        type: 'ticker',
+        symbol: e.ticker.symbol,
+        data: {
+          price: e.ticker.price,
+          bid: e.ticker.bid,
+          ask: e.ticker.ask,
+          high24h: e.ticker.high24h,
+          low24h: e.ticker.low24h,
+          volume24h: e.ticker.volume24h,
+          change24hPercent: e.ticker.change24hPercent,
+          source: e.ticker.source,
+          sourceTimestamp: e.ticker.sourceTimestamp,
+          stale: e.ticker.stale,
+        },
+      });
+    });
+  });
+
+  realtimeBus.on(REALTIME_EVENT.MARKET_CANDLE, (e: MarketCandleEvent) => {
+    safe('market-data.candle', () => {
+      io.to(marketDataRoom(e.candle.symbol)).emit('candle', {
+        type: 'candle',
+        symbol: e.candle.symbol,
+        resolution: e.candle.resolution,
+        data: {
+          time: e.candle.time,
+          open: e.candle.open,
+          high: e.candle.high,
+          low: e.candle.low,
+          close: e.candle.close,
+          volume: e.candle.volume,
+        },
+      });
+    });
   });
 }
 
