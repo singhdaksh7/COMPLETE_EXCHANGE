@@ -9,6 +9,7 @@ import { useGuard } from '@/components/guards';
 import { UserShell } from '@/components/user-shell';
 import { StatusBadge } from '@/components/ui';
 import { LiveMarketPrices } from '@/components/live-market-prices';
+import { TradingViewFreeChart } from '@/components/tradingview-free-chart';
 import type { Market } from '@/lib/types';
 
 export default function MarketsPage() {
@@ -245,6 +246,13 @@ export default function MarketsPage() {
 
         </div>
       )}
+
+      {/* Temporary TradingView free-widget chart (BTC/ETH/BNB vs USDT) —
+          presentation layer only; EXORA's own live-price data above is
+          unaffected. See frontend/components/tradingview-free-chart.tsx. */}
+      <div className="mt-6">
+        <TradingViewFreeChart />
+      </div>
     </UserShell>
   );
 }
